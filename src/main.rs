@@ -1,3 +1,6 @@
+mod gzip;
+mod mrp;
+
 use std::path::PathBuf;
 
 const USAGE: &str = "\
@@ -25,6 +28,31 @@ fn main() -> Result<(), String> {
             return Err(format!("Unexpected arguments: {:?}", arg));
         }
     }
+
+    let Some(mrp_path) = mrp_path else {
+        eprintln!("{}", USAGE);
+        return Err("Path to mrp must be specified".to_string());
+    };
+
+    let mrp = mrp::Mrp::load_from_file(mrp_path)
+        .map_err(|e| format!("Could not load MRP file: {}", e))?;
+
+    let header = mrp.header();
+    let entries = mrp.entries();
+
+    println!("Header of MRP file: {:#?}", header);
+    println!("Entries of MRP file: {:#?}", entries);
+
+    let start_mr: Vec<u8> = mrp
+        .read_file("start.mr")
+        .map_err(|e| format!("Could not read start.mr in MRP file: {}", e))?;
+
+    let cfuntion_ext: Vec<u8> = mrp
+        .read_file("cfunction.ext")
+        .map_err(|e| format!("Could not read cfunction.ext in MRP file: {}", e))?;
+
+    println!("start.mr size: {}", start_mr.len());
+    println!("cfunction.ext size: {}", cfuntion_ext.len());
 
     unimplemented!()
 }
