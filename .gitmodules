@@ -1,0 +1,3 @@
+[submodule "vendor/dynarmic"]
+	path = vendor/dynarmic
+	url = https://github.com/arctan95/dynarmic.git

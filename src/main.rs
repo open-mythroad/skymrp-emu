@@ -1,3 +1,4 @@
+mod cpu;
 mod gzip;
 mod mrp;
 mod window;
@@ -57,6 +58,7 @@ fn main() -> Result<(), String> {
 
     let mut window = window::Window::new("skymrp");
     let mut events = Vec::new();
+    let _cpu = cpu::Cpu::new();
 
     loop {
         window.poll_for_events(&mut events);
