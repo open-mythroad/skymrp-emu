@@ -88,11 +88,12 @@ impl Cpu {
         }
     }
 
-    pub fn run(&mut self, mem: &mut Memory) {
+    pub fn run(&mut self, mem: &mut Memory, ticks: &mut u64) {
         unsafe {
             skymrp_DynarmicWrapper_run(
                 self.dynarmic_wrapper,
                 mem as *mut Memory as *mut skymrp_Memory,
+                ticks,
             )
         }
     }

@@ -31,6 +31,7 @@ namespace skymrp::cpu
     public:
         Dynarmic::A32::Jit *cpu = nullptr;
         skymrp_Memory *mem = nullptr;
+        std::uint64_t ticks_remaining;
 
     private:
         std::uint8_t MemoryRead8(VAddr vaddr) override
@@ -76,7 +77,15 @@ namespace skymrp::cpu
         {
             abort(); // TODO
         }
-        void AddTicks(std::uint64_t) override {}                 // TODO
+        void AddTicks(std::uint64_t ticks) override
+        {
+            if (ticks > ticks_remaining)
+            {
+                ticks_remaining = 0;
+                return;
+            }
+            ticks_remaining -= ticks;
+        }
         std::uint64_t GetTicksRemaining() override { return 2; } // TODO
     };
 
@@ -97,11 +106,13 @@ namespace skymrp::cpu
         const std::uint32_t *regs() const { return &cpu->Regs().front(); }
         std::uint32_t *regs() { return &cpu->Regs().front(); }
 
-        void run(skymrp_Memory *mem)
+        void run(skymrp_Memory *mem, std::uint64_t *ticks)
         {
             env.mem = mem;
+            env.ticks_remaining = *ticks;
             cpu->Run();
             env.mem = nullptr;
+            *ticks = env.ticks_remaining;
         }
     };
 
@@ -124,9 +135,10 @@ namespace skymrp::cpu
             return cpu->regs();
         }
 
-        void skymrp_DynarmicWrapper_run(DynarmicWrapper *cpu, skymrp_Memory *mem)
+        void skymrp_DynarmicWrapper_run(DynarmicWrapper *cpu, skymrp_Memory *mem,
+                                        std::uint64_t *ticks)
         {
-            cpu->run(mem);
+            cpu->run(mem, ticks);
         }
     }
 

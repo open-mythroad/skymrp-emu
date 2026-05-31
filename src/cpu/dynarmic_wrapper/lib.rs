@@ -15,5 +15,6 @@ unsafe extern "C" {
     pub unsafe fn skymrp_DynarmicWrapper_run(
         cpu: *mut skymrp_DynarmicWrapper,
         mem: *mut skymrp_Memory,
+        ticks: *mut u64,
     );
 }
