@@ -2,6 +2,7 @@ mod cpu;
 mod gzip;
 mod mem;
 mod mrp;
+mod stack;
 mod window;
 
 use std::path::PathBuf;
@@ -55,6 +56,7 @@ fn main() -> Result<(), String> {
     println!("cfuntion.ext size: {}", cfuntion_ext.len());
 
     let mut cpu = cpu::Cpu::new();
+    stack::prep_stack_for_start(&mut mem, &mut cpu);
 
     mem.write(mem::Ptr::from_bits(0), 0xE0800001u32); // A32: add r0, r0, r1
     mem.write(mem::Ptr::from_bits(4), 0xEF000001u32); // A32: svc 0
@@ -62,7 +64,7 @@ fn main() -> Result<(), String> {
     let b = 2;
     cpu.regs_mut()[0] = a;
     cpu.regs_mut()[1] = b;
-    cpu.regs_mut()[15] = 0; // PC = 0
+    cpu.regs_mut()[cpu::Cpu::PC] = 0;
     cpu.run(&mut mem);
     let res = cpu.regs()[0];
     println!("According to dynarmic, {} + {} = {}!", a, b, res);
