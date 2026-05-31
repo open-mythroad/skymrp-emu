@@ -1,5 +1,6 @@
 mod gzip;
 mod mrp;
+mod window;
 
 use std::path::PathBuf;
 
@@ -54,5 +55,18 @@ fn main() -> Result<(), String> {
     println!("start.mr size: {}", start_mr.len());
     println!("cfunction.ext size: {}", cfuntion_ext.len());
 
-    unimplemented!()
+    let mut window = window::Window::new("skymrp");
+    let mut events = Vec::new();
+
+    loop {
+        window.poll_for_events(&mut events);
+        for event in events.drain(..) {
+            match event {
+                window::Event::Quit => {
+                    println!("User requested quit, exiting...");
+                    return Ok(());
+                }
+            }
+        }
+    }
 }
