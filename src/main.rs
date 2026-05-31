@@ -3,6 +3,7 @@ mod gzip;
 mod mem;
 mod mrp;
 mod stack;
+mod syscall;
 mod window;
 
 use std::path::PathBuf;
@@ -52,23 +53,17 @@ fn main() -> Result<(), String> {
 
     println!("Address of start function: {:#x}", entry_point_pc);
 
-    let cfuntion_ext = mrp::read_file(&mrp.data, "cfunction.ext")?;
-    println!("cfuntion.ext size: {}", cfuntion_ext.len());
+    let stub_addr: u32 = 0x00000011;
 
+    let mut syscall = syscall::Syscall::new();
+    syscall.setup_stubs(stub_addr, &mut mem);
     let mut cpu = cpu::Cpu::new();
     stack::prep_stack_for_start(&mut mem, &mut cpu);
 
-    mem.write(mem::Ptr::from_bits(0), 0xE0800001u32); // A32: add r0, r0, r1
-    mem.write(mem::Ptr::from_bits(4), 0xEF000001u32); // A32: svc 0
-    let a = 1;
-    let b = 2;
-    cpu.regs_mut()[0] = a;
-    cpu.regs_mut()[1] = b;
-    cpu.regs_mut()[cpu::Cpu::PC] = 0;
-    let mut ticks = 100;
-    cpu.run(&mut mem, &mut ticks);
-    let res = cpu.regs()[0];
-    println!("According to dynarmic, {} + {} = {}! Took {} ticks.", a, b, res, 100 - ticks);
+    println!("CPU emulation begins now.");
+
+    cpu.regs_mut()[cpu::Cpu::LR] = 0;
+    cpu.regs_mut()[cpu::Cpu::PC] = stub_addr;
 
     loop {
         window.poll_for_events(&mut events);
@@ -80,5 +75,28 @@ fn main() -> Result<(), String> {
                 }
             }
         }
+
+        let mut ticks = 100;
+        while ticks > 0 {
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                match cpu.run(&mut mem, &mut ticks) {
+                    cpu::CpuState::Normal => (),
+                    cpu::CpuState::Svc(svc) => {
+                        // the program counter is one instruction ahead
+                        let current_instruction = cpu.regs()[cpu::Cpu::PC] - 4;
+                        syscall.handle_svc(&mrp, current_instruction, svc)
+                    }
+                }
+            }));
+            if let Err(e) = res {
+                eprintln!(
+                    "Panic at PC {:#x}, LR {:#x}",
+                    cpu.regs()[cpu::Cpu::PC],
+                    cpu.regs()[cpu::Cpu::LR]
+                );
+                std::panic::resume_unwind(e);
+            }
+        }
+        println!("{} ticks elapsed", ticks);
     }
 }

@@ -16,5 +16,5 @@ unsafe extern "C" {
         cpu: *mut skymrp_DynarmicWrapper,
         mem: *mut skymrp_Memory,
         ticks: *mut u64,
-    );
+    ) -> i32;
 }

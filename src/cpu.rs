@@ -61,6 +61,15 @@ impl Drop for Cpu {
     }
 }
 
+/// Why CPU execution ended.
+#[derive(Debug)]
+pub enum CpuState {
+    /// Execution halted due to using up all remaining ticks.
+    Normal,
+    /// SVC instruction encountered.
+    Svc(u32),
+}
+
 impl Cpu {
     /// The register number of the stack pointer.
     pub const SP: usize = 13;
@@ -88,13 +97,22 @@ impl Cpu {
         }
     }
 
-    pub fn run(&mut self, mem: &mut Memory, ticks: &mut u64) {
+    #[must_use]
+    pub fn run(&mut self, mem: &mut Memory, ticks: &mut u64) -> CpuState {
         unsafe {
-            skymrp_DynarmicWrapper_run(
+            let res = skymrp_DynarmicWrapper_run(
                 self.dynarmic_wrapper,
                 mem as *mut Memory as *mut skymrp_Memory,
                 ticks,
-            )
+            );
+            match res {
+                -1 => {
+                    assert!(*ticks == 0);
+                    CpuState::Normal
+                }
+                _ if res < -1 => panic!("Unexpected CPU execution result"),
+                svc => CpuState::Svc(svc as u32),
+            }
         }
     }
 }
