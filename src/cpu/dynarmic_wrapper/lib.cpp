@@ -93,7 +93,7 @@ namespace skymrp::cpu
             }
             ticks_remaining -= ticks;
         }
-        std::uint64_t GetTicksRemaining() override { return 2; } // TODO
+        std::uint64_t GetTicksRemaining() override { return ticks_remaining; }
     };
 
     class DynarmicWrapper
