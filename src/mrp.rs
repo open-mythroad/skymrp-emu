@@ -6,6 +6,7 @@ pub const START_FILE_NAME: &str = "cfunction.ext";
 
 pub const CODE_BASE_ADDR: u32 = 0x0008_0000;
 pub const ENTRY_OFFSET: u32 = 8;
+pub const MR_C_FUNCTION_TABLE_ADDR: u32 = 0x0000_0010;
 
 const MRP_MAGIC: &[u8; 4] = b"MRPG";
 const MRP_HEADER_SIZE: usize = 16;
@@ -14,6 +15,7 @@ const MRP_HEADER_SIZE: usize = 16;
 pub struct Mrp {
     pub data: Vec<u8>,
     pub entry_point_pc: Option<u32>,
+    pub mr_c_function_table_addr: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -88,6 +90,7 @@ impl Mrp {
         Ok(Mrp {
             data,
             entry_point_pc: Some(entry_point_pc),
+            mr_c_function_table_addr: MR_C_FUNCTION_TABLE_ADDR,
         })
     }
 }

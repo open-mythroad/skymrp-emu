@@ -1,7 +1,9 @@
+mod abi;
 mod cpu;
 mod gzip;
 mod mem;
 mod mrp;
+mod mythroad;
 mod stack;
 mod syscall;
 mod window;
@@ -45,10 +47,10 @@ fn main() -> Result<(), String> {
 }
 
 /// The struct containing the entire emulator state.
-struct Environment {
+pub struct Environment {
     window: window::Window,
     mem: mem::Memory,
-    mrp: mrp::Mrp,
+    executable: mrp::Mrp,
     syscall: syscall::Syscall,
     cpu: cpu::Cpu,
 }
@@ -60,31 +62,29 @@ impl Environment {
 
         let mut mem = mem::Memory::new();
 
-        let mrp = mrp::Mrp::load_from_file(mrp_path, &mut mem)
+        let executable = mrp::Mrp::load_from_file(mrp_path, &mut mem)
             .map_err(|e| format!("Could not load MRP file: {}", e))?;
 
-        let entry_point_pc = mrp
+        let entry_point_pc = executable
             .entry_point_pc
             .ok_or_else(|| "MRP file has no cfunction.ext".to_string())?;
 
         println!("Address of start function: {:#x}", entry_point_pc);
 
-        let stub_addr: u32 = 0x00000011;
-
         let mut syscall = syscall::Syscall::new();
-        syscall.setup_stubs(stub_addr, &mut mem);
+        syscall.setup_stubs(&executable, &mut mem);
         let mut cpu = cpu::Cpu::new();
         stack::prep_stack_for_start(&mut mem, &mut cpu);
 
         println!("CPU emulation begins now.");
 
         cpu.regs_mut()[cpu::Cpu::LR] = 0;
-        cpu.regs_mut()[cpu::Cpu::PC] = stub_addr;
+        cpu.regs_mut()[cpu::Cpu::PC] = entry_point_pc;
 
         Ok(Environment {
             window,
             mem,
-            mrp,
+            executable,
             syscall,
             cpu,
         })
@@ -113,7 +113,13 @@ impl Environment {
                         cpu::CpuState::Svc(svc) => {
                             // the program counter is one instruction ahead
                             let current_instruction = self.cpu.regs()[cpu::Cpu::PC] - 4;
-                            self.syscall.handle_svc(&self.mrp, current_instruction, svc)
+                            let f = self.syscall.get_svc_handler(
+                                &self.executable,
+                                &mut self.mem,
+                                current_instruction,
+                                svc,
+                            );
+                            f.call_from_guest(self);
                         }
                     }
                 }));
