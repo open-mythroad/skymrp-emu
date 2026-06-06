@@ -1,7 +1,9 @@
 pub type GuestUSize = u32;
 
+type VAddr = GuestUSize;
+
 #[repr(transparent)]
-pub struct Ptr<T, const MUT: bool>(GuestUSize, std::marker::PhantomData<T>);
+pub struct Ptr<T, const MUT: bool>(VAddr, std::marker::PhantomData<T>);
 
 impl<T, const MUT: bool> Clone for Ptr<T, MUT> {
     fn clone(&self) -> Self {
@@ -16,10 +18,10 @@ pub type ConstPtr<T> = Ptr<T, false>;
 pub type MutPtr<T> = Ptr<T, true>;
 
 impl<T, const MUT: bool> Ptr<T, MUT> {
-    pub fn to_bits(self) -> GuestUSize {
+    pub fn to_bits(self) -> VAddr {
         self.0
     }
-    pub fn from_bits(bits: GuestUSize) -> Self {
+    pub fn from_bits(bits: VAddr) -> Self {
         Ptr(bits, std::marker::PhantomData)
     }
 
