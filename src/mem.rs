@@ -91,6 +91,8 @@ impl Drop for Memory {
 }
 
 impl Memory {
+    const NULL_PAGE_END: u32 = 0x1000;
+
     pub fn new() -> Memory {
         let layout = std::alloc::Layout::new::<Bytes>();
         let bytes = unsafe { std::alloc::alloc_zeroed(layout) as *mut Bytes };
@@ -105,10 +107,24 @@ impl Memory {
         unsafe { &mut *self.bytes }
     }
 
+    #[cold]
+    fn null_check_fail(at: u32, size: u32) {
+        panic!(
+            "Attempted null-page access at {:#x} ({:#x} bytes)",
+            at, size
+        )
+    }
+
     pub fn bytes_at<const MUT: bool>(&self, ptr: Ptr<u8, MUT>, count: GuestUSize) -> &[u8] {
+        if ptr.to_bits() < Self::NULL_PAGE_END {
+            Self::null_check_fail(ptr.to_bits(), count)
+        }
         &self.bytes()[ptr.to_bits() as usize..][..count as usize]
     }
     pub fn bytes_at_mut(&mut self, ptr: MutPtr<u8>, count: GuestUSize) -> &mut [u8] {
+        if ptr.to_bits() < Self::NULL_PAGE_END {
+            Self::null_check_fail(ptr.to_bits(), count)
+        }
         &mut self.bytes_mut()[ptr.to_bits() as usize..][..count as usize]
     }
 
