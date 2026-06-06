@@ -1,4 +1,4 @@
-use crate::mem::{ConstPtr, Memory, MutPtr, Ptr, SafeRead};
+use crate::mem::{ConstPtr, Memory, MutPtr, Ptr, SafeRead, SafeWrite};
 
 // Import functions from C++
 use skymrp_dynarmic_wrapper::*;
@@ -11,7 +11,7 @@ fn skymrp_cpu_read_impl<T: SafeRead>(mem: *mut skymrp_Memory, addr: VAddr) -> T 
     mem.read(ptr)
 }
 
-fn skymrp_cpu_write_impl<T>(mem: *mut skymrp_Memory, addr: VAddr, value: T) {
+fn skymrp_cpu_write_impl<T: SafeWrite>(mem: *mut skymrp_Memory, addr: VAddr, value: T) {
     let mem = unsafe { &mut *mem.cast::<Memory>() };
     let ptr: MutPtr<T> = Ptr::from_bits(addr);
     mem.write(ptr, value)

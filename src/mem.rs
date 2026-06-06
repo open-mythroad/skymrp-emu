@@ -64,7 +64,7 @@ impl<T, const MUT: bool> std::ops::AddAssign<GuestUSize> for Ptr<T, MUT> {
     }
 }
 
-pub trait SafeRead {}
+pub trait SafeRead: Sized {}
 impl SafeRead for i8 {}
 impl SafeRead for u8 {}
 impl SafeRead for i16 {}
@@ -76,6 +76,9 @@ impl SafeRead for u64 {}
 impl SafeRead for f32 {}
 impl SafeRead for f64 {}
 impl<T, const MUT: bool> SafeRead for Ptr<T, MUT> {}
+
+pub trait SafeWrite: Sized {}
+impl<T: SafeRead> SafeWrite for T {}
 
 type Bytes = [u8; 1 << 32];
 
@@ -142,7 +145,10 @@ impl Memory {
         let ptr: *const T = slice.as_ptr().cast();
         unsafe { ptr.read_unaligned() }
     }
-    pub fn write<T>(&mut self, ptr: MutPtr<T>, value: T) {
+    pub fn write<T>(&mut self, ptr: MutPtr<T>, value: T)
+    where
+        T: SafeWrite,
+    {
         let size = std::mem::size_of::<T>().try_into().unwrap();
         let slice = self.bytes_at_mut(ptr.cast(), size);
         let ptr: *mut T = slice.as_mut_ptr().cast();
