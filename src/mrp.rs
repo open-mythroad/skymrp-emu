@@ -82,6 +82,7 @@ impl Mrp {
             ));
         }
 
+        into_mem.reserve(CODE_BASE_ADDR, file_size);
         {
             let dst = into_mem.bytes_at_mut(Ptr::<u8, true>::from_bits(CODE_BASE_ADDR), file_size);
             dst.copy_from_slice(&cfunction_ext);

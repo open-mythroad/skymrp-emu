@@ -1,3 +1,5 @@
+mod allocator;
+
 pub type GuestUSize = u32;
 
 type VAddr = GuestUSize;
@@ -79,6 +81,7 @@ type Bytes = [u8; 1 << 32];
 
 pub struct Memory {
     bytes: *mut Bytes,
+    allocator: allocator::Allocator,
 }
 
 impl Drop for Memory {
@@ -91,13 +94,15 @@ impl Drop for Memory {
 }
 
 impl Memory {
-    const NULL_PAGE_END: u32 = 0x1000;
+    pub const NULL_PAGE_SIZE: VAddr = 0x1000;
+    pub const STACK_SIZE: GuestUSize = 1024 * 1024;
+    pub const STACK_LOW_END: VAddr = 0u32.wrapping_sub(Self::STACK_SIZE);
 
     pub fn new() -> Memory {
         let layout = std::alloc::Layout::new::<Bytes>();
         let bytes = unsafe { std::alloc::alloc_zeroed(layout) as *mut Bytes };
-
-        Memory { bytes }
+        let allocator = allocator::Allocator::new();
+        Memory { bytes, allocator }
     }
 
     fn bytes(&self) -> &Bytes {
@@ -116,13 +121,13 @@ impl Memory {
     }
 
     pub fn bytes_at<const MUT: bool>(&self, ptr: Ptr<u8, MUT>, count: GuestUSize) -> &[u8] {
-        if ptr.to_bits() < Self::NULL_PAGE_END {
+        if ptr.to_bits() < Self::NULL_PAGE_SIZE {
             Self::null_check_fail(ptr.to_bits(), count)
         }
         &self.bytes()[ptr.to_bits() as usize..][..count as usize]
     }
     pub fn bytes_at_mut(&mut self, ptr: MutPtr<u8>, count: GuestUSize) -> &mut [u8] {
-        if ptr.to_bits() < Self::NULL_PAGE_END {
+        if ptr.to_bits() < Self::NULL_PAGE_SIZE {
             Self::null_check_fail(ptr.to_bits(), count)
         }
         &mut self.bytes_mut()[ptr.to_bits() as usize..][..count as usize]
@@ -142,5 +147,9 @@ impl Memory {
         let slice = self.bytes_at_mut(ptr.cast(), size);
         let ptr: *mut T = slice.as_mut_ptr().cast();
         unsafe { ptr.write_unaligned(value) }
+    }
+
+    pub fn reserve(&mut self, base: VAddr, size: GuestUSize) {
+        self.allocator.reserve(allocator::Chunk::new(base, size));
     }
 }

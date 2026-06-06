@@ -41,6 +41,13 @@ impl Syscall {
         let entry_point_pc = bin.entry_point_pc.unwrap();
 
         let export_count = FUNCTION_TABLE.len() as u32;
+        let func_count = FUNCTION_TABLE
+            .iter()
+            .filter(|export| matches!(export, Export::Func(_)))
+            .count() as u32;
+        let table_size = export_count * 4;
+        let stub_size = func_count * 8;
+        mem.reserve(bin.mr_c_function_table_addr, table_size + stub_size);
 
         // Store the mr_c_function_table address in the entry header.
         mem.write(
