@@ -19,11 +19,11 @@ namespace skymrp::cpu
         void skymrp_cpu_write_u8(skymrp_Memory *mem, VAddr addr,
                                  std::uint8_t value);
         void skymrp_cpu_write_u16(skymrp_Memory *mem, VAddr addr,
-                                  std::uint8_t value);
+                                  std::uint16_t value);
         void skymrp_cpu_write_u32(skymrp_Memory *mem, VAddr addr,
-                                  std::uint8_t value);
+                                  std::uint32_t value);
         void skymrp_cpu_write_u64(skymrp_Memory *mem, VAddr addr,
-                                  std::uint8_t value);
+                                  std::uint64_t value);
     }
 
     const auto HaltReasonSvc = Dynarmic::HaltReason::UserDefined1;
