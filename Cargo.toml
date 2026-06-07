@@ -20,6 +20,7 @@ homepage = { workspace = true }
 [workspace.dependencies]
 cc = "1.0.77"
 cmake = "0.1.49"
+rusty-hook = "0.11.2"
 
 [dependencies]
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
@@ -30,3 +31,4 @@ skymrp_dynarmic_wrapper = { path = "src/cpu/dynarmic_wrapper" }
 [build-dependencies]
 cc = { workspace = true }
 cmake = { workspace = true }
+rusty-hook = { workspace = true }
