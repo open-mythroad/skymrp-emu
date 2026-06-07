@@ -122,4 +122,25 @@ impl Allocator {
 
         panic!("Could not reserve chunk {:?}!", chunk);
     }
+
+    pub fn alloc(&mut self, size: GuestUSize) -> VAddr {
+        let size = size.max(16);
+        let size = if size % 16 != 0 {
+            size + 16 - (size % 16)
+        } else {
+            size
+        };
+
+        let big_chunk = self.unused_chunks.pop().unwrap();
+
+        assert!(size < big_chunk.size.get());
+
+        let alloc = Chunk::new(big_chunk.base, size);
+        let rump = Chunk::new(big_chunk.base + size, big_chunk.size.get() - size);
+
+        self.used_chunks.push(alloc);
+        self.unused_chunks.push(rump);
+
+        alloc.base
+    }
 }

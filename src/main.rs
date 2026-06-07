@@ -69,7 +69,10 @@ impl Environment {
             .entry_point_pc
             .ok_or_else(|| "MRP file has no cfunction.ext".to_string())?;
 
-        println!("Address of start function: {:#x}", entry_point_pc);
+        let entry_point_pc = abi::GuestFunction::from_addr_with_thumb_bit(entry_point_pc);
+        let lr = abi::GuestFunction::from_addr_with_thumb_bit(0);
+
+        println!("Address of start function: {:?}", entry_point_pc);
 
         let mut syscall = syscall::Syscall::new();
         syscall.setup_stubs(&executable, &mut mem);
@@ -79,7 +82,8 @@ impl Environment {
         println!("CPU emulation begins now.");
 
         cpu.regs_mut()[cpu::Cpu::LR] = 0;
-        cpu.regs_mut()[cpu::Cpu::PC] = entry_point_pc;
+        cpu.set_cpsr(cpu::Cpu::CPSR_USER_MODE);
+        cpu.branch_with_link(entry_point_pc, lr);
 
         Ok(Environment {
             window,
@@ -92,6 +96,14 @@ impl Environment {
 
     /// Run the emulator.
     fn run(&mut self) {
+        self.run_inner(true)
+    }
+
+    pub fn run_call(&mut self) {
+        self.run_inner(false)
+    }
+
+    fn run_inner(&mut self, root: bool) {
         let mut events = Vec::new();
 
         loop {
@@ -100,23 +112,44 @@ impl Environment {
                 match event {
                     window::Event::Quit => {
                         println!("User requested quit, exiting...");
-                        return;
+                        if root {
+                            return;
+                        } else {
+                            panic!("Quit.");
+                        }
                     }
                 }
             }
 
             let mut ticks = 100;
-            while ticks > 0 {
+            let mut early_exit = false;
+
+            while ticks > 0 && !early_exit {
                 let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     match self.cpu.run(&mut self.mem, &mut ticks) {
                         cpu::CpuState::Normal => (),
                         cpu::CpuState::Svc(svc) => {
-                            // the program counter is one instruction ahead
-                            let current_instruction = self.cpu.regs()[cpu::Cpu::PC] - 4;
+                            // the program counter is pointing at the
+                            // instruction after the SVC, but we want the
+                            // address of the SVC itself
+                            let svc_pc = self.cpu.regs()[cpu::Cpu::PC] - 4;
+                            if svc == syscall::Syscall::SVC_RETURN_TO_HOST {
+                                assert!(!root);
+                                assert!(
+                                    svc_pc
+                                        == self
+                                            .syscall
+                                            .return_to_host_routine()
+                                            .addr_without_thumb_bit()
+                                );
+                                early_exit = true;
+                                return;
+                            }
+
                             let f = self.syscall.get_svc_handler(
                                 &self.executable,
                                 &mut self.mem,
-                                current_instruction,
+                                svc_pc,
                                 svc,
                             );
                             f.call_from_guest(self);
@@ -132,7 +165,9 @@ impl Environment {
                     std::panic::resume_unwind(e);
                 }
             }
-            println!("{} ticks elapsed", ticks);
+            if !early_exit {
+                println!("{} ticks elapsed", ticks);
+            }
         }
     }
 }

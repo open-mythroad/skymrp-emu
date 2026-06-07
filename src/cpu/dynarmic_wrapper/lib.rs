@@ -12,6 +12,8 @@ unsafe extern "C" {
         cpu: *const skymrp_DynarmicWrapper,
     ) -> *const u32;
     pub unsafe fn skymrp_DynarmicWrapper_regs_mut(cpu: *mut skymrp_DynarmicWrapper) -> *mut u32;
+    pub unsafe fn skymrp_DynarmicWrapper_cpsr(cpu: *const skymrp_DynarmicWrapper) -> u32;
+    pub unsafe fn skymrp_DynarmicWrapper_set_cpsr(cpu: *mut skymrp_DynarmicWrapper, cpsr: u32);
     pub unsafe fn skymrp_DynarmicWrapper_run(
         cpu: *mut skymrp_DynarmicWrapper,
         mem: *mut skymrp_Memory,

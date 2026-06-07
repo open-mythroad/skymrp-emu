@@ -113,6 +113,9 @@ namespace skymrp::cpu
         const std::uint32_t *regs() const { return &cpu->Regs().front(); }
         std::uint32_t *regs() { return &cpu->Regs().front(); }
 
+        std::uint32_t cpsr() const { return cpu->Cpsr(); }
+        void set_cpsr(std::uint32_t cpsr) { cpu->SetCpsr(cpsr); }
+
         std::int32_t run(skymrp_Memory *mem, std::uint64_t *ticks)
         {
             env.mem = mem;
@@ -155,6 +158,16 @@ namespace skymrp::cpu
         std::uint32_t *skymrp_DynarmicWrapper_regs_mut(DynarmicWrapper *cpu)
         {
             return cpu->regs();
+        }
+
+        std::uint32_t skymrp_DynarmicWrapper_cpsr(const DynarmicWrapper *cpu)
+        {
+            return cpu->cpsr();
+        }
+        void skymrp_DynarmicWrapper_set_cpsr(DynarmicWrapper *cpu,
+                                             std::uint32_t cpsr)
+        {
+            cpu->set_cpsr(cpsr);
         }
 
         std::int32_t skymrp_DynarmicWrapper_run(DynarmicWrapper *cpu, skymrp_Memory *mem,

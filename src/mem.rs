@@ -19,6 +19,12 @@ pub type ConstPtr<T> = Ptr<T, false>;
 /// Mutable guest pointer type (like Rust's `*mut T`).
 pub type MutPtr<T> = Ptr<T, true>;
 
+#[allow(dead_code)]
+/// Constant guest pointer-to-void type (like C's `const void *`)
+pub type ConstVoidPtr = ConstPtr<std::ffi::c_void>;
+/// Mutable guest pointer-to-void type (like C's `void *`)
+pub type MutVoidPtr = MutPtr<std::ffi::c_void>;
+
 impl<T, const MUT: bool> Ptr<T, MUT> {
     pub fn to_bits(self) -> VAddr {
         self.0
@@ -29,6 +35,12 @@ impl<T, const MUT: bool> Ptr<T, MUT> {
 
     pub fn cast<U>(self) -> Ptr<U, MUT> {
         Ptr::<U, MUT>::from_bits(self.to_bits())
+    }
+}
+
+impl<T, const MUT: bool> std::fmt::Debug for Ptr<T, MUT> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#x}", self.to_bits())
     }
 }
 
@@ -134,6 +146,10 @@ impl Memory {
             Self::null_check_fail(ptr.to_bits(), count)
         }
         &mut self.bytes_mut()[ptr.to_bits() as usize..][..count as usize]
+    }
+
+    pub fn alloc(&mut self, size: GuestUSize) -> MutVoidPtr {
+        Ptr::from_bits(self.allocator.alloc(size))
     }
 
     pub fn read<T, const MUT: bool>(&self, ptr: Ptr<T, MUT>) -> T
