@@ -6,50 +6,64 @@ use skymrp_dynarmic_wrapper::*;
 
 type VAddr = u32;
 
-fn skymrp_cpu_read_impl<T: SafeRead>(mem: *mut skymrp_Memory, addr: VAddr) -> T {
-    let mem = unsafe { &mut *mem.cast::<Memory>() };
-    let ptr: ConstPtr<T> = Ptr::from_bits(addr);
-    mem.read(ptr)
+fn skymrp_cpu_read_impl<T: SafeRead + Default>(
+    mem: *mut skymrp_Memory,
+    addr: VAddr,
+    error: *mut bool,
+) -> T {
+    // TODO: Disable this in debug mode?
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mem = unsafe { &mut *mem.cast::<Memory>() };
+        let ptr: ConstPtr<T> = Ptr::from_bits(addr);
+        mem.read(ptr)
+    }));
+    unsafe {
+        error.write(res.is_err());
+    }
+    res.unwrap_or_default()
 }
 
-fn skymrp_cpu_write_impl<T: SafeWrite>(mem: *mut skymrp_Memory, addr: VAddr, value: T) {
-    let mem = unsafe { &mut *mem.cast::<Memory>() };
-    let ptr: MutPtr<T> = Ptr::from_bits(addr);
-    mem.write(ptr, value)
+fn skymrp_cpu_write_impl<T: SafeWrite>(mem: *mut skymrp_Memory, addr: VAddr, value: T) -> bool {
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mem = unsafe { &mut *mem.cast::<Memory>() };
+        let ptr: MutPtr<T> = Ptr::from_bits(addr);
+        mem.write(ptr, value)
+    }));
+    res.is_err()
 }
 
 // Export functions for use by C++
 #[no_mangle]
-extern "C" fn skymrp_cpu_read_u8(mem: *mut skymrp_Memory, addr: VAddr) -> u8 {
-    skymrp_cpu_read_impl(mem, addr)
+extern "C" fn skymrp_cpu_read_u8(mem: *mut skymrp_Memory, addr: VAddr, error: *mut bool) -> u8 {
+    skymrp_cpu_read_impl(mem, addr, error)
 }
 #[no_mangle]
-extern "C" fn skymrp_cpu_read_u16(mem: *mut skymrp_Memory, addr: VAddr) -> u16 {
-    skymrp_cpu_read_impl(mem, addr)
+extern "C" fn skymrp_cpu_read_u16(mem: *mut skymrp_Memory, addr: VAddr, error: *mut bool) -> u16 {
+    skymrp_cpu_read_impl(mem, addr, error)
 }
 #[no_mangle]
-extern "C" fn skymrp_cpu_read_u32(mem: *mut skymrp_Memory, addr: VAddr) -> u32 {
-    skymrp_cpu_read_impl(mem, addr)
+extern "C" fn skymrp_cpu_read_u32(mem: *mut skymrp_Memory, addr: VAddr, error: *mut bool) -> u32 {
+    skymrp_cpu_read_impl(mem, addr, error)
 }
 #[no_mangle]
-extern "C" fn skymrp_cpu_read_u64(mem: *mut skymrp_Memory, addr: VAddr) -> u64 {
-    skymrp_cpu_read_impl(mem, addr)
+extern "C" fn skymrp_cpu_read_u64(mem: *mut skymrp_Memory, addr: VAddr, error: *mut bool) -> u64 {
+    skymrp_cpu_read_impl(mem, addr, error)
 }
 #[no_mangle]
-extern "C" fn skymrp_cpu_write_u8(mem: *mut skymrp_Memory, addr: VAddr, value: u8) {
-    skymrp_cpu_write_impl(mem, addr, value);
+extern "C" fn skymrp_cpu_write_u8(mem: *mut skymrp_Memory, addr: VAddr, value: u8) -> bool {
+    skymrp_cpu_write_impl(mem, addr, value)
 }
 #[no_mangle]
-extern "C" fn skymrp_cpu_write_u16(mem: *mut skymrp_Memory, addr: VAddr, value: u16) {
-    skymrp_cpu_write_impl(mem, addr, value);
+extern "C" fn skymrp_cpu_write_u16(mem: *mut skymrp_Memory, addr: VAddr, value: u16) -> bool {
+    skymrp_cpu_write_impl(mem, addr, value)
 }
 #[no_mangle]
-extern "C" fn skymrp_cpu_write_u32(mem: *mut skymrp_Memory, addr: VAddr, value: u32) {
-    skymrp_cpu_write_impl(mem, addr, value);
+extern "C" fn skymrp_cpu_write_u32(mem: *mut skymrp_Memory, addr: VAddr, value: u32) -> bool {
+    skymrp_cpu_write_impl(mem, addr, value)
 }
 #[no_mangle]
-extern "C" fn skymrp_cpu_write_u64(mem: *mut skymrp_Memory, addr: VAddr, value: u64) {
-    skymrp_cpu_write_impl(mem, addr, value);
+extern "C" fn skymrp_cpu_write_u64(mem: *mut skymrp_Memory, addr: VAddr, value: u64) -> bool {
+    skymrp_cpu_write_impl(mem, addr, value)
 }
 
 pub struct Cpu {
@@ -151,6 +165,9 @@ impl Cpu {
                 -1 => {
                     assert!(*ticks == 0);
                     CpuState::Normal
+                }
+                -2 => {
+                    panic!("Memory error during CPU execution!");
                 }
                 _ if res < -1 => panic!("Unexpected CPU execution result"),
                 svc => CpuState::Svc(svc as u32),
