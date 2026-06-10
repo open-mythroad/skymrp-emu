@@ -106,7 +106,8 @@ impl Environment {
     fn run_inner(&mut self, root: bool) {
         let mut events = Vec::new();
 
-        loop {
+        let mut early_exit = false;
+        while !early_exit {
             self.window.poll_for_events(&mut events);
             for event in events.drain(..) {
                 match event {
@@ -122,7 +123,6 @@ impl Environment {
             }
 
             let mut ticks = 100;
-            let mut early_exit = false;
 
             while ticks > 0 && !early_exit {
                 let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
