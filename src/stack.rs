@@ -1,7 +1,7 @@
 use crate::cpu::Cpu;
 use crate::mem::{GuestUSize, Memory, MutPtr, Ptr};
 
-pub fn prep_stack_for_start(mem: &mut Memory, cpu: &mut Cpu) {
+pub fn prep_stack_for_start(_mem: &mut Memory, cpu: &mut Cpu) {
     let stack_base: usize = 1 << 32;
 
     let mut reversed_data = Vec::<u8>::new();

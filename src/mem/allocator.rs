@@ -124,9 +124,9 @@ impl Allocator {
     }
 
     pub fn alloc(&mut self, size: GuestUSize) -> VAddr {
-        let size = size.max(16);
-        let size = if size % 16 != 0 {
-            size + 16 - (size % 16)
+        let size = size.max(8);
+        let size = if size % 8 != 0 {
+            size + 8 - (size % 8)
         } else {
             size
         };
@@ -142,5 +142,16 @@ impl Allocator {
         self.unused_chunks.push(rump);
 
         alloc.base
+    }
+
+    #[must_use]
+    pub fn free(&mut self, base: VAddr) -> GuestUSize {
+        let Some(idx) = self.used_chunks.iter().position(|chunk| chunk.base == base) else {
+            panic!("Can't free {:#x}, unknown allocation!", base);
+        };
+        let chunk = self.used_chunks.remove(idx);
+        let size = chunk.size.get();
+        self.unused_chunks.push(chunk);
+        size
     }
 }

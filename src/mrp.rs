@@ -1,21 +1,14 @@
 use crate::gzip;
-use crate::mem::{Memory, Ptr};
 use std::path::Path;
 
 pub const START_FILE_NAME: &str = "cfunction.ext";
-
-pub const CODE_BASE_ADDR: u32 = 0x0008_0000;
-pub const ENTRY_OFFSET: u32 = 8;
-pub const MR_C_FUNCTION_TABLE_ADDR: u32 = 0x1000;
-
 const MRP_MAGIC: &[u8; 4] = b"MRPG";
 const MRP_HEADER_SIZE: usize = 16;
 
 #[derive(Debug)]
 pub struct Mrp {
     pub data: Vec<u8>,
-    pub entry_point_pc: Option<u32>,
-    pub mr_c_function_table_addr: u32,
+    pub file_name: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -55,44 +48,24 @@ impl MrpHeader {
 }
 
 impl Mrp {
-    pub fn load_from_file<P: AsRef<Path>>(path: P, into_mem: &mut Memory) -> Result<Mrp, String> {
+    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Mrp, String> {
+        let path = path.as_ref();
         let bytes = std::fs::read(path).map_err(|_| "Could not read MRP file")?;
-        Self::load_from_bytes(&bytes, into_mem)
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| format!("Invalid MRP file name: {}", path.display()))?
+            .to_string();
+
+        Self::load_from_bytes(&bytes, file_name)
     }
 
-    pub fn load_from_bytes(bytes: &[u8], into_mem: &mut Memory) -> Result<Mrp, String> {
+    pub fn load_from_bytes(bytes: &[u8], file_name: String) -> Result<Mrp, String> {
         let data = bytes.to_vec();
 
-        let cfunction_ext = read_file(&data, START_FILE_NAME)?;
+        MrpHeader::parse(&data)?;
 
-        let file_size = u32::try_from(cfunction_ext.len())
-            .map_err(|_| format!("{START_FILE_NAME} is too large"))?;
-
-        let entry_point_pc = CODE_BASE_ADDR
-            .checked_add(ENTRY_OFFSET)
-            .ok_or_else(|| "MRP entry point PC overflow".to_string())?;
-
-        let code_end = CODE_BASE_ADDR
-            .checked_add(file_size)
-            .ok_or_else(|| "MRP code range overflow".to_string())?;
-
-        if entry_point_pc >= code_end {
-            return Err(format!(
-                "MRP entry point PC is outside loaded code: pc=0x{entry_point_pc:08x}"
-            ));
-        }
-
-        into_mem.reserve(CODE_BASE_ADDR, file_size);
-        {
-            let dst = into_mem.bytes_at_mut(Ptr::<u8, true>::from_bits(CODE_BASE_ADDR), file_size);
-            dst.copy_from_slice(&cfunction_ext);
-        }
-
-        Ok(Mrp {
-            data,
-            entry_point_pc: Some(entry_point_pc),
-            mr_c_function_table_addr: MR_C_FUNCTION_TABLE_ADDR,
-        })
+        Ok(Mrp { data, file_name })
     }
 }
 

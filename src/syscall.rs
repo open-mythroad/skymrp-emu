@@ -1,23 +1,43 @@
 use crate::abi::{CallFromGuest, GuestFunction};
-use crate::mem::{GuestUSize, Memory, MutPtr, Ptr};
+use crate::mem::{Memory, MutPtr};
 use crate::mrp::Mrp;
+use crate::mythroad::Mythroad;
 
 type HostFunction = &'static dyn CallFromGuest;
+type HostData = fn(&Mythroad) -> u32;
 
 #[derive(Clone, Copy)]
 pub enum Export {
     Func(HostFunction),
-    Data(GuestUSize),
-    Reserved,
+    Data(HostData),
 }
 
 pub type FunctionExports = &'static [Export];
 
 const FUNCTION_TABLE: FunctionExports = crate::mythroad::MR_C_FUNCTION_TABLE;
 
+#[macro_export]
+macro_rules! export_c_func {
+    ($name:ident ($($_:ty),*)) => {
+        (
+            &($name as fn(&mut $crate::Environment, $($_),*) -> _)
+        )
+    };
+}
+pub use crate::export_c_func;
+
+#[macro_export]
+macro_rules! export_c_data {
+    ($($field:ident).+) => {
+        |mythroad: &$crate::mythroad::Mythroad| mythroad.$($field).+.to_bits()
+    };
+}
+pub use crate::export_c_data;
+
 pub struct Syscall {
     host_functions: Vec<HostFunction>,
     return_to_host_routine: Option<GuestFunction>,
+    function_table: Option<MutPtr<u32>>,
 }
 
 fn encode_a32_svc(imm: u32) -> u32 {
@@ -39,6 +59,7 @@ impl Syscall {
         Syscall {
             host_functions: Vec::new(),
             return_to_host_routine: None,
+            function_table: None,
         }
     }
 
@@ -46,7 +67,11 @@ impl Syscall {
         self.return_to_host_routine.unwrap()
     }
 
-    pub fn setup_stubs(&mut self, bin: &Mrp, mem: &mut Memory) {
+    pub fn function_table_ptr(&self) -> MutPtr<u32> {
+        self.function_table.expect("Function table not initialized")
+    }
+
+    pub fn setup_stubs(&mut self, _bin: &Mrp, mem: &mut Memory, mythroad: &Mythroad) {
         assert!(self.return_to_host_routine.is_none());
         self.return_to_host_routine = {
             let routine = [encode_a32_svc(Self::SVC_RETURN_TO_HOST), encode_a32_trap()];
@@ -57,9 +82,6 @@ impl Syscall {
             assert!(!ptr.is_thumb());
             Some(ptr)
         };
-
-        let entry_point_pc = bin.entry_point_pc.unwrap();
-
         let export_count = FUNCTION_TABLE.len() as u32;
         let func_count = FUNCTION_TABLE
             .iter()
@@ -67,15 +89,9 @@ impl Syscall {
             .count() as u32;
         let table_size = export_count * 4;
         let stub_size = func_count * 8;
-        mem.reserve(bin.mr_c_function_table_addr, table_size + stub_size);
 
-        // Store the mr_c_function_table address in the entry header.
-        mem.write(
-            Ptr::from_bits(entry_point_pc - 8),
-            bin.mr_c_function_table_addr,
-        );
-
-        let table_base_ptr: MutPtr<u32> = Ptr::from_bits(bin.mr_c_function_table_addr);
+        let table_base_ptr: MutPtr<u32> = mem.alloc(table_size + stub_size).cast();
+        self.function_table = Some(table_base_ptr);
         let stub_base_ptr: MutPtr<u32> = table_base_ptr + export_count;
 
         let mut stub_index = 0u32;
@@ -98,13 +114,7 @@ impl Syscall {
                     stub_index += 1;
                 }
 
-                Export::Data(value) => {
-                    mem.write(table_entry_ptr, value);
-                }
-
-                Export::Reserved => {
-                    mem.write(table_entry_ptr, 0);
-                }
+                Export::Data(resolve) => mem.write(table_entry_ptr, resolve(mythroad)),
             }
         }
     }
@@ -113,8 +123,8 @@ impl Syscall {
     /// encountered during CPU emulation.
     pub fn get_svc_handler(
         &mut self,
-        bin: &Mrp,
-        mem: &mut Memory,
+        _bin: &Mrp,
+        _mem: &mut Memory,
         svc_pc: u32,
         svc: u32,
     ) -> HostFunction {
