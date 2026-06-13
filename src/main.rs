@@ -1,3 +1,5 @@
+#[macro_use]
+mod log;
 mod abi;
 mod cpu;
 mod dsm;
@@ -28,18 +30,18 @@ fn main() -> Result<(), String> {
     let mut mrp_path: Option<PathBuf> = None;
     for arg in args {
         if arg == "--help" {
-            println!("{}", USAGE);
+            log_dbg!("{}", USAGE);
             return Ok(());
         } else if mrp_path.is_none() {
             mrp_path = Some(PathBuf::from(arg));
         } else {
-            eprintln!("{}", USAGE);
+            log!("{}", USAGE);
             return Err(format!("Unexpected arguments: {:?}", arg));
         }
     }
 
     let Some(mrp_path) = mrp_path else {
-        eprintln!("{}", USAGE);
+        log!("{}", USAGE);
         return Err("Path to mrp must be specified".to_string());
     };
 
@@ -77,7 +79,7 @@ impl Environment {
         stack::prep_stack_for_start(&mut mem, &mut cpu);
         let libc_state = Default::default();
 
-        println!("CPU emulation begins now.");
+        log_dbg!("CPU emulation begins now.");
 
         cpu.set_cpsr(cpu::Cpu::CPSR_USER_MODE);
 
@@ -96,13 +98,13 @@ impl Environment {
     fn run(&mut self) {
         let entry = format!("%{}", self.executable.file_name);
         if dsm::mr_start_dsm_c(self, Some(&entry)) != mythroad::MrResult::Success.to_bits() {
-            eprintln!("Mythroad: mr_start_dsmC failed");
+            log!("Mythroad: mr_start_dsmC failed");
             return;
         }
 
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.run_inner(true)));
         if let Err(e) = res {
-            eprintln!(
+            log!(
                 "Panic at PC {:#x}, LR {:#x}",
                 self.cpu.regs()[cpu::Cpu::PC],
                 self.cpu.regs()[cpu::Cpu::LR]
@@ -123,7 +125,7 @@ impl Environment {
             for event in events.drain(..) {
                 match event {
                     window::Event::Quit => {
-                        println!("User requested quit, exiting...");
+                        log_dbg!("User requested quit, exiting...");
                         if root {
                             return;
                         } else {

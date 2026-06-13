@@ -314,7 +314,7 @@ fn write_u32_table(mem: &mut Memory, values: &[u32]) -> MutPtr<u32> {
 }
 
 pub(crate) fn mr_malloc(env: &mut Environment, len: u32) -> MutVoidPtr {
-    println!(
+    log_dbg!(
         "Mythroad: mr_malloc(len={len}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
@@ -323,7 +323,7 @@ pub(crate) fn mr_malloc(env: &mut Environment, len: u32) -> MutVoidPtr {
 }
 
 pub(crate) fn mr_free(env: &mut Environment, p: MutVoidPtr, len: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_free(p={:#x}, len={len}) called from {:#x}",
         p.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -337,7 +337,7 @@ pub(crate) fn mr_realloc(
     oldlen: u32,
     len: u32,
 ) -> MutVoidPtr {
-    println!(
+    log_dbg!(
         "Mythroad: mr_realloc(p={:#x}, oldlen={oldlen:#x}, len={len:#x}) called from {:#x}",
         p.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -360,7 +360,7 @@ pub(crate) fn mr_realloc(
 }
 
 fn mr_memcpy(env: &mut Environment, dst: MutVoidPtr, src: ConstVoidPtr, n: u32) -> MutVoidPtr {
-    println!(
+    log_dbg!(
         "Mythroad: mr_memcpy(dst={:#x}, src={:#x}, n={n}) called from {:#x}",
         dst.to_bits(),
         src.to_bits(),
@@ -371,7 +371,7 @@ fn mr_memcpy(env: &mut Environment, dst: MutVoidPtr, src: ConstVoidPtr, n: u32) 
 }
 
 fn mr_memmove(env: &mut Environment, dst: MutVoidPtr, src: ConstVoidPtr, n: u32) -> MutVoidPtr {
-    println!(
+    log_dbg!(
         "Mythroad: mr_memmove(dst={:#x}, src={:#x}, n={n}) called from {:#x}",
         dst.to_bits(),
         src.to_bits(),
@@ -382,7 +382,7 @@ fn mr_memmove(env: &mut Environment, dst: MutVoidPtr, src: ConstVoidPtr, n: u32)
 }
 
 fn mr_strcpy(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>) -> MutPtr<u8> {
-    println!(
+    log_dbg!(
         "Mythroad: mr_strcpy(dst={:#x}, src={:#x}) called from {:#x}",
         dst.to_bits(),
         src.to_bits(),
@@ -393,7 +393,7 @@ fn mr_strcpy(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>) -> MutPt
 }
 
 fn mr_strncpy(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>, n: u32) -> MutPtr<u8> {
-    println!(
+    log_dbg!(
         "Mythroad: mr_strncpy(dst={:#x}, src={:#x}, n={n}) called from {:#x}",
         dst.to_bits(),
         src.to_bits(),
@@ -404,7 +404,7 @@ fn mr_strncpy(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>, n: u32)
 }
 
 fn mr_strcat(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>) -> MutPtr<u8> {
-    println!(
+    log_dbg!(
         "Mythroad: mr_strcat(dst={:#x}, src={:#x}) called from {:#x}",
         dst.to_bits(),
         src.to_bits(),
@@ -415,7 +415,7 @@ fn mr_strcat(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>) -> MutPt
 }
 
 fn mr_strncat(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>, n: u32) -> MutPtr<u8> {
-    println!(
+    log_dbg!(
         "Mythroad: mr_strncat(dst={:#x}, src={:#x}, n={n}) called from {:#x}",
         dst.to_bits(),
         src.to_bits(),
@@ -426,7 +426,7 @@ fn mr_strncat(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>, n: u32)
 }
 
 fn mr_memcmp(env: &mut Environment, s1: ConstVoidPtr, s2: ConstVoidPtr, n: u32) -> i32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_memcmp(s1={:#x}, s2={:#x}, n={n}) called from {:#x}",
         s1.to_bits(),
         s2.to_bits(),
@@ -437,7 +437,7 @@ fn mr_memcmp(env: &mut Environment, s1: ConstVoidPtr, s2: ConstVoidPtr, n: u32) 
 }
 
 fn mr_strcmp(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>) -> i32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_strcmp(s1={:#x}, s2={:#x}) called from {:#x}",
         s1.to_bits(),
         s2.to_bits(),
@@ -448,7 +448,7 @@ fn mr_strcmp(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>) -> i32 {
 }
 
 fn mr_strncmp(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>, n: u32) -> i32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_strncmp(s1={:#x}, s2={:#x}, n={n}) called from {:#x}",
         s1.to_bits(),
         s2.to_bits(),
@@ -459,7 +459,7 @@ fn mr_strncmp(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>, n: u32)
 }
 
 fn mr_strcoll(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>) -> i32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_strcoll(s1={:#x}, s2={:#x}) called from {:#x}",
         s1.to_bits(),
         s2.to_bits(),
@@ -470,7 +470,7 @@ fn mr_strcoll(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>) -> i32 
 }
 
 fn mr_memchr(env: &mut Environment, s: ConstVoidPtr, ch: u32, n: u32) -> ConstVoidPtr {
-    println!(
+    log_dbg!(
         "Mythroad: mr_memchr(s={:#x}, ch={ch:#x}, n={n}) called from {:#x}",
         s.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -480,7 +480,7 @@ fn mr_memchr(env: &mut Environment, s: ConstVoidPtr, ch: u32, n: u32) -> ConstVo
 }
 
 fn mr_memset(env: &mut Environment, dst: MutVoidPtr, ch: u32, n: u32) -> MutVoidPtr {
-    println!(
+    log_dbg!(
         "Mythroad: mr_memset(s={:#x}, ch={ch}, n={n}) called from {:#x}",
         dst.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -489,7 +489,7 @@ fn mr_memset(env: &mut Environment, dst: MutVoidPtr, ch: u32, n: u32) -> MutVoid
 }
 
 fn mr_strlen(env: &mut Environment, str: ConstPtr<u8>) -> u32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_strlen(str={:#x}) called from {:#x}",
         str.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -499,7 +499,7 @@ fn mr_strlen(env: &mut Environment, str: ConstPtr<u8>) -> u32 {
 }
 
 fn mr_strstr(env: &mut Environment, haystack: ConstPtr<u8>, needle: ConstPtr<u8>) -> ConstPtr<u8> {
-    println!(
+    log_dbg!(
         "Mythroad: mr_strstr(haystack={:#x}, needle={:#x}) called from {:#x}",
         haystack.to_bits(),
         needle.to_bits(),
@@ -510,7 +510,7 @@ fn mr_strstr(env: &mut Environment, haystack: ConstPtr<u8>, needle: ConstPtr<u8>
 }
 
 fn mr_sprintf(env: &mut Environment, buf: MutPtr<u8>, fmt: ConstPtr<u8>, args: VAList) -> i32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_sprintf(buf={:#x}, fmt={:#x}) called from {:#x}",
         buf.to_bits(),
         fmt.to_bits(),
@@ -521,7 +521,7 @@ fn mr_sprintf(env: &mut Environment, buf: MutPtr<u8>, fmt: ConstPtr<u8>, args: V
 }
 
 fn mr_atoi(env: &mut Environment, s: ConstPtr<u8>) -> i32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_atoi(s={:#x}) called from {:#x}",
         s.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -536,7 +536,7 @@ fn mr_strtoul(
     endptr: MutPtr<MutPtr<u8>>,
     base: i32,
 ) -> u32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_strtoul(nptr={:#x}, endptr={:#x}, base={base}) called from {:#x}",
         nptr.to_bits(),
         endptr.to_bits(),
@@ -547,7 +547,7 @@ fn mr_strtoul(
 }
 
 fn mr_rand(env: &mut Environment) -> i32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_rand() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
@@ -555,14 +555,14 @@ fn mr_rand(env: &mut Environment) -> i32 {
 }
 
 fn mr_stop_ex(env: &mut Environment) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_stop_ex() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_c_function_new(env: &mut Environment, func: GuestFunction, len: u32) -> u32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_c_function_new(func={:#010x}, len={len}) called from {:#x}",
         func.addr_with_thumb_bit(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -607,7 +607,7 @@ fn mr_c_function_new(env: &mut Environment, func: GuestFunction, len: u32) -> u3
 }
 
 fn mr_printf(env: &mut Environment, format: ConstPtr<u8>, args: VAList) -> i32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_printf(format={:#x}) called from {:#x}",
         format.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -617,609 +617,609 @@ fn mr_printf(env: &mut Environment, format: ConstPtr<u8>, args: VAList) -> i32 {
 }
 
 fn mr_mem_get(env: &mut Environment, mem_base: u32, mem_len: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_mem_get(mem_base={mem_base:#x}, mem_len={mem_len:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_mem_free(env: &mut Environment, mem: u32, len: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_mem_free(mem={mem:#x}, len={len:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_draw_bitmap(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_drawBitmap(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_get_char_bitmap(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_getCharBitmap(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_timer_start(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_timerStart(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_timer_stop(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_timerStop(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_get_time(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_getTime(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_get_datetime(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_getDatetime(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_get_user_info(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_getUserInfo(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_sleep(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_sleep(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_plat(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_plat(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_plat_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_platEx(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_ferrno(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_ferrno(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_open(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_open(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_close(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_close(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_info(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_info(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_write(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_write(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_read(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_read(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_seek(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_seek(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_get_len(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_getLen(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_remove(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_remove(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_rename(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_rename(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_mk_dir(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_mkDir(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_rm_dir(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_rmDir(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_find_start(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_findStart(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_find_get_next(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_findGetNext(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_find_stop(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_findStop(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_exit(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_exit(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_start_shake(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_startShake(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_stop_shake(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_stopShake(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_play_sound(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_playSound(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_stop_sound(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_stopSound(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_send_sms(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_sendSms(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_call(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_call(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_get_network_id(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_getNetworkID(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_connect_wap(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_connectWAP(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_menu_create(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_menuCreate(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_menu_set_item(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_menuSetItem(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_menu_show(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_menuShow(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_menu_set_focus(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_menuSetFocus(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_menu_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_menuRelease(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_menu_refresh(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_menuRefresh(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_dialog_create(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_dialogCreate(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_dialog_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_dialogRelease(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_dialog_refresh(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_dialogRefresh(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_text_create(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_textCreate(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_text_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_textRelease(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_text_refresh(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_textRefresh(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_edit_create(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_editCreate(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_edit_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_editRelease(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_edit_get_text(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_editGetText(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_win_create(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_winCreate(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_win_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_winRelease(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_get_screen_info(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_getScreenInfo(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_init_network(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_initNetwork(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_close_network(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_closeNetwork(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_get_host_by_name(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_getHostByName(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_socket(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_socket(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_connect(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_connect(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_close_socket(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_closeSocket(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_recv(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_recv(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_recvfrom(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_recvfrom(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_send(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_send(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_sendto(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_sendto(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_bitmap(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_bitmap(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_tile(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_tile(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_map(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_map(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_sound(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_sound(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_sprite(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_sprite(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_md5_init(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_md5_init(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_md5_append(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_md5_append(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_md5_finish(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_md5_finish(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_load_sms_cfg(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _mr_load_sms_cfg(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_save_sms_cfg(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _mr_save_sms_cfg(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn disp_up_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _DispUpEx(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn draw_point(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _DrawPoint(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn draw_bitmap(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _DrawBitmap(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn draw_bitmap_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _DrawBitmapEx(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn draw_rect(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: DrawRect(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn draw_text(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _DrawText(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn bitmap_check(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _BitmapCheck(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_read_file(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _mr_readFile(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_wstrlen(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_wstrlen(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_register_app(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_registerAPP(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn draw_text_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _DrawTextEx(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_eff_set_con(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _mr_EffSetCon(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_test_com(env: &mut Environment, l: u32, input0: u32, input1: u32) -> u32 {
-    println!(
+    log_dbg!(
         "Mythroad: _mr_TestCom(L={l}, input0={input0}, input1={input1}) called from {:#x}",
         env.cpu.regs()[Cpu::PC]
     );
@@ -1227,70 +1227,70 @@ fn mr_test_com(env: &mut Environment, l: u32, input0: u32, input1: u32) -> u32 {
 }
 
 fn mr_test_com1(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _mr_TestCom1(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn c2u(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: c2u(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_div(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _mr_div(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_mod(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: _mr_mod(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_updcrc(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_updcrc(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_unzip(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_unzip(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_entry(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_entry(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_plat_draw_char(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_platDrawChar(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_transbitmap_draw(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_transbitmapDraw(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
 fn mr_draw_region(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    println!(
+    log_dbg!(
         "Mythroad: mr_drawRegion(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );

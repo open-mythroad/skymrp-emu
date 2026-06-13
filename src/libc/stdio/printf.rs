@@ -4,7 +4,7 @@ use crate::Environment;
 use std::io::Write;
 
 fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VAList) -> Vec<u8> {
-    println!(
+    log_dbg!(
         "Processing format string {:?}",
         env.mem.cstr_at_utf8(format)
     );
@@ -73,7 +73,7 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VAList) -
         }
     }
 
-    println!("=> {:?}", std::str::from_utf8(&res));
+    log_dbg!("=> {:?}", std::str::from_utf8(&res));
 
     res
 }
@@ -86,7 +86,7 @@ pub(crate) fn sprintf(
 ) -> i32 {
     let res = printf_inner(env, format, args);
 
-    println!("sprintf({:?}, {:?}, ...)", dest, format);
+    log_dbg!("sprintf({:?}, {:?}, ...)", dest, format);
 
     let dest_slice = env
         .mem

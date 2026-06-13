@@ -219,7 +219,7 @@ where
     }();
 
     let s = std::str::from_utf8(&chars).unwrap();
-    println!("strtol_inner_generic('{}', {})", s, base);
+    log_dbg!("strtol_inner_generic('{}', {})", s, base);
 
     assert!((2..=36).contains(&base));
     let magnitude_len = len - prefix_length;

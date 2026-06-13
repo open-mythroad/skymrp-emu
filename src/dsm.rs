@@ -45,7 +45,7 @@ pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> u32 {
         128,
     );
 
-    println!(
+    log_dbg!(
         "Mythroad: mr_start_dsmC(entry={entry:?}, pack_filename={})",
         pack_filename
     );
@@ -140,12 +140,12 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
             old
         }
         0x194 => {
-            println!("Mythroad: _mr_TestCom got unknown param: code={input0}");
+            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: _mr_newSIMInd((int16)input1, NULL);
             MrResult::Success.to_bits()
         }
         0x195 => {
-            println!("Mythroad: _mr_TestCom got unknown param: code={input0}");
+            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: ret = mr_closeNetwork();
             MrResult::Success.to_bits()
         }
@@ -159,28 +159,28 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
             old
         }
         0x197 => {
-            println!("Mythroad: _mr_TestCom got unknown param: code={input0}");
+            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: mr_timer_run_without_pause = (void *)input1;
             // TODO: mr_plat(1202, input1);
             MrResult::Success.to_bits()
         }
         0x198 => {
-            println!("Mythroad: _mr_TestCom got unknown param: code={input0}");
+            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: implement this branch.
             MrResult::Success.to_bits()
         }
         0x1f4 => {
-            println!("Mythroad: _mr_TestCom got unknown param: code={input0}");
+            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: ret = _mr_load_sms_cfg();
             MrResult::Success.to_bits()
         }
         0x1f7 => {
-            println!("Mythroad: _mr_TestCom got unknown param: code={input0}");
+            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: _mr_smsGetBytes(5, &dst, 1); ret = dst;
             MrResult::Success.to_bits()
         }
         0x1f8 => {
-            println!("Mythroad: _mr_TestCom got unknown param: code={input0}");
+            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: ret = _mr_save_sms_cfg(input1);
             MrResult::Success.to_bits()
         }
@@ -203,7 +203,7 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
             MrResult::Success.to_bits()
         }
         _ => {
-            println!("Mythroad: _mr_TestCom got unknown param: code={input0}");
+            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             MrResult::Ignored.to_bits()
         }
     }
@@ -217,7 +217,7 @@ fn mr_get_time() -> u32 {
 }
 
 fn mr_start_shake(_env: &mut Environment, ms: u32) -> u32 {
-    println!("Mythroad: mr_startShake(ms={ms})");
+    log_dbg!("Mythroad: mr_startShake(ms={ms})");
     MrResult::Success.to_bits()
 }
 
@@ -254,7 +254,7 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
         .mr_state
         .set(&mut env.mem, MrRunState::Run.to_bits());
 
-    println!("Mythroad: mr_intra_start(filename={start_file_name}, entry={entry})");
+    log_dbg!("Mythroad: mr_intra_start(filename={start_file_name}, entry={entry})");
 
     let mut ret = mr_do_ext(env, start_file_name);
     if ret != MrResult::Success.to_bits() {
@@ -273,7 +273,7 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
 }
 
 fn mr_do_ext(env: &mut Environment, filename: &str) -> u32 {
-    println!("Mythroad: mr_doExt(filename={filename})");
+    log_dbg!("Mythroad: mr_doExt(filename={filename})");
 
     match mr_read_file(env, filename, false) {
         Some(ext_data) if !ext_data.is_empty() => {
@@ -300,14 +300,14 @@ fn mr_do_ext(env: &mut Environment, filename: &str) -> u32 {
             MrResult::Success.to_bits()
         }
         _ => {
-            println!("Mythroad: mr_doExt failed: {filename}");
+            log_dbg!("Mythroad: mr_doExt failed: {filename}");
             MrResult::Failed.to_bits()
         }
     }
 }
 
 fn mr_read_file(env: &mut Environment, filename: &str, lookfor: bool) -> Option<Vec<u8>> {
-    println!("Mythroad: mr_readFile(filename={filename}, lookfor={lookfor})");
+    log_dbg!("Mythroad: mr_readFile(filename={filename}, lookfor={lookfor})");
 
     if lookfor {
         return mrp::read_file(&env.executable.data, filename)
@@ -318,13 +318,13 @@ fn mr_read_file(env: &mut Environment, filename: &str, lookfor: bool) -> Option<
     let data = match mrp::read_file(&env.executable.data, filename) {
         Ok(data) => data,
         Err(err) => {
-            println!("Mythroad: mr_readFile failed: {err}");
+            log_dbg!("Mythroad: mr_readFile failed: {err}");
             return None;
         }
     };
 
     if data.len() > MR_READ_MAX_LEN {
-        println!(
+        log_dbg!(
             "Mythroad: read_mrp_file failed: {filename} is too large ({})",
             data.len()
         );
@@ -335,7 +335,7 @@ fn mr_read_file(env: &mut Environment, filename: &str, lookfor: bool) -> Option<
 }
 
 fn mr_test_com_c(env: &mut Environment, kind: u32, input: MutVoidPtr, len: u32, code: u32) -> u32 {
-    println!(
+    log_dbg!(
         "Mythroad: mr_testComC(type={kind}, input={:#x}, len={len}, code={code})",
         input.to_bits()
     );
