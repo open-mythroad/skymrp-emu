@@ -1,5 +1,5 @@
+use crate::fs::{Fs, GuestPath};
 use crate::gzip;
-use std::path::Path;
 
 pub const START_FILE_NAME: &str = "cfunction.ext";
 const MRP_MAGIC: &[u8; 4] = b"MRPG";
@@ -48,16 +48,14 @@ impl MrpHeader {
 }
 
 impl Mrp {
-    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Mrp, String> {
-        let path = path.as_ref();
-        let bytes = std::fs::read(path).map_err(|_| "Could not read MRP file")?;
-        let file_name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| format!("Invalid MRP file name: {}", path.display()))?
-            .to_string();
+    pub fn load_from_file<P: AsRef<GuestPath>>(path: P, fs: &Fs) -> Result<Mrp, String> {
+        let name = path.as_ref().file_name().unwrap().to_string();
 
-        Self::load_from_bytes(&bytes, file_name)
+        Self::load_from_bytes(
+            &fs.read(path.as_ref())
+                .map_err(|_| "Could not read executable file")?,
+            name,
+        )
     }
 
     pub fn load_from_bytes(bytes: &[u8], file_name: String) -> Result<Mrp, String> {

@@ -3,6 +3,7 @@ mod log;
 mod abi;
 mod cpu;
 mod dsm;
+mod fs;
 mod gzip;
 mod libc;
 mod mem;
@@ -54,6 +55,7 @@ fn main() -> Result<(), String> {
 pub struct Environment {
     window: window::Window,
     mem: mem::Memory,
+    fs: fs::Fs,
     executable: mrp::Mrp,
     syscall: syscall::Syscall,
     cpu: cpu::Cpu,
@@ -68,7 +70,8 @@ impl Environment {
 
         let mut mem = mem::Memory::new();
 
-        let executable = mrp::Mrp::load_from_file(mrp_path)
+        let (fs, guest_path) = fs::Fs::new(mrp_path.as_path());
+        let executable = mrp::Mrp::load_from_file(guest_path, &fs)
             .map_err(|e| format!("Could not load MRP file: {}", e))?;
 
         let mut syscall = syscall::Syscall::new();
@@ -86,6 +89,7 @@ impl Environment {
         Ok(Environment {
             window,
             mem,
+            fs,
             executable,
             syscall,
             cpu,
