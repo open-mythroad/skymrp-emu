@@ -1,9 +1,9 @@
-use crate::abi::VAList;
+use crate::abi::{DotDotDot, VaList};
 use crate::mem::{ConstPtr, MutPtr};
 use crate::Environment;
 use std::io::Write;
 
-fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VAList) -> Vec<u8> {
+fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -> Vec<u8> {
     log_dbg!(
         "Processing format string {:?}",
         env.mem.cstr_at_utf8(format)
@@ -82,9 +82,9 @@ pub(crate) fn sprintf(
     env: &mut Environment,
     dest: MutPtr<u8>,
     format: ConstPtr<u8>,
-    args: VAList,
+    args: DotDotDot,
 ) -> i32 {
-    let res = printf_inner(env, format, args);
+    let res = printf_inner(env, format, args.start());
 
     log_dbg!("sprintf({:?}, {:?}, ...)", dest, format);
 
@@ -98,8 +98,8 @@ pub(crate) fn sprintf(
     res.len().try_into().unwrap()
 }
 
-pub(crate) fn printf(env: &mut Environment, format: ConstPtr<u8>, args: VAList) -> i32 {
-    let res = printf_inner(env, format, args);
+pub(crate) fn printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
+    let res = printf_inner(env, format, args.start());
     // TODO: I/O error handling
     let _ = std::io::stdout().write_all(&res);
     res.len().try_into().unwrap()

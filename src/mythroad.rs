@@ -1,4 +1,4 @@
-use crate::abi::{GuestFunction, VAList};
+use crate::abi::{DotDotDot, GuestFunction};
 use crate::cpu::Cpu;
 use crate::dsm;
 use crate::libc;
@@ -509,7 +509,7 @@ fn mr_strstr(env: &mut Environment, haystack: ConstPtr<u8>, needle: ConstPtr<u8>
     libc::string::strstr(env, haystack, needle)
 }
 
-fn mr_sprintf(env: &mut Environment, buf: MutPtr<u8>, fmt: ConstPtr<u8>, args: VAList) -> i32 {
+fn mr_sprintf(env: &mut Environment, buf: MutPtr<u8>, fmt: ConstPtr<u8>, args: DotDotDot) -> i32 {
     log_dbg!(
         "Mythroad: mr_sprintf(buf={:#x}, fmt={:#x}) called from {:#x}",
         buf.to_bits(),
@@ -606,7 +606,7 @@ fn mr_c_function_new(env: &mut Environment, func: GuestFunction, len: u32) -> u3
     MrResult::Success.to_bits()
 }
 
-fn mr_printf(env: &mut Environment, format: ConstPtr<u8>, args: VAList) -> i32 {
+fn mr_printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
     log_dbg!(
         "Mythroad: mr_printf(format={:#x}) called from {:#x}",
         format.to_bits(),

@@ -55,28 +55,32 @@ macro_rules! impl_CallFromGuest {
             // ignore warnings for the zero-argument case
             #[allow(unused_variables, unused_mut, clippy::unused_unit)]
             fn call_from_guest(&self, env: &mut Environment) {
+                let regs = env.cpu.regs();
+                let mut reg_offset = 0;
                 let args: ($($P,)*) = {
-                    let regs = env.cpu.regs();
-                    let mut reg_offset = 0;
-                    ($(read_next_arg::<$P>(&mut reg_offset, regs, &env.mem),)*)
+                    ($(read_next_arg::<$P>(&mut reg_offset, regs, Ptr::from_bits(regs[Cpu::SP]), &env.mem),)*)
                 };
+                log_dbg!("CallFromGuest {:?}", args);
                 let retval = self(env, $(args.$p),*);
+                log_dbg!("CallFromGuest => {:?}", retval);
                 retval.to_regs(env.cpu.regs_mut());
             }
         }
 
-        impl<R, $($P),*> CallFromGuest for fn(&mut Environment, $($P,)* VAList) -> R
+        impl<R, $($P),*> CallFromGuest for fn(&mut Environment, $($P,)* DotDotDot) -> R
             where R: GuestRet, $($P: GuestArg,)* {
             // ignore warnings for the zero-argument case
             #[allow(unused_variables, unused_mut, clippy::unused_unit)]
             fn call_from_guest(&self, env: &mut Environment) {
                 let mut reg_offset = 0;
+                let regs = env.cpu.regs();
                 let args: ($($P,)*) = {
-                    let regs = env.cpu.regs();
-                    ($(read_next_arg::<$P>(&mut reg_offset, regs, &env.mem),)*)
+                    ($(read_next_arg::<$P>(&mut reg_offset, regs, Ptr::from_bits(regs[Cpu::SP]), &env.mem),)*)
                 };
-                let va_list = VAList { reg_offset };
+                let va_list = DotDotDot(VaList { reg_offset, stack_pointer: Ptr::from_bits(regs[Cpu::SP]) });
+                log_dbg!("CallFromGuest {:?}, ...{:?}", args, va_list);
                 let retval = self(env, $(args.$p,)* va_list);
+                log_dbg!("CallFromGuest => {:?}", retval);
                 retval.to_regs(env.cpu.regs_mut());
             }
         }
@@ -145,7 +149,7 @@ impl_CallFromHost!(0 => P0, 1 => P1, 2 => P2);
 impl_CallFromHost!(0 => P0, 1 => P1, 2 => P2, 3 => P3);
 
 /// Calling convention translation for a function argument type.
-pub trait GuestArg: Sized {
+pub trait GuestArg: std::fmt::Debug + Sized {
     /// How many registers does this argument type consume?
     const REG_COUNT: usize;
 
@@ -159,7 +163,12 @@ pub trait GuestArg: Sized {
 }
 
 /// Read a single argument from registers. Call this for each argument in order.
-fn read_next_arg<T: GuestArg>(reg_offset: &mut usize, regs: &[u32], mem: &Memory) -> T {
+fn read_next_arg<T: GuestArg>(
+    reg_offset: &mut usize,
+    regs: &[u32],
+    stack_ptr: ConstPtr<u32>,
+    mem: &Memory,
+) -> T {
     // After the fourth register is used, the arguments go on the stack.
     // In some cases the argument is split over both registers and the stack.
 
@@ -170,7 +179,6 @@ fn read_next_arg<T: GuestArg>(reg_offset: &mut usize, regs: &[u32], mem: &Memory
         if *reg_offset < 4 {
             *fake_reg = regs[*reg_offset];
         } else {
-            let stack_ptr: ConstPtr<u32> = Ptr::from_bits(regs[Cpu::SP]);
             *fake_reg = mem.read(stack_ptr + (*reg_offset - 4).try_into().unwrap());
         }
         *reg_offset += 1;
@@ -189,15 +197,26 @@ fn write_next_arg<T: GuestArg>(reg_offset: &mut usize, regs: &mut [u32], arg: T)
     *reg_offset += T::REG_COUNT;
 }
 
+#[derive(Debug)]
+pub struct DotDotDot(VaList);
+impl DotDotDot {
+    pub fn start(&self) -> VaList {
+        self.0
+    }
+}
+
 /// Calling convention translation for a variable arguments list (like C
 /// `va_list`).
-pub struct VAList {
+#[derive(Copy, Clone, Debug)]
+pub struct VaList {
     reg_offset: usize,
+    stack_pointer: ConstVoidPtr,
 }
-impl VAList {
+impl VaList {
     /// Get the next argument, like C's `va_arg()`.
     pub fn next<T: GuestArg>(&mut self, env: &mut Environment) -> T {
-        read_next_arg(&mut self.reg_offset, env.cpu.regs_mut(), &env.mem)
+        let sp_reg = self.stack_pointer.cast();
+        read_next_arg(&mut self.reg_offset, env.cpu.regs_mut(), sp_reg, &env.mem)
     }
 }
 
@@ -267,7 +286,21 @@ impl GuestArg for GuestFunction {
     }
 }
 
-pub trait GuestRet: Sized {
+impl GuestArg for VaList {
+    const REG_COUNT: usize = <ConstVoidPtr as GuestArg>::REG_COUNT;
+    fn from_regs(regs: &[u32]) -> Self {
+        // `reg_offset` initialized to 4 as we want to use `stack_pointer` when calling [read_next_arg]
+        VaList {
+            reg_offset: 4,
+            stack_pointer: <ConstVoidPtr as GuestArg>::from_regs(regs),
+        }
+    }
+    fn to_regs(self, _regs: &mut [u32]) {
+        todo!()
+    }
+}
+
+pub trait GuestRet: std::fmt::Debug + Sized {
     /// Read the return value from registers.
     fn from_regs(regs: &[u32]) -> Self;
 

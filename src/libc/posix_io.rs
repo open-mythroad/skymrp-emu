@@ -1,4 +1,4 @@
-use crate::abi::VAList;
+use crate::abi::DotDotDot;
 use crate::fs::{GuestFile, GuestOpenOptions, GuestPath};
 use crate::mem::{ConstPtr, GuestISize, GuestUSize, MutVoidPtr};
 use crate::Environment;
@@ -33,34 +33,34 @@ fn fd_to_file_idx(fd: FileDescriptor) -> usize {
 }
 
 /// File descriptor type. This alias is for readability, POSIX just uses `int`.
-type FileDescriptor = i32;
+pub type FileDescriptor = i32;
 #[allow(dead_code)]
-const STDIN_FILENO: FileDescriptor = 0;
+pub const STDIN_FILENO: FileDescriptor = 0;
 #[allow(dead_code)]
-const STDOUT_FILENO: FileDescriptor = 1;
-const STDERR_FILENO: FileDescriptor = 2;
+pub const STDOUT_FILENO: FileDescriptor = 1;
+pub const STDERR_FILENO: FileDescriptor = 2;
 const NORMAL_FILENO_BASE: FileDescriptor = STDERR_FILENO + 1;
 
 /// Flags bitfield for `open`. This alias is for readability, POSIX just uses
 /// `int`.
-type OpenFlag = i32;
-const O_RDONLY: OpenFlag = 0x0;
-const O_WRONLY: OpenFlag = 0x1;
-const O_RDWR: OpenFlag = 0x2;
-const O_ACCMODE: OpenFlag = O_RDWR | O_WRONLY | O_RDONLY;
+pub type OpenFlag = i32;
+pub const O_RDONLY: OpenFlag = 0x0;
+pub const O_WRONLY: OpenFlag = 0x1;
+pub const O_RDWR: OpenFlag = 0x2;
+pub const O_ACCMODE: OpenFlag = O_RDWR | O_WRONLY | O_RDONLY;
 
-const O_NONBLOCK: OpenFlag = 0x4;
-const O_APPEND: OpenFlag = 0x8;
-const O_NOFOLLOW: OpenFlag = 0x100;
-const O_CREAT: OpenFlag = 0x200;
-const O_TRUNC: OpenFlag = 0x400;
-const O_EXCL: OpenFlag = 0x800;
+pub const O_NONBLOCK: OpenFlag = 0x4;
+pub const O_APPEND: OpenFlag = 0x8;
+pub const O_NOFOLLOW: OpenFlag = 0x100;
+pub const O_CREAT: OpenFlag = 0x200;
+pub const O_TRUNC: OpenFlag = 0x400;
+pub const O_EXCL: OpenFlag = 0x800;
 
 pub(crate) fn open(
     env: &mut Environment,
     path: ConstPtr<u8>,
     flags: i32,
-    _args: VAList,
+    _args: DotDotDot,
 ) -> FileDescriptor {
     self::open_direct(env, path, flags)
 }
