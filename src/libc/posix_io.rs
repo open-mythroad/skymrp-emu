@@ -79,12 +79,12 @@ pub(crate) fn open_direct(env: &mut Environment, path: ConstPtr<u8>, flags: i32)
     // TODO: respect the mode (in the variadic arguments) when creating a file
     // Note: NONBLOCK flag is ignored, assumption is all file I/O is fast
     let mut options = GuestOpenOptions::new();
-    if (flags & (O_RDONLY | O_RDWR)) != 0 {
-        options.read();
-    }
-    if (flags & (O_WRONLY | O_RDWR)) != 0 {
-        options.write();
-    }
+    match flags & O_ACCMODE {
+        O_RDONLY => options.read(),
+        O_WRONLY => options.write(),
+        O_RDWR => options.read().write(),
+        _ => panic!(),
+    };
     if (flags & O_APPEND) != 0 {
         options.append();
     }
