@@ -707,18 +707,20 @@ fn mr_ferrno(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_open(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_open(env: &mut Environment, filename: ConstPtr<u8>, mode: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_open(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_open(filename={filename:?}, mode={mode:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    dsm::mr_open(env, filename, mode)
 }
 
-fn mr_close(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_close(env: &mut Environment, handle: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_close(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_close(handle={handle:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    dsm::mr_close(env, handle)
 }
 
 fn mr_info(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -735,11 +737,12 @@ fn mr_write(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_read(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_read(env: &mut Environment, handle: u32, buffer: MutVoidPtr, len: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_read(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_read(handle={handle:#x}, buffer={buffer:?}, len={len:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    dsm::mr_read(env, handle, buffer, len)
 }
 
 fn mr_seek(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1341,11 +1344,11 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_plat(_, _, _, _))),
     Export::Func(export_c_func!(mr_plat_ex(_, _, _, _))), // 39
     Export::Func(export_c_func!(mr_ferrno(_, _, _, _))),
-    Export::Func(export_c_func!(mr_open(_, _, _, _))),
-    Export::Func(export_c_func!(mr_close(_, _, _, _))),
+    Export::Func(export_c_func!(mr_open(_, _))),
+    Export::Func(export_c_func!(mr_close(_))),
     Export::Func(export_c_func!(mr_info(_, _, _, _))),
     Export::Func(export_c_func!(mr_write(_, _, _, _))),
-    Export::Func(export_c_func!(mr_read(_, _, _, _))),
+    Export::Func(export_c_func!(mr_read(_, _, _))),
     Export::Func(export_c_func!(mr_seek(_, _, _, _))),
     Export::Func(export_c_func!(mr_get_len(_, _, _, _))),
     Export::Func(export_c_func!(mr_remove(_, _, _, _))),

@@ -1,6 +1,7 @@
 use crate::abi::{CallFromHost, GuestFunction};
 use crate::libc;
-use crate::mem::MutVoidPtr;
+use crate::libc::posix_io::{self, OpenFlag};
+use crate::mem::{ConstPtr, MutVoidPtr};
 use crate::mrp;
 use crate::mythroad::{mr_free, mr_malloc, MrResult, MrRunState, MrTimerState};
 use crate::Environment;
@@ -8,6 +9,10 @@ use crate::Environment;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const MR_READ_MAX_LEN: usize = 1024 * 400;
+const MR_FILE_HANDLE_OFFSET: i32 = 5;
+const MR_FILE_RDONLY: u32 = 1;
+const MR_FILE_WRONLY: u32 = 2;
+const MR_FILE_RDWR: u32 = 4;
 
 pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> u32 {
     let pack_filename = match entry {
@@ -51,6 +56,74 @@ pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> u32 {
     );
 
     intra_start(env, mrp::START_FILE_NAME, entry)
+}
+
+fn mr_file_handle_to_posix_fd(handle: u32) -> Option<posix_io::FileDescriptor> {
+    let handle = i32::try_from(handle).ok()?;
+    handle.checked_sub(MR_FILE_HANDLE_OFFSET)
+}
+
+fn posix_fd_to_mr_file_handle(fd: posix_io::FileDescriptor) -> i32 {
+    fd + MR_FILE_HANDLE_OFFSET
+}
+
+pub(crate) fn mr_open(env: &mut Environment, filename: ConstPtr<u8>, mode: u32) -> i32 {
+    if filename.is_null() {
+        return 0;
+    };
+
+    let mut open_flag: OpenFlag = 0;
+    if mode & MR_FILE_RDONLY != 0 {
+        open_flag = posix_io::O_RDONLY;
+    }
+    if mode & MR_FILE_WRONLY != 0 {
+        open_flag = posix_io::O_WRONLY;
+    }
+    if mode & MR_FILE_RDWR != 0 {
+        open_flag = posix_io::O_RDWR;
+    }
+
+    let fd = posix_io::open_direct(env, filename, open_flag);
+
+    if fd < 0 {
+        log_dbg!("Mythroad: dsm mr_open({filename:?}, mode={mode:#x}) failed");
+        return 0;
+    }
+
+    let handle = posix_fd_to_mr_file_handle(fd);
+    log_dbg!("Mythroad: dsm mr_open({filename:?}, mode={mode:#x}) -> {handle}");
+    handle
+}
+
+pub(crate) fn mr_read(env: &mut Environment, handle: u32, buffer: MutVoidPtr, len: u32) -> i32 {
+    if handle == 0 {
+        return MrResult::Failed as i32;
+    }
+    let Some(fd) = mr_file_handle_to_posix_fd(handle) else {
+        return MrResult::Failed as i32;
+    };
+
+    let read_len = posix_io::read(env, fd, buffer, len);
+    if read_len < 0 {
+        MrResult::Failed as i32
+    } else {
+        read_len
+    }
+}
+
+pub(crate) fn mr_close(env: &mut Environment, handle: u32) -> i32 {
+    if handle == 0 {
+        return MrResult::Failed as i32;
+    }
+    let Some(fd) = mr_file_handle_to_posix_fd(handle) else {
+        return MrResult::Failed as i32;
+    };
+
+    if posix_io::close(env, fd) == 0 {
+        MrResult::Success as i32
+    } else {
+        MrResult::Failed as i32
+    }
 }
 
 pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32) -> u32 {
