@@ -745,11 +745,12 @@ fn mr_read(env: &mut Environment, handle: u32, buffer: MutVoidPtr, len: u32) -> 
     dsm::mr_read(env, handle, buffer, len)
 }
 
-fn mr_seek(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_seek(env: &mut Environment, handle: u32, pos: i32, method: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_seek(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_seek(handle={handle:#x}, pos={pos:#x}, method={method}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    dsm::mr_seek(env, handle, pos, method)
 }
 
 fn mr_get_len(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1349,7 +1350,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_info(_, _, _, _))),
     Export::Func(export_c_func!(mr_write(_, _, _, _))),
     Export::Func(export_c_func!(mr_read(_, _, _))),
-    Export::Func(export_c_func!(mr_seek(_, _, _, _))),
+    Export::Func(export_c_func!(mr_seek(_, _, _))),
     Export::Func(export_c_func!(mr_get_len(_, _, _, _))),
     Export::Func(export_c_func!(mr_remove(_, _, _, _))),
     Export::Func(export_c_func!(mr_rename(_, _, _, _))),

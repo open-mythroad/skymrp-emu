@@ -126,6 +126,22 @@ pub(crate) fn mr_close(env: &mut Environment, handle: u32) -> i32 {
     }
 }
 
+pub(crate) fn mr_seek(env: &mut Environment, handle: u32, pos: i32, method: i32) -> i32 {
+    if handle == 0 {
+        return MrResult::Failed as i32;
+    }
+    let Some(fd) = mr_file_handle_to_posix_fd(handle) else {
+        return MrResult::Failed as i32;
+    };
+
+    let ret = posix_io::lseek(env, fd, i64::from(pos), method);
+    if ret < 0 {
+        MrResult::Failed as i32
+    } else {
+        MrResult::Success as i32
+    }
+}
+
 pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32) -> u32 {
     match input0 {
         0x01 => mr_get_time(),
