@@ -1,6 +1,8 @@
 use crate::abi::{DotDotDot, GuestFunction};
 use crate::cpu::Cpu;
 use crate::dsm;
+use crate::encoding;
+use crate::font;
 use crate::libc;
 use crate::mem::{
     guest_size_of, ConstPtr, ConstVoidPtr, GuestUSize, GuestVar, Memory, MutPtr, MutVoidPtr, Ptr,
@@ -181,6 +183,7 @@ const MR_SMS_CFG_BUF_LEN: GuestUSize = 120 * 36;
 pub struct SysInfo {
     pub screen_width: u32,
     pub screen_height: u32,
+    pub screen_bits: u32,
 }
 
 impl SysInfo {
@@ -194,6 +197,7 @@ impl Default for SysInfo {
         Self {
             screen_width: 240,
             screen_height: 320,
+            screen_bits: 16,
         }
     }
 }
@@ -219,11 +223,12 @@ impl State {
         let mr_shake_on = GuestVar::new(mem, 1i8);
         let mr_sms_return_flag = GuestVar::new(mem, 0u32);
         let mr_sms_return_val = GuestVar::new(mem, 0u32);
-        let screen_buf = alloc_array(mem, 240 * 320);
+        let sysinfo = SysInfo::default();
+        let screen_buf = alloc_array(mem, sysinfo.screen_width * sysinfo.screen_height);
         let mr_screen_buf = GuestVar::new(mem, screen_buf);
-        let mr_screen_w = GuestVar::new(mem, 240i32);
-        let mr_screen_h = GuestVar::new(mem, 320i32);
-        let mr_screen_bit = GuestVar::new(mem, 16i32);
+        let mr_screen_w = GuestVar::new(mem, sysinfo.screen_width as i32);
+        let mr_screen_h = GuestVar::new(mem, sysinfo.screen_height as i32);
+        let mr_screen_bit = GuestVar::new(mem, sysinfo.screen_bits as i32);
         let mr_ram_file = GuestVar::new(mem, MutPtr::<u8>::null());
         let mr_ram_file_len = GuestVar::new(mem, 0i32);
         let mr_sms_cfg_buf = alloc_array(mem, MR_SMS_CFG_BUF_LEN);
@@ -239,7 +244,6 @@ impl State {
         let mr_stop_function = GuestFunction::from_addr_with_thumb_bit(0);
         let mr_pause_app_function = GuestFunction::from_addr_with_thumb_bit(0);
         let mr_resume_app_function = GuestFunction::from_addr_with_thumb_bit(0);
-        let sysinfo = SysInfo::default();
         let app_info = MutVoidPtr::null();
 
         let mr_c_internal_table = write_u32_table(
@@ -630,18 +634,60 @@ fn mr_mem_free(env: &mut Environment, mem: u32, len: u32) {
     );
 }
 
-fn mr_draw_bitmap(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_draw_bitmap(env: &mut Environment, bmp: MutPtr<u16>, x: i16, y: i16, w: u16, h: u16) {
     log_dbg!(
-        "Mythroad: mr_drawBitmap(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_drawBitmap(bmp={:#x}, x={x}, y={y}, w={w}, h={h}) called from {:#x}",
+        bmp.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    if bmp.is_null() || w == 0 || h == 0 {
+        return;
+    }
+
+    let screen_w_i32 = env.mythroad.state.mr_screen_w.get(&env.mem);
+    let screen_h_i32 = env.mythroad.state.mr_screen_h.get(&env.mem);
+    if screen_w_i32 <= 0 || screen_h_i32 <= 0 {
+        return;
+    }
+
+    let screen_w = screen_w_i32 as u32;
+    let screen_h = screen_h_i32 as u32;
+    let len = screen_w * screen_h * guest_size_of::<u16>();
+
+    let x = i32::from(x);
+    let y = i32::from(y);
+    let w = i32::from(w);
+    let h = i32::from(h);
+    if x >= screen_w_i32 || y >= screen_h_i32 || w <= 0 || h <= 0 {
+        return;
+    }
+
+    let x1 = x + w - 1;
+    let y1 = y + h - 1;
+    if x1 < 0 || y1 < 0 {
+        return;
+    }
+
+    let framebuffer = env.mem.bytes_at(bmp.cast::<u8>().cast_const(), len);
+    env.window.refresh(framebuffer, screen_w, screen_h);
 }
 
-fn mr_get_char_bitmap(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_get_char_bitmap(
+    env: &mut Environment,
+    ch: u16,
+    font_size: u16,
+    width: MutPtr<i32>,
+    height: MutPtr<i32>,
+) -> ConstPtr<u8> {
     log_dbg!(
-        "Mythroad: mr_getCharBitmap(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_getCharBitmap(ch={ch}, fontSize={font_size}, width={:#x}, height={:#x}) called from {:#x}",
+        width.to_bits(),
+        height.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    font::get_char_bitmap(env, ch, font_size, width, height)
 }
 
 fn mr_timer_start(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -991,11 +1037,21 @@ fn mr_win_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_get_screen_info(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_get_screen_info(env: &mut Environment, screen_info: MutPtr<u32>) -> u32 {
     log_dbg!(
-        "Mythroad: mr_getScreenInfo(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_getScreenInfo(s={:#x}) called from {:#x}",
+        screen_info.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    env.mem
+        .write(screen_info, env.mythroad.state.sysinfo.screen_width);
+    env.mem
+        .write(screen_info + 1, env.mythroad.state.sysinfo.screen_height);
+    env.mem
+        .write(screen_info + 2, env.mythroad.state.sysinfo.screen_bits);
+
+    MrResult::Success.to_bits()
 }
 
 fn mr_init_network(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1166,12 +1222,7 @@ fn draw_bitmap_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn draw_rect(env: &mut Environment, x: i16, y: i16, w: i16, h: i16, mut args: DotDotDot) {
-    let mut args = args.start();
-    let r: u8 = args.next(env);
-    let g: u8 = args.next(env);
-    let b: u8 = args.next(env);
-
+fn draw_rect(env: &mut Environment, x: i32, y: i32, w: i32, h: i32, r: u8, g: u8, b: u8) {
     log_dbg!(
         "Mythroad: DrawRect(x={x}, y={y}, w={w}, h={h}, r={r}, g={g}, b={b}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -1189,10 +1240,6 @@ fn draw_rect(env: &mut Environment, x: i16, y: i16, w: i16, h: i16, mut args: Do
         return;
     }
 
-    let x = i32::from(x);
-    let y = i32::from(y);
-    let w = i32::from(w);
-    let h = i32::from(h);
     let screen_w = screen_w as i32;
     let screen_h = screen_h as i32;
 
@@ -1244,11 +1291,86 @@ fn draw_rect(env: &mut Environment, x: i16, y: i16, w: i16, h: i16, mut args: Do
     }
 }
 
-fn draw_text(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn draw_text(
+    env: &mut Environment,
+    pc_text: ConstPtr<u8>,
+    x: i32,
+    y: i32,
+    r: u8,
+    g: u8,
+    b: u8,
+    is_unicode: u32,
+    font: u16,
+) -> u32 {
+    let color = (u16::from(b) >> 3) | ((u16::from(g) >> 2) << 5) | ((u16::from(r) >> 3) << 11);
+
     log_dbg!(
-        "Mythroad: _DrawText(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _DrawText(pcText={:#x}, x={x}, y={y}, r={r}, g={g}, b={b}, is_unicode={is_unicode}, font={font}) called from {:#x}",
+        pc_text.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
+    if screen_w <= 0 {
+        return MrResult::Success.to_bits();
+    }
+
+    let dim_len = 2 * guest_size_of::<i32>();
+    let dims: MutPtr<i32> = mr_malloc(env, dim_len).cast();
+    env.mem.write(dims + 0, 0i32);
+    env.mem.write(dims + 1, 0i32);
+
+    let mut converted_len = 0u32;
+    let pc_text = if is_unicode == 0 {
+        let converted = encoding::c2u(env, pc_text, false);
+        converted_len = converted.size;
+        converted.ptr.cast::<u8>().cast_const()
+    } else {
+        pc_text
+    };
+
+    let mut sx = x;
+    let mut p = pc_text;
+    loop {
+        let high: u8 = env.mem.read(p);
+        let low: u8 = env.mem.read(p + 1);
+        if high == 0 && low == 0 {
+            break;
+        }
+
+        let ch = (u16::from(high) << 8) | u16::from(low);
+        sx += draw_text_char(env, ch, font, sx, y, color, dims);
+        p += 2;
+
+        if sx > screen_w {
+            break;
+        }
+    }
+
+    if is_unicode == 0 {
+        mr_free(env, pc_text.cast_mut().cast_void(), converted_len);
+    }
+    mr_free(env, dims.cast_void(), dim_len);
+    MrResult::Success.to_bits()
+}
+
+fn draw_text_char(
+    env: &mut Environment,
+    ch: u16,
+    font: u16,
+    sx: i32,
+    y: i32,
+    color: u16,
+    dims: MutPtr<i32>,
+) -> i32 {
+    env.mem.write(dims + 0, 0i32);
+    env.mem.write(dims + 1, 0i32);
+
+    mr_get_char_bitmap(env, ch, font, dims, dims + 1);
+    mr_plat_draw_char(env, ch, sx, y, u32::from(color));
+
+    let fw: i32 = env.mem.read(dims + 0);
+    fw
 }
 
 fn bitmap_check(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1308,11 +1430,21 @@ fn mr_test_com1(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn c2u(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_c2u(
+    env: &mut Environment,
+    cp: ConstPtr<u8>,
+    err: MutPtr<i32>,
+    size: MutPtr<i32>,
+) -> MutPtr<u16> {
     log_dbg!(
-        "Mythroad: c2u(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_c2u(cp={:#x}, err={:#x}, size={:#x}) called from {:#x}",
+        cp.to_bits(),
+        err.to_bits(),
+        size.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    encoding::mr_c2u(env, cp, err, size)
 }
 
 fn mr_div(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1350,11 +1482,12 @@ fn mr_entry(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_plat_draw_char(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_plat_draw_char(env: &mut Environment, ch: u16, x: i32, y: i32, color: u32) {
     log_dbg!(
-        "Mythroad: mr_platDrawChar(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_platDrawChar(ch={ch}, x={x}, y={y}, color={color:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    font::draw_char(env, x, y, ch, color as u16);
 }
 
 fn mr_transbitmap_draw(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1405,7 +1538,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_printf(_, _))),
     Export::Func(export_c_func!(mr_mem_get(_, _))),
     Export::Func(export_c_func!(mr_mem_free(_, _))),
-    Export::Func(export_c_func!(mr_draw_bitmap(_, _, _, _))),
+    Export::Func(export_c_func!(mr_draw_bitmap(_, _, _, _, _))),
     Export::Func(export_c_func!(mr_get_char_bitmap(_, _, _, _))),
     Export::Func(export_c_func!(mr_timer_start(_, _, _, _))),
     Export::Func(export_c_func!(mr_timer_stop(_, _, _, _))),
@@ -1456,7 +1589,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_edit_get_text(_, _, _, _))),
     Export::Func(export_c_func!(mr_win_create(_, _, _, _))),
     Export::Func(export_c_func!(mr_win_release(_, _, _, _))),
-    Export::Func(export_c_func!(mr_get_screen_info(_, _, _, _))),
+    Export::Func(export_c_func!(mr_get_screen_info(_))),
     Export::Func(export_c_func!(mr_init_network(_, _, _, _))),
     Export::Func(export_c_func!(mr_close_network(_, _, _, _))),
     Export::Func(export_c_func!(mr_get_host_by_name(_, _, _, _))),
@@ -1498,8 +1631,8 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(draw_point(_, _, _, _))),
     Export::Func(export_c_func!(draw_bitmap(_, _, _, _))),
     Export::Func(export_c_func!(draw_bitmap_ex(_, _, _, _))),
-    Export::Func(export_c_func!(draw_rect(_, _, _, _, _))),
-    Export::Func(export_c_func!(draw_text(_, _, _, _))),
+    Export::Func(export_c_func!(draw_rect(_, _, _, _, _, _, _))),
+    Export::Func(export_c_func!(draw_text(_, _, _, _, _, _, _, _))),
     Export::Func(export_c_func!(bitmap_check(_, _, _, _))),
     Export::Func(export_c_func!(mr_read_file(_, _, _, _))),
     Export::Func(export_c_func!(mr_wstrlen(_, _, _, _))),
@@ -1508,7 +1641,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_eff_set_con(_, _, _, _))),
     Export::Func(export_c_func!(mr_test_com(_, _, _))),
     Export::Func(export_c_func!(mr_test_com1(_, _, _, _))), // 1938
-    Export::Func(export_c_func!(c2u(_, _, _, _))),          // 1939
+    Export::Func(export_c_func!(mr_c2u(_, _, _))),          // 1939
     Export::Func(export_c_func!(mr_div(_, _, _, _))),       // 1941
     Export::Func(export_c_func!(mr_mod(_, _, _, _))),
     Export::Data(export_c_data!(state.heap.mem_min)), // &LG_mem_min

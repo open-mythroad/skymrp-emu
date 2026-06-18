@@ -94,6 +94,8 @@ impl_CallFromGuest!(0 => P0, 1 => P1, 2 => P2);
 impl_CallFromGuest!(0 => P0, 1 => P1, 2 => P2, 3 => P3);
 impl_CallFromGuest!(0 => P0, 1 => P1, 2 => P2, 3 => P3, 4 => P4);
 impl_CallFromGuest!(0 => P0, 1 => P1, 2 => P2, 3 => P3, 4 => P4, 5 => P5);
+impl_CallFromGuest!(0 => P0, 1 => P1, 2 => P2, 3 => P3, 4 => P4, 5 => P5, 6 => P6);
+impl_CallFromGuest!(0 => P0, 1 => P1, 2 => P2, 3 => P3, 4 => P4, 5 => P5, 6 => P6, 7 => P7);
 
 pub trait CallFromHost<R, P> {
     fn call_from_host(&self, env: &mut Environment, args: P) -> R;
