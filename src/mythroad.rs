@@ -1166,11 +1166,82 @@ fn draw_bitmap_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn draw_rect(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn draw_rect(env: &mut Environment, x: i16, y: i16, w: i16, h: i16, mut args: DotDotDot) {
+    let mut args = args.start();
+    let r: u8 = args.next(env);
+    let g: u8 = args.next(env);
+    let b: u8 = args.next(env);
+
     log_dbg!(
-        "Mythroad: DrawRect(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: DrawRect(x={x}, y={y}, w={w}, h={h}, r={r}, g={g}, b={b}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    let screen_buf: MutPtr<u16> = env.mythroad.state.mr_screen_buf.get(&env.mem);
+    if screen_buf.is_null() {
+        log_dbg!("Mythroad: DrawRect ignored because mr_screen_buf is null");
+        return;
+    }
+
+    let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
+    let screen_h = env.mythroad.state.mr_screen_h.get(&env.mem);
+    if screen_w <= 0 || screen_h <= 0 || w <= 0 || h <= 0 {
+        return;
+    }
+
+    let x = i32::from(x);
+    let y = i32::from(y);
+    let w = i32::from(w);
+    let h = i32::from(h);
+    let screen_w = screen_w as i32;
+    let screen_h = screen_h as i32;
+
+    let x_min = x.max(0);
+    let y_min = y.max(0);
+    let x_max = (x + w).min(screen_w);
+    let y_max = (y + h).min(screen_h);
+
+    if x_max <= x_min || y_max <= y_min {
+        return;
+    }
+
+    let color = (u16::from(b) >> 3) | ((u16::from(g) >> 2) << 5) | ((u16::from(r) >> 3) << 11);
+    let x_min = x_min as u32;
+    let y_min = y_min as u32;
+    let x_max = x_max as u32;
+    let y_max = y_max as u32;
+    let screen_w = screen_w as u32;
+    let rect_w = x_max - x_min;
+
+    let first_row = screen_buf + (y_min * screen_w + x_min);
+    for x_d in 0..rect_w {
+        env.mem.write(first_row + x_d, color);
+    }
+
+    if first_row.to_bits() & 0x3 != 0 {
+        for y_d in (y_min + 1)..y_max {
+            let row = screen_buf + (y_d * screen_w + x_min);
+            env.mem.write(row, color);
+            if rect_w > 1 {
+                libc::string::memcpy(
+                    env,
+                    (row + 1).cast_void(),
+                    (first_row + 1).cast_const().cast_void(),
+                    (rect_w - 1) * guest_size_of::<u16>(),
+                );
+            }
+        }
+    } else {
+        for y_d in (y_min + 1)..y_max {
+            let row = screen_buf + (y_d * screen_w + x_min);
+            libc::string::memcpy(
+                env,
+                row.cast_void(),
+                first_row.cast_const().cast_void(),
+                rect_w * guest_size_of::<u16>(),
+            );
+        }
+    }
 }
 
 fn draw_text(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1427,7 +1498,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(draw_point(_, _, _, _))),
     Export::Func(export_c_func!(draw_bitmap(_, _, _, _))),
     Export::Func(export_c_func!(draw_bitmap_ex(_, _, _, _))),
-    Export::Func(export_c_func!(draw_rect(_, _, _, _))),
+    Export::Func(export_c_func!(draw_rect(_, _, _, _, _))),
     Export::Func(export_c_func!(draw_text(_, _, _, _))),
     Export::Func(export_c_func!(bitmap_check(_, _, _, _))),
     Export::Func(export_c_func!(mr_read_file(_, _, _, _))),
