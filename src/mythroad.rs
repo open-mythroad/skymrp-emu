@@ -141,6 +141,8 @@ pub struct State {
     pub mr_c_function: GuestFunction,
     pub mr_state: GuestVar<u32>,
     pub mr_timer_state: GuestVar<u32>,
+    pub mr_timer_start_time: u32,
+    pub mr_timer_interval: u32,
     pub mr_c_function_load: GuestFunction,
     pub mr_event_function: GuestFunction,
     pub mr_timer_function: GuestFunction,
@@ -220,6 +222,8 @@ impl State {
         let bi = GuestVar::new(mem, 0u32);
         let mr_timer_p = GuestVar::new(mem, 0u32);
         let mr_timer_state = GuestVar::new(mem, MrTimerState::Idle.to_bits());
+        let mr_timer_start_time = 0;
+        let mr_timer_interval = 0;
         let mr_timer_run_without_pause = GuestVar::new(mem, 0u32);
         let mr_sound_on = GuestVar::new(mem, 1i8);
         let mr_shake_on = GuestVar::new(mem, 1i8);
@@ -268,6 +272,8 @@ impl State {
             mr_c_function,
             mr_state,
             mr_timer_state,
+            mr_timer_start_time,
+            mr_timer_interval,
             mr_c_function_load,
             mr_event_function,
             mr_timer_function,
@@ -692,18 +698,36 @@ fn mr_get_char_bitmap(
     font::get_char_bitmap(env, ch, font_size, width, height)
 }
 
-fn mr_timer_start(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_timer_start(env: &mut Environment, interval: u16) -> u32 {
     log_dbg!(
-        "Mythroad: mr_timerStart(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_timerStart(t={interval}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    env.mythroad.state.mr_timer_start_time = dsm::mr_get_time(env);
+    env.mythroad.state.mr_timer_interval = interval.into();
+    env.mythroad
+        .state
+        .mr_timer_state
+        .set(&mut env.mem, MrTimerState::Running.to_bits());
+
+    MrResult::Success.to_bits()
 }
 
-fn mr_timer_stop(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_timer_stop(env: &mut Environment) -> u32 {
     log_dbg!(
-        "Mythroad: mr_timerStop(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_timerStop() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    env.mythroad
+        .state
+        .mr_timer_state
+        .set(&mut env.mem, MrTimerState::Idle.to_bits());
+    env.mythroad.state.mr_timer_interval = 0;
+    env.mythroad.state.mr_timer_start_time = dsm::mr_get_time(env);
+
+    MrResult::Success.to_bits()
 }
 
 fn mr_get_time(env: &mut Environment) -> u32 {
@@ -1534,8 +1558,8 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_mem_free(_, _))),
     Export::Func(export_c_func!(mr_draw_bitmap(_, _, _, _, _))),
     Export::Func(export_c_func!(mr_get_char_bitmap(_, _, _, _))),
-    Export::Func(export_c_func!(mr_timer_start(_, _, _, _))),
-    Export::Func(export_c_func!(mr_timer_stop(_, _, _, _))),
+    Export::Func(export_c_func!(mr_timer_start(u16))),
+    Export::Func(export_c_func!(mr_timer_stop())),
     Export::Func(export_c_func!(mr_get_time())),
     Export::Func(export_c_func!(mr_get_datetime(_, _, _, _))),
     Export::Func(export_c_func!(mr_get_user_info(_, _, _, _))),

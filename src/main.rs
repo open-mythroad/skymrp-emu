@@ -17,7 +17,7 @@ mod window;
 
 use crate::window::Event;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const USAGE: &str = "\
 Usage:
@@ -143,7 +143,10 @@ impl Environment {
                 panic!("User requested quit, exiting...");
             }
 
-            // TODO: handle timers and audio queues
+            dsm::mr_timer(self);
+
+            // TODO: handle audio queues
+            std::thread::sleep(Duration::from_millis(5));
         }
     }
 
