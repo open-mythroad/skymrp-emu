@@ -97,9 +97,10 @@ impl GuestPath {
 
     /// Splits the path into a parent path and a file name.
     pub fn parent_and_file_name(&self) -> Option<(&GuestPath, &str)> {
-        // FIXME: this should do the same resolution as `std::path::file_name()`
-        let (parent_name, file_name) = self.as_str().rsplit_once('/')?;
-        Some((GuestPath::new(parent_name), file_name))
+        let path = self.as_str();
+        let separator_idx = path.rfind(|c| c == '/' || c == '\\')?;
+        let (parent_name, file_name) = path.split_at(separator_idx);
+        Some((GuestPath::new(parent_name), &file_name[1..]))
     }
 
     /// Get the final component of the path.
@@ -243,15 +244,15 @@ fn apply_path_component<'a>(components: &mut Vec<&'a str>, component: &'a str) {
 fn resolve_path<'a>(path: &'a GuestPath, relative_to: Option<&'a GuestPath>) -> Vec<&'a str> {
     let mut components = Vec::new();
 
-    if !path.as_str().starts_with('/') {
+    if !path.as_str().starts_with('/') && !path.as_str().starts_with('\\') {
         let relative_to = relative_to.unwrap().as_str();
-        assert!(relative_to.starts_with('/'));
-        for component in relative_to.split('/') {
+        assert!(relative_to.starts_with('/') || relative_to.starts_with('\\'));
+        for component in relative_to.split(['/', '\\']) {
             apply_path_component(&mut components, component);
         }
     }
 
-    for component in path.as_str().split('/') {
+    for component in path.as_str().split(['/', '\\']) {
         apply_path_component(&mut components, component);
     }
 
