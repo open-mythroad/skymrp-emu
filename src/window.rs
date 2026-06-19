@@ -1,6 +1,7 @@
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::render::{Canvas, Texture};
 use sdl2::video::Window as SdlWindow;
+use std::collections::VecDeque;
 
 pub enum Event {
     Quit,
@@ -13,6 +14,7 @@ pub struct Window {
     texture_size: Option<(u32, u32)>,
     canvas: Canvas<SdlWindow>,
     event_pump: sdl2::EventPump,
+    event_queue: VecDeque<Event>,
 }
 
 impl Window {
@@ -37,6 +39,7 @@ impl Window {
             texture_size: None,
             canvas,
             event_pump,
+            event_queue: VecDeque::new(),
         }
     }
 
@@ -62,13 +65,16 @@ impl Window {
         self.canvas.present();
     }
 
-    pub fn poll_for_events(&mut self, events: &mut Vec<Event>) {
+    pub fn poll_for_events(&mut self) {
         for event in self.event_pump.poll_iter() {
             use sdl2::event::Event as E;
-            match event {
-                E::Quit { .. } => events.push(Event::Quit),
-                _ => (),
+            if let E::Quit { .. } = event {
+                self.event_queue.push_back(Event::Quit);
             }
         }
+    }
+
+    pub fn pop_event(&mut self) -> Option<Event> {
+        self.event_queue.pop_front()
     }
 }

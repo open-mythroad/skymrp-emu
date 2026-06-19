@@ -15,6 +15,7 @@ mod stack;
 mod syscall;
 mod window;
 
+use crate::window::Event;
 use std::path::PathBuf;
 
 const USAGE: &str = "\
@@ -105,20 +106,27 @@ impl Environment {
 
     /// Run the emulator.
     fn run(&mut self) {
-        let entry = format!("%{}", self.executable.file_name);
-        if dsm::mr_start_dsm_c(self, Some(&entry)) != mythroad::MrResult::Success.to_bits() {
-            log!("Mythroad: mr_start_dsmC failed");
-            return;
-        }
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let entry = format!("%{}", self.executable.file_name);
 
-        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.run_inner(true)));
-        if let Err(e) = res {
-            log!(
-                "Panic at PC {:#x}, LR {:#x}",
-                self.cpu.regs()[cpu::Cpu::PC],
-                self.cpu.regs()[cpu::Cpu::LR]
-            );
-            std::panic::resume_unwind(e);
+            dsm::mr_start_dsm_c(self, Some(&entry)) == mythroad::MrResult::Success.to_bits()
+        }));
+
+        match res {
+            Ok(true) => {
+                self.run_event_loop();
+            }
+            Ok(false) => {
+                log!("Mythroad: mr_start_dsmC failed");
+            }
+            Err(e) => {
+                log!(
+                    "Panic at PC {:#x}, LR {:#x}",
+                    self.cpu.regs()[cpu::Cpu::PC],
+                    self.cpu.regs()[cpu::Cpu::LR]
+                );
+                std::panic::resume_unwind(e);
+            }
         }
     }
 
@@ -126,25 +134,23 @@ impl Environment {
         self.run_inner(false)
     }
 
-    fn run_inner(&mut self, root: bool) {
-        let mut events = Vec::new();
-
+    fn run_event_loop(&mut self) {
         loop {
-            self.window.poll_for_events(&mut events);
-            for event in events.drain(..) {
-                match event {
-                    window::Event::Quit => {
-                        log_dbg!("User requested quit, exiting...");
-                        if root {
-                            return;
-                        } else {
-                            panic!("Quit.");
-                        }
-                    }
-                }
+            self.window.poll_for_events();
+
+            while let Some(event) = self.window.pop_event() {
+                let Event::Quit = event;
+                panic!("User requested quit, exiting...");
             }
 
-            let mut ticks = 100;
+            // TODO: handle timers and audio queues
+        }
+    }
+
+    fn run_inner(&mut self, root: bool) {
+        loop {
+            self.window.poll_for_events();
+            let mut ticks = 1_000;
 
             while ticks > 0 {
                 match self.cpu.run(&mut self.mem, &mut ticks) {
