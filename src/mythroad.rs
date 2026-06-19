@@ -82,6 +82,38 @@ impl MrTimerState {
     }
 }
 
+#[repr(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BitmapRasterOp {
+    Or = 0,
+    Xor = 1,
+    Copy = 2,
+    Not = 3,
+    MergeNot = 4,
+    AndNot = 5,
+    Transparent = 6,
+    And = 7,
+    Gray = 8,
+    Reverse = 9,
+}
+
+impl From<u16> for BitmapRasterOp {
+    fn from(value: u16) -> Self {
+        match value {
+            0 => Self::Or,
+            1 => Self::Xor,
+            3 => Self::Not,
+            4 => Self::MergeNot,
+            5 => Self::AndNot,
+            6 => Self::Transparent,
+            7 => Self::And,
+            8 => Self::Gray,
+            9 => Self::Reverse,
+            _ => Self::Copy,
+        }
+    }
+}
+
 pub struct MrHeap {
     pub mem_base: GuestVar<u32>,
     pub mem_len: GuestVar<u32>,
@@ -1235,11 +1267,18 @@ fn mr_save_sms_cfg(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn disp_up_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn disp_up_ex(env: &mut Environment, x: i16, y: i16, w: u16, h: u16) -> i32 {
     log_dbg!(
-        "Mythroad: _DispUpEx(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _DispUpEx(x={x}, y={y}, w={w}, h={h}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    if env.mythroad.state.vm_state.get(&env.mem) == 1 {
+        let screen_buf = env.mythroad.state.mr_screen_buf.get(&env.mem);
+        mr_draw_bitmap(env, screen_buf, x, y, w, h);
+    }
+
+    MrResult::Success as i32
 }
 
 fn draw_point(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1249,11 +1288,151 @@ fn draw_point(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn draw_bitmap(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn maker_rgb(r: u32, g: u32, b: u32) -> u16 {
+    (((r >> 3) << 11) + ((g >> 2) << 5) + (b >> 3)) as u16
+}
+
+fn draw_bitmap(
+    env: &mut Environment,
+    p: MutPtr<u16>,
+    x: i16,
+    y: i16,
+    w: u16,
+    h: u16,
+    rop: u16,
+    transcoler: u16,
+    sx: i16,
+    sy: i16,
+    mw: i16,
+) {
     log_dbg!(
-        "Mythroad: _DrawBitmap(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _DrawBitmap(p={:#x}, x={x}, y={y}, w={w}, h={h}, rop={rop}, transcoler={transcoler:#x}, sx={sx}, sy={sy}, mw={mw}) called from {:#x}",
+        p.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    let screen_buf: MutPtr<u16> = env.mythroad.state.mr_screen_buf.get(&env.mem);
+    let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
+    let screen_h = env.mythroad.state.mr_screen_h.get(&env.mem);
+
+    let mut x = i32::from(x);
+    let mut y = i32::from(y);
+    let mut w = i32::from(w);
+    let mut h = i32::from(h);
+    let mut sx = i32::from(sx);
+    let mut sy = i32::from(sy);
+    let mw = i32::from(mw);
+
+    if p.is_null()
+        || screen_buf.is_null()
+        || screen_w <= 0
+        || screen_h <= 0
+        || w == 0
+        || h == 0
+        || mw <= 0
+        || sx > mw - 1
+        || x + w <= 0
+        || x > screen_w - 1
+        || y > screen_h - 1
+        || y + h <= 0
+    {
+        return;
+    }
+
+    if sx < 0 {
+        sx = 0;
+    }
+    if sy < 0 {
+        sy = 0;
+    }
+
+    if sx + w > mw - 1 {
+        w = mw - sx;
+    }
+    if w == 0 {
+        return;
+    }
+
+    if x < 0 {
+        w += x;
+        sx -= x;
+        x = 0;
+    }
+    if y < 0 {
+        h += y;
+        sy -= y;
+        y = 0;
+    }
+    if x + w > screen_w - 1 {
+        w = screen_w - x;
+    }
+    if y + h > screen_h - 1 {
+        h = screen_h - y;
+    }
+    if w <= 0 || h <= 0 {
+        return;
+    }
+
+    let mut dest = screen_buf + (y as u32 * screen_w as u32 + x as u32);
+    let mut src = p + (sy as u32 * mw as u32 + sx as u32);
+    let rop = BitmapRasterOp::from(rop);
+
+    for _ in 0..h as u32 {
+        for _ in 0..w as u32 {
+            let src_pixel: u16 = env.mem.read(src);
+            match rop {
+                BitmapRasterOp::Transparent => {
+                    if transcoler != src_pixel {
+                        env.mem.write(dest, src_pixel);
+                    }
+                }
+                BitmapRasterOp::Or => {
+                    let dest_pixel: u16 = env.mem.read(dest);
+                    env.mem.write(dest, dest_pixel | src_pixel);
+                }
+                BitmapRasterOp::Xor => {
+                    let dest_pixel: u16 = env.mem.read(dest);
+                    env.mem.write(dest, dest_pixel ^ src_pixel);
+                }
+                BitmapRasterOp::Not => {
+                    env.mem.write(dest, !src_pixel);
+                }
+                BitmapRasterOp::MergeNot => {
+                    let dest_pixel: u16 = env.mem.read(dest);
+                    env.mem.write(dest, dest_pixel | !src_pixel);
+                }
+                BitmapRasterOp::AndNot => {
+                    let dest_pixel: u16 = env.mem.read(dest);
+                    env.mem.write(dest, dest_pixel & !src_pixel);
+                }
+                BitmapRasterOp::And => {
+                    let dest_pixel: u16 = env.mem.read(dest);
+                    env.mem.write(dest, dest_pixel & src_pixel);
+                }
+                BitmapRasterOp::Gray => {
+                    if transcoler != src_pixel {
+                        let r = u32::from((src_pixel >> 11) & 0x1f);
+                        let g = u32::from((src_pixel >> 5) & 0x3f);
+                        let b = u32::from(src_pixel & 0x1f);
+                        let gray = (0.299 * r as f64 + 0.587 * g as f64 + 0.114 * b as f64) as u32;
+                        env.mem.write(dest, maker_rgb(gray, gray, gray));
+                    }
+                }
+                BitmapRasterOp::Reverse => {
+                    if transcoler != src_pixel {
+                        env.mem.write(dest, !src_pixel);
+                    }
+                }
+                BitmapRasterOp::Copy => {
+                    env.mem.write(dest, src_pixel);
+                }
+            }
+            dest += 1;
+            src += 1;
+        }
+        dest += (screen_w - w) as u32;
+        src += (mw - w) as u32;
+    }
 }
 
 fn draw_bitmap_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1647,7 +1826,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_save_sms_cfg(_, _, _, _))),
     Export::Func(export_c_func!(disp_up_ex(_, _, _, _))),
     Export::Func(export_c_func!(draw_point(_, _, _, _))),
-    Export::Func(export_c_func!(draw_bitmap(_, _, _, _))),
+    Export::Func(export_c_func!(draw_bitmap(_, _, _, _, _, _, _, _, _, _))),
     Export::Func(export_c_func!(draw_bitmap_ex(_, _, _, _))),
     Export::Func(export_c_func!(draw_rect(_, _, _, _, _, _, _))),
     Export::Func(export_c_func!(draw_text(_, _, _, _, _, _, _, _))),
