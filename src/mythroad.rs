@@ -704,11 +704,14 @@ fn mr_timer_stop(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_get_time(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_get_time(env: &mut Environment) -> u32 {
+    let time = dsm::mr_get_time(env);
     log_dbg!(
-        "Mythroad: mr_getTime(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_getTime() -> {time} called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    time
 }
 
 fn mr_get_datetime(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1554,7 +1557,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_get_char_bitmap(_, _, _, _))),
     Export::Func(export_c_func!(mr_timer_start(_, _, _, _))),
     Export::Func(export_c_func!(mr_timer_stop(_, _, _, _))),
-    Export::Func(export_c_func!(mr_get_time(_, _, _, _))),
+    Export::Func(export_c_func!(mr_get_time())),
     Export::Func(export_c_func!(mr_get_datetime(_, _, _, _))),
     Export::Func(export_c_func!(mr_get_user_info(_, _, _, _))),
     Export::Func(export_c_func!(mr_sleep(_, _, _, _))), // 37

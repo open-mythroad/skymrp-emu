@@ -17,6 +17,7 @@ mod window;
 
 use crate::window::Event;
 use std::path::PathBuf;
+use std::time::Instant;
 
 const USAGE: &str = "\
 Usage:
@@ -65,6 +66,7 @@ pub struct Environment {
     cpu: cpu::Cpu,
     libc_state: libc::State,
     mythroad: mythroad::Mythroad,
+    startup_time: Instant,
 }
 
 impl Environment {
@@ -101,6 +103,7 @@ impl Environment {
             cpu,
             libc_state,
             mythroad,
+            startup_time: Instant::now(),
         })
     }
 

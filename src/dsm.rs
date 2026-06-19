@@ -6,7 +6,7 @@ use crate::mrp;
 use crate::mythroad::{mr_free, mr_malloc, MrResult, MrRunState, MrTimerState};
 use crate::Environment;
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 const MR_READ_MAX_LEN: usize = 1024 * 400;
 const MR_FILE_HANDLE_OFFSET: i32 = 5;
@@ -160,7 +160,7 @@ pub(crate) fn mr_seek(env: &mut Environment, handle: u32, pos: i32, method: i32)
 
 pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32) -> u32 {
     match input0 {
-        0x01 => mr_get_time(),
+        0x01 => mr_get_time(env),
         0x02 => {
             env.mythroad.state.mr_event_function = GuestFunction::from_addr_with_thumb_bit(input1);
             MrResult::Success.to_bits()
@@ -314,11 +314,8 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
     }
 }
 
-fn mr_get_time() -> u32 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::ZERO)
-        .as_millis() as u32
+pub(crate) fn mr_get_time(env: &Environment) -> u32 {
+    env.startup_time.elapsed().as_millis() as u32
 }
 
 fn mr_start_shake(_env: &mut Environment, ms: u32) -> u32 {
