@@ -2,6 +2,7 @@ use crate::fs::{Fs, GuestPath};
 use crate::gzip;
 
 pub const START_FILE_NAME: &str = "cfunction.ext";
+pub const LOGO_EXT_FILE_NAME: &str = "logo.ext";
 const MRP_MAGIC: &[u8; 4] = b"MRPG";
 const MRP_HEADER_SIZE: usize = 16;
 

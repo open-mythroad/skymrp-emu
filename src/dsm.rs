@@ -347,7 +347,7 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
 
     let mut ret = mr_do_ext(env, start_file_name);
     if ret != MrResult::Success.to_bits() {
-        ret = mr_do_ext(env, mrp::START_FILE_NAME);
+        ret = mr_do_ext(env, mrp::LOGO_EXT_FILE_NAME);
     }
 
     if ret != MrResult::Success.to_bits() {
