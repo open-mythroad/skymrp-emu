@@ -1,7 +1,7 @@
 use crate::abi::{CallFromHost, GuestFunction};
 use crate::libc;
 use crate::libc::posix_io::{self, OpenFlag};
-use crate::mem::{ConstPtr, MutVoidPtr};
+use crate::mem::{ConstPtr, MutPtr, MutVoidPtr};
 use crate::mrp;
 use crate::mythroad::{mr_free, mr_malloc, MrResult, MrRunState, MrTimerState};
 use crate::Environment;
@@ -93,6 +93,22 @@ pub(crate) fn mr_open(env: &mut Environment, filename: ConstPtr<u8>, mode: u32) 
     let handle = posix_fd_to_mr_file_handle(fd);
     log_dbg!("Mythroad: dsm mr_open({filename:?}, mode={mode:#x}) -> {handle}");
     handle
+}
+
+pub(crate) fn mr_plat_ex(
+    _env: &mut Environment,
+    _code: u32,
+    _input: ConstPtr<u8>,
+    _input_len: u32,
+    _output: MutPtr<MutPtr<u8>>,
+    _output_len: MutPtr<i32>,
+    _cb: MutVoidPtr,
+) -> i32 {
+    MrResult::Ignored as i32
+}
+
+pub(crate) fn mr_plat(_env: &mut Environment, _code: u32, _param: u32) -> i32 {
+    MrResult::Ignored as i32
 }
 
 pub(crate) fn mr_read(env: &mut Environment, handle: u32, buffer: MutVoidPtr, len: u32) -> i32 {

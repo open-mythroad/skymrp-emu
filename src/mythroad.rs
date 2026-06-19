@@ -732,18 +732,30 @@ fn mr_sleep(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_plat(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_plat(env: &mut Environment, code: u32, param: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_plat(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_plat(code={code:#x}, param={param:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    dsm::mr_plat(env, code, param)
 }
 
-fn mr_plat_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_plat_ex(
+    env: &mut Environment,
+    code: u32,
+    input: ConstPtr<u8>,
+    input_len: u32,
+    output: MutPtr<MutPtr<u8>>,
+    output_len: MutPtr<i32>,
+    cb: MutVoidPtr,
+) -> i32 {
     log_dbg!(
-        "Mythroad: mr_platEx(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_platEx(code={code}, input={input:?}, input_len={input_len}, output={output:?}, output_len={output_len:?}, cb={cb:?}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    dsm::mr_plat_ex(env, code, input, input_len, output, output_len, cb)
 }
 
 fn mr_ferrno(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1546,8 +1558,8 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_get_datetime(_, _, _, _))),
     Export::Func(export_c_func!(mr_get_user_info(_, _, _, _))),
     Export::Func(export_c_func!(mr_sleep(_, _, _, _))), // 37
-    Export::Func(export_c_func!(mr_plat(_, _, _, _))),
-    Export::Func(export_c_func!(mr_plat_ex(_, _, _, _))), // 39
+    Export::Func(export_c_func!(mr_plat(_, _))),
+    Export::Func(export_c_func!(mr_plat_ex(_, _, _, _, _, _))), // 39
     Export::Func(export_c_func!(mr_ferrno(_, _, _, _))),
     Export::Func(export_c_func!(mr_open(_, _))),
     Export::Func(export_c_func!(mr_close(_))),
