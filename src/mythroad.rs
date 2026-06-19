@@ -12,12 +12,14 @@ use crate::Environment;
 
 pub struct Mythroad {
     pub state: State,
+    pub font: font::Font,
 }
 
 impl Mythroad {
     pub fn new(mem: &mut Memory) -> Mythroad {
         Self {
             state: State::new(mem),
+            font: font::Font::new(mem),
         }
     }
 }
@@ -1330,11 +1332,6 @@ fn draw_text(
         return MrResult::Success.to_bits();
     }
 
-    let dim_len = 2 * guest_size_of::<i32>();
-    let dims: MutPtr<i32> = mr_malloc(env, dim_len).cast();
-    env.mem.write(dims + 0, 0i32);
-    env.mem.write(dims + 1, 0i32);
-
     let mut converted_len = 0u32;
     let pc_text = if is_unicode == 0 {
         let converted = encoding::c2u(env, pc_text, false);
@@ -1354,7 +1351,9 @@ fn draw_text(
         }
 
         let ch = (u16::from(high) << 8) | u16::from(low);
-        sx += draw_text_char(env, ch, font, sx, y, color, dims);
+        let (fw, _fh) = font::measure_char(env, ch, font);
+        mr_plat_draw_char(env, ch, sx, y, u32::from(color));
+        sx += fw;
         p += 2;
 
         if sx > screen_w {
@@ -1365,27 +1364,7 @@ fn draw_text(
     if is_unicode == 0 {
         mr_free(env, pc_text.cast_mut().cast_void(), converted_len);
     }
-    mr_free(env, dims.cast_void(), dim_len);
     MrResult::Success.to_bits()
-}
-
-fn draw_text_char(
-    env: &mut Environment,
-    ch: u16,
-    font: u16,
-    sx: i32,
-    y: i32,
-    color: u16,
-    dims: MutPtr<i32>,
-) -> i32 {
-    env.mem.write(dims + 0, 0i32);
-    env.mem.write(dims + 1, 0i32);
-
-    mr_get_char_bitmap(env, ch, font, dims, dims + 1);
-    mr_plat_draw_char(env, ch, sx, y, u32::from(color));
-
-    let fw: i32 = env.mem.read(dims + 0);
-    fw
 }
 
 fn bitmap_check(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
