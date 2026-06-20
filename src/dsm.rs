@@ -1,4 +1,5 @@
 use crate::abi::{CallFromHost, GuestFunction};
+use crate::fs::GuestPath;
 use crate::libc;
 use crate::libc::posix_io::{self, OpenFlag};
 use crate::mem::{ConstPtr, MutPtr, MutVoidPtr};
@@ -15,6 +16,9 @@ const MR_FILE_HANDLE_OFFSET: i32 = 5;
 const MR_FILE_RDONLY: u32 = 1;
 const MR_FILE_WRONLY: u32 = 2;
 const MR_FILE_RDWR: u32 = 4;
+const MR_IS_FILE: i32 = 1;
+const MR_IS_DIR: i32 = 2;
+const MR_IS_INVALID: i32 = 8;
 pub(crate) const MR_KEY_PRESS: u32 = 0;
 pub(crate) const MR_KEY_RELEASE: u32 = 1;
 pub(crate) const MR_MOUSE_DOWN: u32 = 2;
@@ -147,6 +151,49 @@ pub(crate) fn mr_close(env: &mut Environment, handle: u32) -> i32 {
     } else {
         MrResult::Failed as i32
     }
+}
+
+pub(crate) fn mr_info(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {
+    if filename.is_null() {
+        return MR_IS_INVALID;
+    }
+
+    let filename = env.mem.cstr_at_utf8(filename).unwrap();
+    let path = GuestPath::new(&filename);
+
+    if env.fs.is_dir(path) {
+        MR_IS_DIR
+    } else if env.fs.is_file(path) {
+        MR_IS_FILE
+    } else {
+        MR_IS_INVALID
+    }
+}
+
+pub(crate) fn mr_mk_dir(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
+    if name.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    let name = env.mem.cstr_at_utf8(name).unwrap();
+    match env.fs.create_dir(GuestPath::new(&name)) {
+        Ok(()) => MrResult::Success as i32,
+        Err(_) => MrResult::Failed as i32,
+    }
+}
+
+pub(crate) fn mr_get_len(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {
+    if filename.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    let filename = env.mem.cstr_at_utf8(filename).unwrap();
+    let len = match env.fs.size(GuestPath::new(&filename)) {
+        Ok(len) => len as i32,
+        Err(_) => return MrResult::Failed as i32,
+    };
+
+    len.try_into().unwrap_or(MrResult::Failed as i32)
 }
 
 pub(crate) fn mr_seek(env: &mut Environment, handle: u32, pos: i32, method: i32) -> i32 {

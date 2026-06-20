@@ -1,12 +1,23 @@
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
+pub enum FsError {
+    AccessDenied,
+    AlreadyExist,
+    DirectoryNotEmpty,
+    DoesNotExist,
+    InvalidParentDir,
+    NonexistentParentDir,
+    ReadonlyParentDir,
+}
+
+#[derive(Debug)]
 enum FsNode {
     HostFile {
-        host_path: PathBuf,
+        location: PathBuf,
         writeable: bool,
     },
     Directory {
@@ -35,7 +46,7 @@ impl FsNode {
                 children.insert(
                     name,
                     FsNode::HostFile {
-                        host_path,
+                        location: host_path,
                         writeable,
                     },
                 );
@@ -71,9 +82,9 @@ impl FsNode {
         assert!(children.insert(String::from(name), child).is_none());
         self
     }
-    fn host_file(host_path: PathBuf) -> Self {
+    fn host_file(location: PathBuf) -> Self {
         FsNode::HostFile {
-            host_path,
+            location,
             writeable: false,
         }
     }
@@ -397,16 +408,54 @@ impl Fs {
         Some((parent, final_component.to_string()))
     }
 
+    pub fn exists(&self, path: &GuestPath) -> bool {
+        self.lookup_node(path).is_some()
+    }
+
+    /// Returns access information about the file/directory at the path
+    /// (exists, read, write, execute)
+    pub fn access(&self, path: &GuestPath) -> (bool, bool, bool, bool) {
+        match self.lookup_node(path) {
+            None => (false, false, false, false),
+            Some(node) => match node {
+                FsNode::HostFile {
+                    location: _,
+                    writeable,
+                } => (true, true, *writeable, false),
+                FsNode::Directory {
+                    children: _,
+                    writeable,
+                } => (true, true, writeable.is_some(), true),
+            },
+        }
+    }
+
     /// Like [std::path::Path::is_file] but for the guest filesystem.
     pub fn is_file(&self, path: &GuestPath) -> bool {
         matches!(self.lookup_node(path), Some(FsNode::HostFile { .. }))
+    }
+
+    /// Like [std::path::Path::is_dir] but for the guest filesystem.
+    pub fn is_dir(&self, path: &GuestPath) -> bool {
+        matches!(self.lookup_node(path), Some(FsNode::Directory { .. }))
+    }
+
+    pub fn size(&self, path: &GuestPath) -> Result<u64, ()> {
+        // TODO: error handling
+        let node = self.lookup_node(path).ok_or(())?;
+        match node {
+            FsNode::HostFile { location, .. } => fs::metadata(location)
+                .map(|meta| meta.len())
+                .map_err(|_| ()),
+            _ => unimplemented!(),
+        }
     }
 
     /// Like [std::fs::read] but for the guest filesystem.
     pub fn read<P: AsRef<GuestPath>>(&self, path: P) -> Result<Vec<u8>, ()> {
         let node = self.lookup_node(path.as_ref()).ok_or(())?;
         let FsNode::HostFile {
-            host_path,
+            location: host_path,
             writeable: _,
         } = node
         else {
@@ -420,7 +469,7 @@ impl Fs {
     pub fn open<P: AsRef<GuestPath>>(&self, path: P) -> Result<std::fs::File, ()> {
         let node = self.lookup_node(path.as_ref()).ok_or(())?;
         let FsNode::HostFile {
-            host_path,
+            location: host_path,
             writeable: _,
         } = node
         else {
@@ -460,7 +509,7 @@ impl Fs {
         if let Some(existing_file) = children.get(&new_filename) {
             match existing_file {
                 FsNode::HostFile {
-                    host_path,
+                    location: host_path,
                     writeable,
                 } => {
                     if !writeable && (append || write) {
@@ -525,10 +574,79 @@ impl Fs {
         children.insert(
             new_filename,
             FsNode::HostFile {
-                host_path,
+                location: host_path,
                 writeable: true,
             },
         );
         Ok(GuestFile::from_host_file(file))
+    }
+
+    /// Like [std::fs::create_dir_all] but for the guest filesystem.
+    pub fn create_dir_all<P: AsRef<GuestPath>>(&mut self, path: P) -> Result<(), FsError> {
+        let path = path.as_ref();
+        assert!(path.as_str().starts_with('/'));
+        // TODO: use GuestPathBuf push() once implemented
+        let mut tmp_vec = vec![""];
+        let components = resolve_path(path, None);
+        for component in components {
+            tmp_vec.push(component);
+            let res = self.create_dir(GuestPathBuf::from(tmp_vec.join("/")));
+            match res {
+                Ok(_) | Err(FsError::AlreadyExist) => {}
+                _ => return res,
+            }
+        }
+        Ok(())
+    }
+
+    /// Like [std::fs::create_dir] but for the guest filesystem.
+    pub fn create_dir<P: AsRef<GuestPath>>(&mut self, path: P) -> Result<(), FsError> {
+        let path = path.as_ref();
+
+        let (parent_node, new_dir_name) = self
+            .lookup_parent_node(path)
+            .ok_or(FsError::NonexistentParentDir)?;
+
+        // Parent directory is not a directory
+        let FsNode::Directory {
+            children,
+            writeable: dir_host_path,
+        } = parent_node
+        else {
+            return Err(FsError::InvalidParentDir);
+        };
+
+        // There's already a file/directory with this name
+        if children.contains_key(&new_dir_name) {
+            return Err(FsError::AlreadyExist);
+        }
+
+        let Some(dir_host_path) = dir_host_path else {
+            log!("Warning: attempt to create directory at path {:?}, but parent directory is read-only", path);
+            return Err(FsError::ReadonlyParentDir);
+        };
+
+        for c in new_dir_name.chars() {
+            if std::path::is_separator(c) {
+                panic!("Attempt to create directory at path {path:?}, but directory name contains path separator character {c:?}!");
+            }
+        }
+
+        let host_path = dir_host_path.join(&new_dir_name);
+
+        handle_open_err(std::fs::create_dir(&host_path), &host_path);
+        log_dbg!(
+            "Created directory at path {:?} (host path: {:?})",
+            path,
+            host_path
+        );
+        children.insert(
+            new_dir_name,
+            FsNode::Directory {
+                children: HashMap::new(),
+                writeable: Some(host_path),
+            },
+        );
+        Ok(())
     }
 }
