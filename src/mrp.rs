@@ -1,5 +1,7 @@
 use crate::fs::{Fs, GuestPath};
 use crate::gzip;
+use crate::mem::{Memory, MutPtr};
+use std::collections::HashMap;
 
 pub const START_FILE_NAME: &str = "cfunction.ext";
 pub const LOGO_EXT_FILE_NAME: &str = "logo.ext";
@@ -8,8 +10,9 @@ const MRP_HEADER_SIZE: usize = 16;
 
 #[derive(Debug)]
 pub struct Mrp {
-    pub data: Vec<u8>,
-    pub file_name: String,
+    pub guest_base: MutPtr<u8>,
+    pub guest_len: u32,
+    pub entries: HashMap<String, MrpEntry>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -19,9 +22,8 @@ pub struct MrpHeader {
     pub list_offset: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MrpEntry {
-    pub name: String,
     pub offset: u32,
     pub size: u32,
 }
@@ -49,26 +51,63 @@ impl MrpHeader {
 }
 
 impl Mrp {
-    pub fn load_from_file<P: AsRef<GuestPath>>(path: P, fs: &Fs) -> Result<Mrp, String> {
-        let name = path.as_ref().file_name().unwrap().to_string();
-
+    pub fn load_from_file<P: AsRef<GuestPath>>(
+        path: P,
+        fs: &Fs,
+        into_mem: &mut Memory,
+    ) -> Result<Mrp, String> {
         Self::load_from_bytes(
             &fs.read(path.as_ref())
                 .map_err(|_| "Could not read executable file")?,
-            name,
+            into_mem,
         )
     }
 
-    pub fn load_from_bytes(bytes: &[u8], file_name: String) -> Result<Mrp, String> {
-        let data = bytes.to_vec();
+    pub fn load_from_bytes(bytes: &[u8], into_mem: &mut Memory) -> Result<Mrp, String> {
+        let entries = parse_entries(bytes)?;
 
-        MrpHeader::parse(&data)?;
+        let guest_len = u32::try_from(bytes.len())
+            .map_err(|_| "MRP file size does not fit in guest memory size".to_string())?;
+        let guest_base: MutPtr<u8> = into_mem.alloc(guest_len).cast();
+        copy_bytes_to_guest(into_mem, guest_base, bytes)?;
 
-        Ok(Mrp { data, file_name })
+        Ok(Mrp {
+            guest_base,
+            guest_len,
+            entries,
+        })
+    }
+
+    pub fn entry(&self, name: &str) -> Option<&MrpEntry> {
+        self.entries.get(name)
+    }
+
+    pub fn read_file(&self, mem: &Memory, filename: &str) -> Result<Vec<u8>, String> {
+        let entry = self
+            .entry(filename)
+            .ok_or_else(|| format!("MRP entry not found: {filename}"))?;
+
+        let entry_end = entry
+            .offset
+            .checked_add(entry.size)
+            .ok_or_else(|| format!("MRP entry range overflow: {filename}"))?;
+        if entry_end > self.guest_len {
+            return Err(format!(
+                "MRP entry range exceeds guest package bounds: {filename}"
+            ));
+        }
+
+        let raw = mem.bytes_at((self.guest_base + entry.offset).cast_const(), entry.size);
+
+        gzip::decompress_if_needed(raw).map_err(|err| format!("{filename}: {err}"))
     }
 }
 
-pub fn read_file(data: &[u8], name: &str) -> Result<Vec<u8>, String> {
+pub fn find_entry(data: &[u8], name: &str) -> Result<Option<MrpEntry>, String> {
+    Ok(parse_entries(data)?.get(name).copied())
+}
+
+pub fn parse_entries(data: &[u8]) -> Result<HashMap<String, MrpEntry>, String> {
     let header = MrpHeader::parse(data)?;
 
     if header.info_size <= 232 {
@@ -85,8 +124,11 @@ pub fn read_file(data: &[u8], name: &str) -> Result<Vec<u8>, String> {
         ));
     }
 
-    let entry = find_entry(data, &header, mrp_file_size, name)?
-        .ok_or_else(|| format!("MRP entry not found: {name}"))?;
+    parse_entries_in_list(data, &header, mrp_file_size)
+}
+
+pub fn read_file_from_bytes(data: &[u8], name: &str) -> Result<Vec<u8>, String> {
+    let entry = find_entry(data, name)?.ok_or_else(|| format!("MRP entry not found: {name}"))?;
 
     let start = usize::try_from(entry.offset)
         .map_err(|_| format!("MRP entry offset does not fit in usize: {name}"))?;
@@ -101,16 +143,21 @@ pub fn read_file(data: &[u8], name: &str) -> Result<Vec<u8>, String> {
     let raw = data
         .get(start..end)
         .ok_or_else(|| format!("MRP entry data is out of bounds: {name}"))?;
-
     gzip::decompress_if_needed(raw).map_err(|err| format!("{name}: {err}"))
 }
 
-fn find_entry(
+pub fn copy_bytes_to_guest(mem: &mut Memory, ptr: MutPtr<u8>, bytes: &[u8]) -> Result<u32, String> {
+    let len = u32::try_from(bytes.len())
+        .map_err(|_| "Data size does not fit in guest memory size".to_string())?;
+    mem.bytes_at_mut(ptr, len).copy_from_slice(bytes);
+    Ok(len)
+}
+
+fn parse_entries_in_list(
     data: &[u8],
     header: &MrpHeader,
     mrp_file_size: usize,
-    target_name: &str,
-) -> Result<Option<MrpEntry>, String> {
+) -> Result<HashMap<String, MrpEntry>, String> {
     let info_size = usize::try_from(header.info_size)
         .map_err(|_| "MRP info size does not fit in usize".to_string())?;
     let list_offset = usize::try_from(header.list_offset)
@@ -132,6 +179,7 @@ fn find_entry(
     }
 
     let mut pos = list_offset;
+    let mut entries = HashMap::new();
 
     while pos < list_end {
         let name_len = read_u32_le(data, pos)? as usize;
@@ -180,16 +228,10 @@ fn find_entry(
             return Err(format!("MRP entry is out of package bounds: {entry_name}"));
         }
 
-        if entry_name == target_name {
-            return Ok(Some(MrpEntry {
-                name: entry_name,
-                offset,
-                size,
-            }));
-        }
+        entries.insert(entry_name.clone(), MrpEntry { offset, size });
     }
 
-    Ok(None)
+    Ok(entries)
 }
 
 fn read_u32_le(data: &[u8], offset: usize) -> Result<u32, String> {

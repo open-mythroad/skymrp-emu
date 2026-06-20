@@ -11,11 +11,11 @@ use crate::Environment;
 
 use std::time::Duration;
 
-const MR_READ_MAX_LEN: usize = 1024 * 400;
 const MR_FILE_HANDLE_OFFSET: i32 = 5;
 const MR_FILE_RDONLY: u32 = 1;
 const MR_FILE_WRONLY: u32 = 2;
 const MR_FILE_RDWR: u32 = 4;
+const MR_FILE_CREATE: u32 = 8;
 const MR_IS_FILE: i32 = 1;
 const MR_IS_DIR: i32 = 2;
 const MR_IS_INVALID: i32 = 8;
@@ -94,15 +94,24 @@ pub(crate) fn mr_open(env: &mut Environment, filename: ConstPtr<u8>, mode: u32) 
         open_flag = posix_io::O_RDWR;
     }
 
+    let filename_str = env.mem.cstr_at_utf8(filename).unwrap().to_owned();
+    if mode & MR_FILE_CREATE != 0 && !env.fs.exists(GuestPath::new(&filename_str)) {
+        open_flag |= posix_io::O_CREAT;
+    }
+
     let fd = posix_io::open_direct(env, filename, open_flag);
 
     if fd < 0 {
-        log_dbg!("Mythroad: dsm mr_open({filename:?}, mode={mode:#x}) failed");
+        log_dbg!(
+            "Mythroad: dsm mr_open({filename_str:?}, mode={mode:#x}, flags={open_flag:#x}) failed"
+        );
         return 0;
     }
 
     let handle = posix_fd_to_mr_file_handle(fd);
-    log_dbg!("Mythroad: dsm mr_open({filename:?}, mode={mode:#x}) -> {handle}");
+    log_dbg!(
+        "Mythroad: dsm mr_open({filename_str:?}, mode={mode:#x}, flags={open_flag:#x}) -> {handle}"
+    );
     handle
 }
 
@@ -387,6 +396,88 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
     }
 }
 
+pub(crate) fn test_com1(
+    env: &mut Environment,
+    _l: u32,
+    input0: u32,
+    input1: MutPtr<u8>,
+    len: u32,
+) -> u32 {
+    match input0 {
+        2 => {
+            let old_ram_file = env.mythroad.state.mr_ram_file.get(&env.mem);
+            let old_ram_file_len = env.mythroad.state.mr_ram_file_len.get(&env.mem);
+            if !old_ram_file.is_null() {
+                if let Ok(old_ram_file_len) = u32::try_from(old_ram_file_len) {
+                    mr_free(env, old_ram_file.cast_void(), old_ram_file_len);
+                }
+            }
+
+            env.mythroad.state.mr_ram_file.set(&mut env.mem, input1);
+            env.mythroad
+                .state
+                .mr_ram_file_len
+                .set(&mut env.mem, len as i32);
+            MrResult::Success.to_bits()
+        }
+        3 => {
+            libc::string::memset(
+                env,
+                env.mythroad.state.old_pack_filename.cast_void(),
+                0,
+                128,
+            );
+            if !input1.is_null() {
+                libc::string::strncpy(
+                    env,
+                    env.mythroad.state.old_pack_filename,
+                    input1.cast_const(),
+                    127,
+                );
+            }
+
+            libc::string::memset(
+                env,
+                env.mythroad.state.old_start_filename.cast_void(),
+                0,
+                128,
+            );
+            let start_file_name = env
+                .mem
+                .alloc_and_write_cstr(mrp::START_FILE_NAME.as_bytes());
+            libc::string::strncpy(
+                env,
+                env.mythroad.state.old_start_filename,
+                start_file_name.cast_const(),
+                127,
+            );
+            MrResult::Success.to_bits()
+        }
+        4 => {
+            libc::string::memset(
+                env,
+                env.mythroad.state.start_file_parameter.cast_void(),
+                0,
+                128,
+            );
+            if !input1.is_null() {
+                libc::string::strncpy(
+                    env,
+                    env.mythroad.state.start_file_parameter,
+                    input1.cast_const(),
+                    127,
+                );
+            }
+            MrResult::Success.to_bits()
+        }
+        7 | 8 | 9 => MrResult::Success.to_bits(),
+        _ => {
+            log_dbg!("Mythroad: _mr_TestCom1 got unknown param: code={input0}");
+            MrResult::Ignored.to_bits()
+        }
+    }
+}
+
 pub(crate) fn mr_get_time(env: &Environment) -> u32 {
     env.startup_time.elapsed().as_millis() as u32
 }
@@ -581,8 +672,8 @@ fn reset_screen_buffer(env: &mut Environment) -> bool {
 fn mr_do_ext(env: &mut Environment, filename: &str) -> u32 {
     log_dbg!("Mythroad: mr_doExt(filename={filename})");
 
-    match mr_read_file(env, filename, false) {
-        Some(ext_data) if !ext_data.is_empty() => {
+    match env.executable.read_file(&env.mem, filename) {
+        Ok(ext_data) if !ext_data.is_empty() => {
             let len = ext_data.len().try_into().unwrap();
             let addr = mr_malloc(env, len);
             env.mem
@@ -605,39 +696,209 @@ fn mr_do_ext(env: &mut Environment, filename: &str) -> u32 {
 
             MrResult::Success.to_bits()
         }
-        _ => {
-            log_dbg!("Mythroad: mr_doExt failed: {filename}");
+        Ok(_) => {
+            log_dbg!("Mythroad: mr_doExt failed: {filename} is empty");
+            MrResult::Failed.to_bits()
+        }
+        Err(err) => {
+            log_dbg!("Mythroad: mr_doExt failed: {err}");
             MrResult::Failed.to_bits()
         }
     }
 }
 
-fn mr_read_file(env: &mut Environment, filename: &str, lookfor: bool) -> Option<Vec<u8>> {
-    log_dbg!("Mythroad: mr_readFile(filename={filename}, lookfor={lookfor})");
+pub(crate) fn mr_read_file(
+    env: &mut Environment,
+    filename: ConstPtr<u8>,
+    filelen: MutPtr<i32>,
+    lookfor: i32,
+) -> MutVoidPtr {
+    let filename = match env.mem.cstr_at_utf8(filename) {
+        Ok(filename) => filename.to_owned(),
+        Err(_) => return MutVoidPtr::null(),
+    };
 
-    if lookfor {
-        return mrp::read_file(&env.executable.data, filename)
-            .map(|_| Vec::new())
-            .ok();
+    let pack_filename = match env
+        .mem
+        .cstr_at_utf8(env.mythroad.state.pack_filename.cast_const())
+    {
+        Ok(pack_filename) => pack_filename.to_owned(),
+        Err(_) => return MutVoidPtr::null(),
+    };
+
+    let pack_prefix = pack_filename.as_bytes().first().copied().unwrap_or(0);
+    if pack_prefix != b'*' && pack_prefix != b'$' {
+        read_mrp_file_from_disk(env, &pack_filename, &filename, filelen, lookfor)
+    } else {
+        read_mrp_file_from_memory(env, &pack_filename, &filename, filelen, lookfor)
+    }
+}
+
+fn read_mrp_file_from_disk(
+    env: &mut Environment,
+    pack_filename: &str,
+    filename: &str,
+    filelen: MutPtr<i32>,
+    lookfor: i32,
+) -> MutVoidPtr {
+    let pack_data = match env.fs.read(GuestPath::new(pack_filename)) {
+        Ok(data) => data,
+        Err(_) => return MutVoidPtr::null(),
+    };
+
+    if lookfor == 1 {
+        return match mrp::find_entry(&pack_data, filename) {
+            Ok(Some(_)) => MutVoidPtr::from_bits(1),
+            Err(_) => MutVoidPtr::null(),
+            Ok(None) => MutVoidPtr::null(),
+        };
     }
 
-    let data = match mrp::read_file(&env.executable.data, filename) {
-        Ok(data) => data,
-        Err(err) => {
-            log_dbg!("Mythroad: mr_readFile failed: {err}");
-            return None;
+    let file_data = match mrp::read_file_from_bytes(&pack_data, filename) {
+        Ok(file_data) => file_data,
+        Err(_) => return MutVoidPtr::null(),
+    };
+
+    write_file_data_to_guest(env, &file_data, filelen)
+}
+
+fn read_mrp_file_from_memory(
+    env: &mut Environment,
+    pack_filename: &str,
+    filename: &str,
+    filelen: MutPtr<i32>,
+    lookfor: i32,
+) -> MutVoidPtr {
+    let Some((pack_base, pack_len)) = memory_pack_range(env, pack_filename) else {
+        return MutVoidPtr::null();
+    };
+
+    let entry = if let Some(entry) = executable_entry_for_memory_pack(env, pack_filename, filename)
+    {
+        entry
+    } else {
+        let pack_data = env.mem.bytes_at(pack_base.cast_const(), pack_len);
+        match mrp::find_entry(pack_data, filename) {
+            Ok(Some(entry)) => entry,
+            Ok(None) | Err(_) => return MutVoidPtr::null(),
         }
     };
 
-    if data.len() > MR_READ_MAX_LEN {
-        log_dbg!(
-            "Mythroad: read_mrp_file failed: {filename} is too large ({})",
-            data.len()
-        );
+    if lookfor == 1 {
+        return MutVoidPtr::from_bits(1);
+    }
+
+    if !filelen.is_null() {
+        let Ok(file_len_i32) = i32::try_from(entry.size) else {
+            return MutVoidPtr::null();
+        };
+        env.mem.write(filelen, file_len_i32);
+    }
+
+    let file_ptr = pack_base + entry.offset;
+    if lookfor == 2 {
+        return file_ptr.cast_void();
+    }
+
+    let is_gzip = {
+        let raw = env.mem.bytes_at(file_ptr.cast_const(), entry.size);
+        crate::gzip::is_gzip(raw)
+    };
+    if !is_gzip {
+        return file_ptr.cast_void();
+    }
+
+    let file_data = {
+        let raw = env.mem.bytes_at(file_ptr.cast_const(), entry.size);
+        match crate::gzip::ungzip(raw) {
+            Ok(data) => data,
+            Err(_) => return MutVoidPtr::null(),
+        }
+    };
+
+    write_file_data_to_guest(env, &file_data, filelen)
+}
+
+fn executable_entry_for_memory_pack(
+    env: &Environment,
+    pack_filename: &str,
+    filename: &str,
+) -> Option<mrp::MrpEntry> {
+    if pack_filename.as_bytes().get(0..2) != Some(b"*A") {
         return None;
     }
 
-    Some(data)
+    let pack_base_bits: u32 = env.mem.read(env.mythroad.state.mr_m0_files);
+    if pack_base_bits != env.executable.guest_base.to_bits() {
+        return None;
+    }
+
+    env.executable.entry(filename).cloned()
+}
+
+fn memory_pack_range(env: &Environment, pack_filename: &str) -> Option<(MutPtr<u8>, u32)> {
+    match pack_filename.as_bytes().first().copied()? {
+        b'*' => {
+            let index = pack_filename
+                .as_bytes()
+                .get(1)
+                .copied()?
+                .checked_sub(b'A')?;
+            if index >= 8 {
+                return None;
+            }
+            let pack_base_bits: u32 = env
+                .mem
+                .read(env.mythroad.state.mr_m0_files + u32::from(index));
+            let pack_base = MutPtr::<u8>::from_bits(pack_base_bits);
+            if pack_base.is_null() {
+                return None;
+            }
+
+            let header = env.mem.bytes_at(pack_base.cast_const(), 16);
+            let header = mrp::MrpHeader::parse(header).ok()?;
+            Some((pack_base, header.mrp_file_size))
+        }
+        b'$' => {
+            let pack_base = env.mythroad.state.mr_ram_file.get(&env.mem);
+            let pack_len = env.mythroad.state.mr_ram_file_len.get(&env.mem);
+            let pack_len = u32::try_from(pack_len).ok()?;
+            if pack_base.is_null() || pack_len == 0 {
+                return None;
+            }
+            Some((pack_base, pack_len))
+        }
+        _ => None,
+    }
+}
+
+fn write_file_data_to_guest(
+    env: &mut Environment,
+    file_data: &[u8],
+    filelen: MutPtr<i32>,
+) -> MutVoidPtr {
+    let Ok(file_len_i32) = i32::try_from(file_data.len()) else {
+        return MutVoidPtr::null();
+    };
+
+    if !filelen.is_null() {
+        env.mem.write(filelen, file_len_i32);
+    }
+
+    let Ok(file_len_u32) = u32::try_from(file_data.len()) else {
+        return MutVoidPtr::null();
+    };
+
+    let out = mr_malloc(env, file_len_u32);
+    if out.is_null() {
+        return MutVoidPtr::null();
+    }
+
+    if mrp::copy_bytes_to_guest(&mut env.mem, out.cast(), file_data).is_err() {
+        return MutVoidPtr::null();
+    }
+
+    out
 }
 
 pub(crate) fn mr_test_com_c(

@@ -78,12 +78,13 @@ impl Environment {
         let mut mem = mem::Memory::new();
 
         let (fs, guest_path) = fs::Fs::new(mrp_path.as_path());
-        let executable = mrp::Mrp::load_from_file(guest_path, &fs)
+        let executable = mrp::Mrp::load_from_file(guest_path, &fs, &mut mem)
             .map_err(|e| format!("Could not load MRP file: {}", e))?;
 
         let mut syscall = syscall::Syscall::new();
 
         let mythroad = mythroad::Mythroad::new(&mut mem);
+        mythroad.register_app(&mut mem, 0, executable.guest_base);
         syscall.setup_stubs(&executable, &mut mem, &mythroad);
         let mut cpu = cpu::Cpu::new();
         stack::prep_stack_for_start(&mut mem, &mut cpu);
@@ -109,9 +110,7 @@ impl Environment {
     /// Run the emulator.
     fn run(&mut self) {
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let entry = format!("%{}", self.executable.file_name);
-
-            dsm::mr_start_dsm_c(self, Some(&entry)) == mythroad::MrResult::Success.to_bits()
+            dsm::mr_start_dsm_c(self, Some("*A")) == mythroad::MrResult::Success.to_bits()
         }));
 
         match res {

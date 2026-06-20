@@ -4,6 +4,7 @@ use crate::cpu::Cpu;
 use crate::dsm;
 use crate::encoding;
 use crate::font;
+use crate::gzip;
 use crate::libc;
 use crate::mem::{
     guest_size_of, ConstPtr, ConstVoidPtr, GuestUSize, GuestVar, Memory, MutPtr, MutVoidPtr, Ptr,
@@ -28,6 +29,10 @@ impl Mythroad {
             state: State::new(mem),
             font: font::Font::new(mem),
         }
+    }
+
+    pub fn register_app(&self, mem: &mut Memory, index: u32, ptr: MutPtr<u8>) {
+        mem.write(self.state.mr_m0_files + index, ptr.to_bits());
     }
 }
 
@@ -1724,11 +1729,20 @@ fn bitmap_check(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_read_file(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_read_file(
+    env: &mut Environment,
+    filename: ConstPtr<u8>,
+    filelen: MutPtr<i32>,
+    lookfor: i32,
+) -> MutVoidPtr {
     log_dbg!(
-        "Mythroad: _mr_readFile(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _mr_readFile(filename={:#x}, filelen={:#x}, lookfor={lookfor}) called from {:#x}",
+        filename.to_bits(),
+        filelen.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    dsm::mr_read_file(env, filename, filelen, lookfor)
 }
 
 fn mr_wstrlen(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1767,11 +1781,13 @@ fn mr_test_com(env: &mut Environment, l: u32, input0: u32, input1: u32) -> u32 {
     dsm::test_com(env, l, input0, input1)
 }
 
-fn mr_test_com1(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_test_com1(env: &mut Environment, l: u32, input0: u32, input1: MutPtr<u8>, len: u32) -> u32 {
     log_dbg!(
-        "Mythroad: _mr_TestCom1(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _mr_TestCom1(L={l:#x}, input0={input0:#x}, input1={:#x}, len={len}) called from {:#x}",
+        input1.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    dsm::test_com1(env, l, input0, input1, len)
 }
 
 fn mr_c2u(
@@ -1812,11 +1828,49 @@ fn mr_updcrc(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_unzip(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_unzip(
+    env: &mut Environment,
+    input_buf: ConstPtr<u8>,
+    input_len: i32,
+    output_buf: MutPtr<MutPtr<u8>>,
+    outputlen: MutPtr<i32>,
+) -> i32 {
     log_dbg!(
-        "Mythroad: mr_unzip(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_unzip(inputbuf={:#x}, inputlen={input_len}, outputbuf={:#x}, outputlen={:#x}) called from {:#x}",
+        input_buf.to_bits(),
+        output_buf.to_bits(),
+        outputlen.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    if input_buf.is_null() || input_len <= 0 || output_buf.is_null() || outputlen.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    let output = match gzip::ungzip(env.mem.bytes_at(input_buf, input_len as u32)) {
+        Ok(output) => output,
+        Err(err) => {
+            log_dbg!("Mythroad: mr_unzip failed: {err}");
+            return MrResult::Failed as i32;
+        }
+    };
+    let output_len: u32 = output
+        .len()
+        .try_into()
+        .expect("gzip output size is limited");
+
+    let output_ptr: MutPtr<u8> = mr_malloc(env, output_len).cast();
+    env.mem.write(output_buf, output_ptr);
+    if output_ptr.is_null() {
+        env.mem.write(outputlen, 0i32);
+        return MrResult::Failed as i32;
+    }
+
+    env.mem
+        .bytes_at_mut(output_ptr, output_len)
+        .copy_from_slice(&output);
+    env.mem.write(outputlen, output.len() as i32);
+    MrResult::Success as i32
 }
 
 fn mr_entry(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1978,7 +2032,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(draw_rect(_, _, _, _, _, _, _))),
     Export::Func(export_c_func!(draw_text(_, _, _, _, _, _, _, _))),
     Export::Func(export_c_func!(bitmap_check(_, _, _, _))),
-    Export::Func(export_c_func!(mr_read_file(_, _, _, _))),
+    Export::Func(export_c_func!(mr_read_file(_, _, _))),
     Export::Func(export_c_func!(mr_wstrlen(_, _, _, _))),
     Export::Func(export_c_func!(mr_register_app(_, _, _, _))),
     Export::Func(export_c_func!(draw_text_ex(_, _, _, _))), // 1936
