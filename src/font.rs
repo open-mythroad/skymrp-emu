@@ -98,7 +98,7 @@ impl Font {
 
     fn select_mythroad_font(&mut self, font_size: u16) {
         self.current_pixel_size = match FontSize::from_bits(font_size) {
-            Some(FontSize::Small) => 12,
+            Some(FontSize::Small) => 16,
             Some(FontSize::Medium | FontSize::Big) => 16,
             None => 16,
         }
