@@ -139,8 +139,24 @@ impl Environment {
             self.window.poll_for_events();
 
             while let Some(event) = self.window.pop_event() {
-                let Event::Quit = event;
-                panic!("User requested quit, exiting...");
+                match event {
+                    Event::Quit => panic!("User requested quit, exiting..."),
+                    Event::KeyDown { key } => {
+                        dsm::mr_event(self, dsm::MR_KEY_PRESS, key as u32, 0);
+                    }
+                    Event::KeyUp { key } => {
+                        dsm::mr_event(self, dsm::MR_KEY_RELEASE, key as u32, 0);
+                    }
+                    Event::MouseDown { x, y } => {
+                        dsm::mr_event(self, dsm::MR_MOUSE_DOWN, x as u32, y as u32);
+                    }
+                    Event::MouseUp { x, y } => {
+                        dsm::mr_event(self, dsm::MR_MOUSE_UP, x as u32, y as u32);
+                    }
+                    Event::MouseMove { x, y } => {
+                        dsm::mr_event(self, dsm::MR_MOUSE_MOVE, x as u32, y as u32);
+                    }
+                }
             }
 
             dsm::mr_timer(self);

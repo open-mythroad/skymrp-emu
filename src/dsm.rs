@@ -15,6 +15,11 @@ const MR_FILE_HANDLE_OFFSET: i32 = 5;
 const MR_FILE_RDONLY: u32 = 1;
 const MR_FILE_WRONLY: u32 = 2;
 const MR_FILE_RDWR: u32 = 4;
+pub(crate) const MR_KEY_PRESS: u32 = 0;
+pub(crate) const MR_KEY_RELEASE: u32 = 1;
+pub(crate) const MR_MOUSE_DOWN: u32 = 2;
+pub(crate) const MR_MOUSE_UP: u32 = 3;
+pub(crate) const MR_MOUSE_MOVE: u32 = 12;
 
 pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> u32 {
     let pack_filename = match entry {
@@ -359,6 +364,39 @@ pub(crate) fn mr_timer(env: &mut Environment) -> u32 {
     }
 
     MrResult::Success.to_bits()
+}
+
+pub(crate) fn mr_event(env: &mut Environment, code: u32, param0: u32, param1: u32) -> u32 {
+    log_dbg!("Mythroad: mr_event(code={code}, param0={param0}, param1={param1})");
+
+    let mr_state = env.mythroad.state.mr_state.get(&env.mem);
+    let timer_runs_while_paused = env.mythroad.state.mr_timer_run_without_pause.get(&env.mem) != 0;
+
+    if mr_state != MrRunState::Run.to_bits()
+        && !(timer_runs_while_paused && mr_state == MrRunState::Pause.to_bits())
+    {
+        return MrResult::Ignored.to_bits();
+    }
+
+    let event_function = env.mythroad.state.mr_event_function;
+    if event_function.addr_without_thumb_bit() != 0 {
+        let event_status: u32 = event_function.call_from_host(env, (code, param0, param1));
+        if event_status != MrResult::Ignored.to_bits() {
+            return event_status;
+        }
+    }
+
+    let event = env.mem.alloc(5 * std::mem::size_of::<u32>() as u32);
+    let event_words: MutPtr<u32> = event.cast();
+    env.mem.write(event_words, code);
+    env.mem.write(event_words + 1, param0);
+    env.mem.write(event_words + 2, param1);
+    env.mem.write(event_words + 3, 0u32);
+    env.mem.write(event_words + 4, 0u32);
+
+    let result = mr_test_com_c(env, 801, event, 5 * std::mem::size_of::<u32>() as u32, 1);
+    env.mem.free(event);
+    result
 }
 
 fn mr_start_shake(_env: &mut Environment, ms: u32) -> u32 {
