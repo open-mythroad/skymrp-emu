@@ -6,9 +6,15 @@ use crate::font;
 use crate::libc;
 use crate::mem::{
     guest_size_of, ConstPtr, ConstVoidPtr, GuestUSize, GuestVar, Memory, MutPtr, MutVoidPtr, Ptr,
+    SafeRead,
 };
 use crate::syscall::{export_c_data, export_c_func, Export, FunctionExports};
 use crate::Environment;
+
+const BITMAPMAX: GuestUSize = 30;
+const SPRITEMAX: GuestUSize = 10;
+const TILEMAX: GuestUSize = 3;
+const SOUNDMAX: GuestUSize = 5;
 
 pub struct Mythroad {
     pub state: State,
@@ -81,6 +87,53 @@ impl MrTimerState {
         self as u32
     }
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct MrBitmap {
+    pub w: u16,
+    pub h: u16,
+    pub buflen: u32,
+    pub type_: u32,
+    pub p: MutPtr<u16>,
+}
+
+impl SafeRead for MrBitmap {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct MrTile {
+    pub x: i16,
+    pub y: i16,
+    pub w: u16,
+    pub h: u16,
+    pub x1: i16,
+    pub y1: i16,
+    pub x2: i16,
+    pub y2: i16,
+    pub tilew: u16,
+    pub tileh: u16,
+}
+
+impl SafeRead for MrTile {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct MrSound {
+    pub p: MutVoidPtr,
+    pub buflen: u32,
+    pub type_: i32,
+}
+
+impl SafeRead for MrSound {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct MrSprite {
+    pub h: u16,
+}
+
+impl SafeRead for MrSprite {}
 
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -205,6 +258,11 @@ pub struct State {
     pub mr_screen_w: GuestVar<i32>,
     pub mr_screen_h: GuestVar<i32>,
     pub mr_screen_bit: GuestVar<i32>,
+    pub mr_bitmap: MutPtr<MrBitmap>,
+    pub mr_tile: MutPtr<MrTile>,
+    pub mr_map: MutPtr<MutPtr<i16>>,
+    pub mr_sound: MutPtr<MrSound>,
+    pub mr_sprite: MutPtr<MrSprite>,
     pub mr_ram_file: GuestVar<MutPtr<u8>>,
     pub mr_ram_file_len: GuestVar<i32>,
     pub mr_sms_cfg_buf: MutPtr<u8>,
@@ -267,6 +325,11 @@ impl State {
         let mr_screen_w = GuestVar::new(mem, sysinfo.screen_width as i32);
         let mr_screen_h = GuestVar::new(mem, sysinfo.screen_height as i32);
         let mr_screen_bit = GuestVar::new(mem, sysinfo.screen_bits as i32);
+        let mr_bitmap = alloc_array(mem, BITMAPMAX + 1);
+        let mr_tile = alloc_array(mem, TILEMAX);
+        let mr_map = alloc_array(mem, TILEMAX);
+        let mr_sound = alloc_array(mem, SOUNDMAX);
+        let mr_sprite = alloc_array(mem, SPRITEMAX);
         let mr_ram_file = GuestVar::new(mem, MutPtr::<u8>::null());
         let mr_ram_file_len = GuestVar::new(mem, 0i32);
         let mr_sms_cfg_buf = alloc_array(mem, MR_SMS_CFG_BUF_LEN);
@@ -336,6 +399,11 @@ impl State {
             mr_screen_w,
             mr_screen_h,
             mr_screen_bit,
+            mr_bitmap,
+            mr_tile,
+            mr_map,
+            mr_sound,
+            mr_sprite,
             mr_ram_file,
             mr_ram_file_len,
             mr_sms_cfg_buf,
@@ -355,6 +423,71 @@ fn write_u32_table(mem: &mut Memory, values: &[u32]) -> MutPtr<u32> {
         mem.write(table + index.try_into().unwrap(), value);
     }
     table
+}
+
+pub(crate) fn reset_resource_tables(env: &mut Environment) {
+    let state = &env.mythroad.state;
+    let screen_buf = state.mr_screen_buf.get(&env.mem);
+    let screen_w = state.mr_screen_w.get(&env.mem);
+    let screen_h = state.mr_screen_h.get(&env.mem);
+    let screen_buf_len = (screen_w.max(0) as u32)
+        .saturating_mul(screen_h.max(0) as u32)
+        .saturating_mul(std::mem::size_of::<u16>() as u32);
+    let mr_bitmap = state.mr_bitmap;
+    let mr_sound = state.mr_sound;
+    let mr_sprite = state.mr_sprite;
+    let mr_tile = state.mr_tile;
+    let mr_map = state.mr_map;
+
+    libc::string::memset(
+        env,
+        mr_bitmap.cast(),
+        0,
+        guest_size_of::<MrBitmap>() * BITMAPMAX,
+    );
+    libc::string::memset(
+        env,
+        mr_sound.cast(),
+        0,
+        guest_size_of::<MrSound>() * SOUNDMAX,
+    );
+    libc::string::memset(
+        env,
+        mr_sprite.cast(),
+        0,
+        guest_size_of::<MrSprite>() * SPRITEMAX,
+    );
+    libc::string::memset(env, mr_tile.cast(), 0, guest_size_of::<MrTile>() * TILEMAX);
+    libc::string::memset(
+        env,
+        mr_map.cast(),
+        0,
+        guest_size_of::<MutPtr<i16>>() * TILEMAX,
+    );
+
+    for i in 0..TILEMAX {
+        env.mem.write(
+            mr_tile + i,
+            MrTile {
+                x1: 0,
+                y1: 0,
+                x2: screen_w as i16,
+                y2: screen_h as i16,
+                ..MrTile::default()
+            },
+        );
+    }
+
+    env.mem.write(
+        mr_bitmap + BITMAPMAX,
+        MrBitmap {
+            w: screen_w as u16,
+            h: screen_h as u16,
+            buflen: screen_buf_len,
+            type_: 0,
+            p: screen_buf,
+        },
+    );
 }
 
 pub(crate) fn mr_malloc(env: &mut Environment, len: u32) -> MutVoidPtr {
@@ -1197,41 +1330,6 @@ fn mr_sendto(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_bitmap(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    log_dbg!(
-        "Mythroad: mr_bitmap(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
-}
-
-fn mr_tile(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    log_dbg!(
-        "Mythroad: mr_tile(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
-}
-
-fn mr_map(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    log_dbg!(
-        "Mythroad: mr_map(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
-}
-
-fn mr_sound(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    log_dbg!(
-        "Mythroad: mr_sound(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
-}
-
-fn mr_sprite(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    log_dbg!(
-        "Mythroad: mr_sprite(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
-}
-
 fn mr_md5_init(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     log_dbg!(
         "Mythroad: mr_md5_init(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
@@ -1801,11 +1899,11 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Data(export_c_data!(state.mr_screen_w)),   // &mr_screen_w
     Export::Data(export_c_data!(state.mr_screen_h)),   // &mr_screen_h
     Export::Data(export_c_data!(state.mr_screen_bit)), // &mr_screen_bit
-    Export::Func(export_c_func!(mr_bitmap(_, _, _, _))),
-    Export::Func(export_c_func!(mr_tile(_, _, _, _))),
-    Export::Func(export_c_func!(mr_map(_, _, _, _))),
-    Export::Func(export_c_func!(mr_sound(_, _, _, _))),
-    Export::Func(export_c_func!(mr_sprite(_, _, _, _))),
+    Export::Data(export_c_data!(state.mr_bitmap)),
+    Export::Data(export_c_data!(state.mr_tile)),
+    Export::Data(export_c_data!(state.mr_map)),
+    Export::Data(export_c_data!(state.mr_sound)),
+    Export::Data(export_c_data!(state.mr_sprite)),
     Export::Data(export_c_data!(state.pack_filename)), // pack_filename
     Export::Data(export_c_data!(state.start_filename)), // start_filename
     Export::Data(export_c_data!(state.old_pack_filename)), // old_pack_filename

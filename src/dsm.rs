@@ -3,7 +3,9 @@ use crate::libc;
 use crate::libc::posix_io::{self, OpenFlag};
 use crate::mem::{ConstPtr, MutPtr, MutVoidPtr};
 use crate::mrp;
-use crate::mythroad::{mr_free, mr_malloc, MrResult, MrRunState, MrTimerState};
+use crate::mythroad::{
+    mr_free, mr_malloc, reset_resource_tables, MrResult, MrRunState, MrTimerState,
+};
 use crate::Environment;
 
 use std::time::Duration;
@@ -377,16 +379,42 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
     env.mythroad.state.mr_pause_app_function = null_function;
     env.mythroad.state.mr_resume_app_function = null_function;
 
-    env.mythroad.state.mr_c_function_p = crate::mem::MutVoidPtr::null();
-    env.mythroad.state.mr_c_function_p_len = 0;
+    let previous_c_function_p = env.mythroad.state.mr_c_function_p;
+    let previous_c_function_p_len = env.mythroad.state.mr_c_function_p_len;
+    if !previous_c_function_p.is_null() {
+        mr_free(env, previous_c_function_p, previous_c_function_p_len);
+    }
 
+    env.mythroad.state.mr_c_function_p = MutVoidPtr::null();
+    env.mythroad.state.mr_c_function_p_len = 0;
+    env.mythroad.state.mr_c_function = null_function;
+    env.mythroad
+        .state
+        .mr_ram_file
+        .set(&mut env.mem, MutPtr::<u8>::null());
+    env.mythroad.state.mr_ram_file_len.set(&mut env.mem, 0);
+
+    env.mythroad.state.vm_state.set(&mut env.mem, 0);
     env.mythroad
         .state
         .mr_timer_state
         .set(&mut env.mem, MrTimerState::Idle.to_bits());
+    env.mythroad
+        .state
+        .mr_timer_run_without_pause
+        .set(&mut env.mem, 0);
     env.mythroad.state.mr_timer_start_time = mr_get_time(env);
     env.mythroad.state.mr_timer_interval = 0;
     env.mythroad.state.bi.update(&mut env.mem, |bi| bi & 2);
+
+    if !reset_screen_buffer(env) {
+        env.mythroad
+            .state
+            .mr_state
+            .set(&mut env.mem, MrRunState::Error.to_bits());
+        return MrResult::Failed.to_bits();
+    }
+    reset_resource_tables(env);
 
     let entry = entry.unwrap_or("_dsm");
     libc::string::memset(env, env.mythroad.state.entry.cast_void(), 0, 128);
@@ -415,6 +443,38 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
     }
 
     MrResult::Success.to_bits()
+}
+
+fn reset_screen_buffer(env: &mut Environment) -> bool {
+    let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
+    let screen_h = env.mythroad.state.mr_screen_h.get(&env.mem);
+    let Ok(screen_w) = u32::try_from(screen_w) else {
+        return false;
+    };
+    let Ok(screen_h) = u32::try_from(screen_h) else {
+        return false;
+    };
+    let Some(screen_pixels) = screen_w.checked_mul(screen_h) else {
+        return false;
+    };
+    let Some(screen_buf_len) = screen_pixels.checked_mul(std::mem::size_of::<u16>() as u32) else {
+        return false;
+    };
+
+    let mut screen_buf = env.mythroad.state.mr_screen_buf.get(&env.mem);
+    if screen_buf.is_null() {
+        screen_buf = mr_malloc(env, screen_buf_len).cast();
+        if screen_buf.is_null() {
+            return false;
+        }
+        env.mythroad
+            .state
+            .mr_screen_buf
+            .set(&mut env.mem, screen_buf);
+    }
+
+    libc::string::memset(env, screen_buf.cast(), 0, screen_buf_len);
+    true
 }
 
 fn mr_do_ext(env: &mut Environment, filename: &str) -> u32 {
