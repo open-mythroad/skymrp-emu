@@ -1,3 +1,6 @@
 [submodule "vendor/dynarmic"]
 	path = vendor/dynarmic
 	url = https://github.com/arctan95/dynarmic.git
+[submodule "vendor/sonivox"]
+	path = vendor/sonivox
+	url = https://github.com/arctan95/sonivox.git

@@ -74,6 +74,10 @@ impl Window {
         }
     }
 
+    pub fn sdl_context(&self) -> &sdl2::Sdl {
+        &self._sdl_ctx
+    }
+
     pub fn refresh(&mut self, framebuffer: &[u8], screen_width: u32, screen_height: u32) {
         let pitch = screen_width as usize * 2;
         if framebuffer.len() != pitch * screen_height as usize {

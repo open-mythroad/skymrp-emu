@@ -1,4 +1,5 @@
 use crate::abi::{DotDotDot, GuestFunction};
+use crate::audio;
 use crate::cpu::Cpu;
 use crate::dsm;
 use crate::encoding;
@@ -1082,18 +1083,52 @@ fn mr_stop_shake(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_play_sound(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_play_sound(
+    env: &mut Environment,
+    type_: i32,
+    data: ConstPtr<u8>,
+    data_len: u32,
+    loop_: i32,
+) -> i32 {
     log_dbg!(
-        "Mythroad: mr_playSound(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_playSound(type={type_}, data={:#x}, dataLen={data_len:#x}, loop={loop_}) called from {:#x}",
+        data.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    let Ok(sound_type) = audio::SoundType::try_from(type_) else {
+        log!("Mythroad: mr_playSound failed: unsupported sound type: {type_}");
+        return MrResult::Failed as i32;
+    };
+
+    let sound_data = env.mem.bytes_at(data, data_len).to_vec();
+    match audio::play_sound(sound_type, &sound_data, loop_ != 0) {
+        Ok(()) => MrResult::Success as i32,
+        Err(err) => {
+            log!("Mythroad: mr_playSound failed: {err}");
+            MrResult::Failed as i32
+        }
+    }
 }
 
-fn mr_stop_sound(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_stop_sound(env: &mut Environment, type_: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_stopSound(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_stopSound(type={type_}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    let Ok(sound_type) = audio::SoundType::try_from(type_) else {
+        log!("Mythroad: mr_stopSound failed: unsupported sound type: {type_}");
+        return MrResult::Failed as i32;
+    };
+
+    match audio::stop_sound(sound_type) {
+        Ok(()) => MrResult::Success as i32,
+        Err(err) => {
+            log!("Mythroad: mr_stopSound failed: {err}");
+            MrResult::Failed as i32
+        }
+    }
 }
 
 fn mr_send_sms(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1862,7 +1897,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_start_shake(_, _, _, _))),
     Export::Func(export_c_func!(mr_stop_shake(_, _, _, _))),
     Export::Func(export_c_func!(mr_play_sound(_, _, _, _))),
-    Export::Func(export_c_func!(mr_stop_sound(_, _, _, _))), // 59
+    Export::Func(export_c_func!(mr_stop_sound(_))), // 59
     Export::Func(export_c_func!(mr_send_sms(_, _, _, _))),
     Export::Func(export_c_func!(mr_call(_, _, _, _))),
     Export::Func(export_c_func!(mr_get_network_id(_, _, _, _))),

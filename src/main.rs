@@ -1,6 +1,7 @@
 #[macro_use]
 mod log;
 mod abi;
+mod audio;
 mod cpu;
 mod dsm;
 mod encoding;
@@ -72,6 +73,7 @@ impl Environment {
     /// Loads the binary and sets up the emulator.
     fn new(mrp_path: PathBuf) -> Result<Environment, String> {
         let window = window::Window::new("SKYMRP");
+        audio::init(window.sdl_context()).map_err(|e| e.to_string())?;
 
         let mut mem = mem::Memory::new();
 
@@ -161,7 +163,6 @@ impl Environment {
 
             dsm::mr_timer(self);
 
-            // TODO: handle audio queues
             std::thread::sleep(Duration::from_millis(5));
         }
     }

@@ -264,6 +264,7 @@ dependencies = [
  "sdl2",
  "sdl2-sys",
  "skymrp_dynarmic_wrapper",
+ "skymrp_sonivox_wrapper",
 ]
 
 [[package]]
@@ -271,6 +272,13 @@ name = "skymrp_dynarmic_wrapper"
 version = "0.1.0"
 dependencies = [
  "cc",
+ "cmake",
+]
+
+[[package]]
+name = "skymrp_sonivox_wrapper"
+version = "0.1.0"
+dependencies = [
  "cmake",
 ]
 
