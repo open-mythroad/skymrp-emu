@@ -1131,11 +1131,20 @@ fn mr_stop_sound(env: &mut Environment, type_: i32) -> i32 {
     }
 }
 
-fn mr_send_sms(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_send_sms(
+    env: &mut Environment,
+    number: ConstPtr<u8>,
+    content: ConstPtr<u8>,
+    flags: i32,
+) -> i32 {
     log_dbg!(
-        "Mythroad: mr_sendSms(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_sendSms(number={:#x}, content={:#x}, flags={flags:#x}) called from {:#x}",
+        number.to_bits(),
+        content.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Success as i32
 }
 
 fn mr_call(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1898,7 +1907,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_stop_shake(_, _, _, _))),
     Export::Func(export_c_func!(mr_play_sound(_, _, _, _))),
     Export::Func(export_c_func!(mr_stop_sound(_))), // 59
-    Export::Func(export_c_func!(mr_send_sms(_, _, _, _))),
+    Export::Func(export_c_func!(mr_send_sms(_, _, _))),
     Export::Func(export_c_func!(mr_call(_, _, _, _))),
     Export::Func(export_c_func!(mr_get_network_id(_, _, _, _))),
     Export::Func(export_c_func!(mr_connect_wap(_, _, _, _))),
