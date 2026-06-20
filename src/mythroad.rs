@@ -953,11 +953,12 @@ fn mr_plat_ex(
     dsm::mr_plat_ex(env, code, input, input_len, output, output_len, cb)
 }
 
-fn mr_ferrno(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_ferrno(env: &mut Environment) -> i32 {
     log_dbg!(
-        "Mythroad: mr_ferrno(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_ferrno called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    MrResult::Failed as i32
 }
 
 fn mr_open(env: &mut Environment, filename: ConstPtr<u8>, mode: u32) -> i32 {
@@ -984,11 +985,12 @@ fn mr_info(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {
     dsm::mr_info(env, filename)
 }
 
-fn mr_write(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_write(env: &mut Environment, handle: u32, buffer: ConstVoidPtr, len: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_write(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_write(handle={handle:#x}, buffer={buffer:?}, len={len:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    dsm::mr_write(env, handle, buffer, len)
 }
 
 fn mr_read(env: &mut Environment, handle: u32, buffer: MutVoidPtr, len: u32) -> i32 {
@@ -1890,11 +1892,11 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_sleep(_, _, _, _))), // 37
     Export::Func(export_c_func!(mr_plat(_, _))),
     Export::Func(export_c_func!(mr_plat_ex(_, _, _, _, _, _))), // 39
-    Export::Func(export_c_func!(mr_ferrno(_, _, _, _))),
+    Export::Func(export_c_func!(mr_ferrno())),
     Export::Func(export_c_func!(mr_open(_, _))),
     Export::Func(export_c_func!(mr_close(_))),
     Export::Func(export_c_func!(mr_info(_))),
-    Export::Func(export_c_func!(mr_write(_, _, _, _))),
+    Export::Func(export_c_func!(mr_write(_, _, _))),
     Export::Func(export_c_func!(mr_read(_, _, _))),
     Export::Func(export_c_func!(mr_seek(_, _, _))),
     Export::Func(export_c_func!(mr_get_len(_))),

@@ -2,7 +2,7 @@ use crate::abi::{CallFromHost, GuestFunction};
 use crate::fs::GuestPath;
 use crate::libc;
 use crate::libc::posix_io::{self, OpenFlag};
-use crate::mem::{ConstPtr, MutPtr, MutVoidPtr};
+use crate::mem::{ConstPtr, ConstVoidPtr, MutPtr, MutVoidPtr};
 use crate::mrp;
 use crate::mythroad::{
     mr_free, mr_malloc, reset_resource_tables, MrResult, MrRunState, MrTimerState,
@@ -135,6 +135,22 @@ pub(crate) fn mr_read(env: &mut Environment, handle: u32, buffer: MutVoidPtr, le
         MrResult::Failed as i32
     } else {
         read_len
+    }
+}
+
+pub(crate) fn mr_write(env: &mut Environment, handle: u32, buffer: ConstVoidPtr, len: u32) -> i32 {
+    if handle == 0 {
+        return MrResult::Failed as i32;
+    }
+
+    let Some(fd) = mr_file_handle_to_posix_fd(handle) else {
+        return MrResult::Failed as i32;
+    };
+    let write_len = posix_io::write(env, fd, buffer, len);
+    if write_len < 0 {
+        MrResult::Failed as i32
+    } else {
+        write_len
     }
 }
 
