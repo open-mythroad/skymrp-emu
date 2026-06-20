@@ -1835,7 +1835,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_mem_free(_, _))),
     Export::Func(export_c_func!(mr_draw_bitmap(_, _, _, _, _))),
     Export::Func(export_c_func!(mr_get_char_bitmap(_, _, _, _))),
-    Export::Func(export_c_func!(mr_timer_start(u16))),
+    Export::Func(export_c_func!(mr_timer_start(_))),
     Export::Func(export_c_func!(mr_timer_stop())),
     Export::Func(export_c_func!(mr_get_time())),
     Export::Func(export_c_func!(mr_get_datetime(_, _, _, _))),
