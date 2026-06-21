@@ -152,17 +152,23 @@ impl ToOwned for GuestPath {
 /// Like [File] but for the guest filesystem.
 #[derive(Debug)]
 pub enum GuestFile {
-    HostFile(File),
+    File(File),
+    Directory,
 }
 
 impl GuestFile {
     fn from_host_file(file: File) -> GuestFile {
-        GuestFile::HostFile(file)
+        GuestFile::File(file)
+    }
+
+    fn from_directory() -> GuestFile {
+        GuestFile::Directory
     }
 
     pub fn sync_all(&self) -> std::io::Result<()> {
         match self {
-            GuestFile::HostFile(file) => file.sync_all(),
+            GuestFile::File(file) => file.sync_all(),
+            GuestFile::Directory => panic!("Attempt to sync a directory as a guest file"),
         }
     }
 }
@@ -170,7 +176,8 @@ impl GuestFile {
 impl Read for GuestFile {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
-            GuestFile::HostFile(file) => file.read(buf),
+            GuestFile::File(file) => file.read(buf),
+            GuestFile::Directory => panic!("Attempt to read from a directory as a guest file"),
         }
     }
 }
@@ -178,13 +185,15 @@ impl Read for GuestFile {
 impl Write for GuestFile {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            GuestFile::HostFile(file) => file.write(buf),
+            GuestFile::File(file) => file.write(buf),
+            GuestFile::Directory => panic!("Attempt to write to a directory as a guest file"),
         }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
-            GuestFile::HostFile(file) => file.flush(),
+            GuestFile::File(file) => file.flush(),
+            GuestFile::Directory => panic!("Attempt to flush a directory as a guest file"),
         }
     }
 }
@@ -192,7 +201,8 @@ impl Write for GuestFile {
 impl Seek for GuestFile {
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
         match self {
-            GuestFile::HostFile(file) => file.seek(pos),
+            GuestFile::File(file) => file.seek(pos),
+            GuestFile::Directory => panic!("Attempt to seek in a directory as a guest file"),
         }
     }
 }
@@ -529,7 +539,11 @@ impl Fs {
                     return Ok(GuestFile::from_host_file(file));
                 }
                 FsNode::Directory { .. } => {
-                    return Err(());
+                    if write {
+                        return Err(());
+                    } else {
+                        return Ok(GuestFile::from_directory());
+                    }
                 }
             }
         };

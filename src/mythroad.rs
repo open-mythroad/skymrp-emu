@@ -1036,12 +1036,12 @@ fn mr_rename(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_mk_dir(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
+fn mr_mkdir(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
     log_dbg!(
         "Mythroad: mr_mkDir(name={name:?}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
-    dsm::mr_mk_dir(env, name)
+    dsm::mr_mkdir(env, name)
 }
 
 fn mr_rm_dir(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1956,7 +1956,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_get_len(_))),
     Export::Func(export_c_func!(mr_remove(_, _, _, _))),
     Export::Func(export_c_func!(mr_rename(_, _, _, _))),
-    Export::Func(export_c_func!(mr_mk_dir(_))),
+    Export::Func(export_c_func!(mr_mkdir(_))),
     Export::Func(export_c_func!(mr_rm_dir(_, _, _, _))),
     Export::Func(export_c_func!(mr_find_start(_, _, _, _))),
     Export::Func(export_c_func!(mr_find_get_next(_, _, _, _))),

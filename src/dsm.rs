@@ -195,7 +195,7 @@ pub(crate) fn mr_info(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {
     }
 }
 
-pub(crate) fn mr_mk_dir(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
+pub(crate) fn mr_mkdir(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
     if name.is_null() {
         return MrResult::Failed as i32;
     }
