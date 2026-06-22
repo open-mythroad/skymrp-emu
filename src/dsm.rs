@@ -207,6 +207,34 @@ pub(crate) fn mr_mkdir(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
     }
 }
 
+pub(crate) fn mr_remove(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {
+    if filename.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    if libc::stdio::remove(env, filename) == 0 {
+        MrResult::Success as i32
+    } else {
+        MrResult::Failed as i32
+    }
+}
+
+pub(crate) fn mr_rename(
+    env: &mut Environment,
+    oldname: ConstPtr<u8>,
+    newname: ConstPtr<u8>,
+) -> i32 {
+    if oldname.is_null() || newname.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    if posix_io::rename(env, oldname, newname) == 0 {
+        MrResult::Success as i32
+    } else {
+        MrResult::Failed as i32
+    }
+}
+
 pub(crate) fn mr_get_len(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {
     if filename.is_null() {
         return MrResult::Failed as i32;

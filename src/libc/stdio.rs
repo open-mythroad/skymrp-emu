@@ -3,7 +3,7 @@ use crate::mem::ConstPtr;
 use crate::Environment;
 pub mod printf;
 
-fn remove(env: &mut Environment, path: ConstPtr<u8>) -> i32 {
+pub(crate) fn remove(env: &mut Environment, path: ConstPtr<u8>) -> i32 {
     match env
         .fs
         .remove(GuestPath::new(&env.mem.cstr_at_utf8(path).unwrap()))
