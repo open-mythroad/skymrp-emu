@@ -1,4 +1,5 @@
 use crate::abi::{CallFromHost, GuestFunction};
+use crate::encoding;
 use crate::fs::GuestPath;
 use crate::libc;
 use crate::libc::posix_io::stat::mode_t;
@@ -238,6 +239,77 @@ pub(crate) fn mr_rename(
     } else {
         MrResult::Failed as i32
     }
+}
+
+pub(crate) fn mr_find_start(
+    env: &mut Environment,
+    name: ConstPtr<u8>,
+    buffer: MutPtr<u8>,
+    len: u32,
+) -> i32 {
+    if name.is_null() || buffer.is_null() || len == 0 {
+        return MrResult::Failed as i32;
+    }
+
+    let dir = libc::dirent::opendir(env, name);
+    if dir.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    libc::string::memset(env, buffer.cast_void(), 0, len);
+    let dirent = libc::dirent::readdir(env, dir);
+    if !dirent.is_null() {
+        let dirent = env.mem.read(dirent);
+        encoding::utf8_to_gb_string(
+            env,
+            &dirent.d_name[..usize::from(dirent.d_namlen)],
+            buffer,
+            len,
+        );
+    }
+
+    dir.to_bits().try_into().unwrap_or(MrResult::Failed as i32)
+}
+
+pub(crate) fn mr_find_get_next(
+    env: &mut Environment,
+    search_handle: i32,
+    buffer: MutPtr<u8>,
+    len: u32,
+) -> i32 {
+    if search_handle == 0
+        || search_handle == MrResult::Failed as i32
+        || buffer.is_null()
+        || len == 0
+    {
+        return MrResult::Failed as i32;
+    }
+
+    let dir = MutPtr::<libc::dirent::DIR>::from_bits(search_handle as u32);
+    libc::string::memset(env, buffer.cast_void(), 0, len);
+    let dirent = libc::dirent::readdir(env, dir);
+    if dirent.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    let dirent = env.mem.read(dirent);
+    encoding::utf8_to_gb_string(
+        env,
+        &dirent.d_name[..usize::from(dirent.d_namlen)],
+        buffer,
+        len,
+    );
+    MrResult::Success as i32
+}
+
+pub(crate) fn mr_find_stop(env: &mut Environment, search_handle: i32) -> i32 {
+    if search_handle == 0 || search_handle == MrResult::Failed as i32 {
+        return MrResult::Failed as i32;
+    }
+
+    let dir = MutPtr::<libc::dirent::DIR>::from_bits(search_handle as u32);
+    libc::dirent::closedir(env, dir);
+    MrResult::Success as i32
 }
 
 pub(crate) fn mr_get_len(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {

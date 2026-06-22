@@ -89,6 +89,19 @@ pub(crate) fn mr_c2u(
     result.ptr
 }
 
+pub(crate) fn utf8_to_gb_string(env: &mut Environment, utf8: &[u8], buffer: MutPtr<u8>, len: u32) {
+    if buffer.is_null() || len == 0 {
+        return;
+    }
+
+    let utf8 = std::str::from_utf8(utf8).unwrap_or("");
+    let (gb, _, _) = GBK.encode(utf8);
+    let copy_len = gb.len().min(len.saturating_sub(1) as usize);
+    env.mem
+        .bytes_at_mut(buffer, copy_len.try_into().unwrap())
+        .copy_from_slice(&gb[..copy_len]);
+}
+
 fn gb_code_to_unicode(env: &Environment, cp: ConstPtr<u8>) -> Option<u16> {
     let bytes = [env.mem.read(cp), env.mem.read(cp + 1)];
     let (text, had_errors) = GBK.decode_without_bom_handling(&bytes);

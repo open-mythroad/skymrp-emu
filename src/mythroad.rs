@@ -1054,25 +1054,33 @@ fn mr_rmdir(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
     dsm::mr_rmdir(env, name)
 }
 
-fn mr_find_start(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_find_start(env: &mut Environment, name: ConstPtr<u8>, buffer: MutPtr<u8>, len: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_findStart(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_findStart(name={name:?}, buffer={buffer:?}, len={len}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    dsm::mr_find_start(env, name, buffer, len)
 }
 
-fn mr_find_get_next(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_find_get_next(
+    env: &mut Environment,
+    search_handle: i32,
+    buffer: MutPtr<u8>,
+    len: u32,
+) -> i32 {
     log_dbg!(
-        "Mythroad: mr_findGetNext(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_findGetNext(search_handle={search_handle}, buffer={buffer:?}, len={len}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    dsm::mr_find_get_next(env, search_handle, buffer, len)
 }
 
-fn mr_find_stop(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_find_stop(env: &mut Environment, search_handle: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_findStop(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_findStop(search_handle={search_handle}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    dsm::mr_find_stop(env, search_handle)
 }
 
 fn mr_exit(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1961,9 +1969,9 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_rename(_, _))),
     Export::Func(export_c_func!(mr_mkdir(_))),
     Export::Func(export_c_func!(mr_rmdir(_))),
-    Export::Func(export_c_func!(mr_find_start(_, _, _, _))),
-    Export::Func(export_c_func!(mr_find_get_next(_, _, _, _))),
-    Export::Func(export_c_func!(mr_find_stop(_, _, _, _))), // 54
+    Export::Func(export_c_func!(mr_find_start(_, _, _))),
+    Export::Func(export_c_func!(mr_find_get_next(_, _, _))),
+    Export::Func(export_c_func!(mr_find_stop(_))), // 54
     Export::Func(export_c_func!(mr_exit(_, _, _, _))),
     Export::Func(export_c_func!(mr_start_shake(_, _, _, _))),
     Export::Func(export_c_func!(mr_stop_shake(_, _, _, _))),

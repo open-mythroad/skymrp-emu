@@ -4,7 +4,7 @@ use crate::Environment;
 use std::collections::HashMap;
 
 #[allow(clippy::upper_case_acronyms)]
-struct DIR {
+pub(crate) struct DIR {
     idx: usize,
 }
 impl SafeRead for DIR {}
@@ -18,13 +18,13 @@ const DT_REG: DirentFileType = 8;
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
 #[repr(C, packed)]
-struct dirent {
-    d_ino: u64,
-    d_seekoff: u64,
-    d_reclen: u16,
-    d_namlen: u16,
-    d_type: u8,
-    d_name: [u8; MAXPATHLEN],
+pub struct dirent {
+    pub d_ino: u64,
+    pub d_seekoff: u64,
+    pub d_reclen: u16,
+    pub d_namlen: u16,
+    pub d_type: u8,
+    pub d_name: [u8; MAXPATHLEN],
 }
 impl SafeRead for dirent {}
 
@@ -39,7 +39,7 @@ impl State {
     }
 }
 
-fn opendir(env: &mut Environment, filename: ConstPtr<u8>) -> MutPtr<DIR> {
+pub(crate) fn opendir(env: &mut Environment, filename: ConstPtr<u8>) -> MutPtr<DIR> {
     // TODO: set errno
     let path_string = env.mem.cstr_at_utf8(filename).unwrap().to_owned();
     log_dbg!("opendir: filename {}", path_string);
@@ -61,7 +61,7 @@ fn opendir(env: &mut Environment, filename: ConstPtr<u8>) -> MutPtr<DIR> {
 }
 
 // TODO: return '.' and '..' entries as well
-fn readdir(env: &mut Environment, dirp: MutPtr<DIR>) -> MutPtr<dirent> {
+pub(crate) fn readdir(env: &mut Environment, dirp: MutPtr<DIR>) -> MutPtr<dirent> {
     // TODO: set errno
     let mut dir = env.mem.read(dirp);
     let vec = env.libc_state.dirent.open_dirs.get(&dirp).unwrap();
@@ -103,7 +103,7 @@ fn readdir(env: &mut Environment, dirp: MutPtr<DIR>) -> MutPtr<dirent> {
     }
 }
 
-fn closedir(env: &mut Environment, dirp: MutPtr<DIR>) -> i32 {
+pub(crate) fn closedir(env: &mut Environment, dirp: MutPtr<DIR>) -> i32 {
     // TODO: set errno
     log_dbg!("closedir: dirp {:?}", dirp);
     if let Some(vec) = env.libc_state.dirent.read_dirs.remove(&dirp) {
