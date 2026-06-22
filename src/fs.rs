@@ -486,7 +486,6 @@ impl Fs {
                     let host_file = handle_open_err(File::open(host_path), host_path);
                     Ok(GuestFile::from_host_file(host_file))
                 }
-                _ => unimplemented!(),
             },
             FsNode::Directory { .. } => Err(()),
         }

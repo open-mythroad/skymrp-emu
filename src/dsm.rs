@@ -1,6 +1,7 @@
 use crate::abi::{CallFromHost, GuestFunction};
 use crate::fs::GuestPath;
 use crate::libc;
+use crate::libc::posix_io::stat::mode_t;
 use crate::libc::posix_io::{self, OpenFlag};
 use crate::mem::{ConstPtr, ConstVoidPtr, MutPtr, MutVoidPtr};
 use crate::mrp;
@@ -200,11 +201,15 @@ pub(crate) fn mr_mkdir(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
         return MrResult::Failed as i32;
     }
 
-    let name = env.mem.cstr_at_utf8(name).unwrap();
-    match env.fs.create_dir(GuestPath::new(&name)) {
-        Ok(()) => MrResult::Success as i32,
-        Err(_) => MrResult::Failed as i32,
+    posix_io::stat::mkdir(env, name, 0o777 as mode_t)
+}
+
+pub(crate) fn mr_rmdir(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
+    if name.is_null() {
+        return MrResult::Failed as i32;
     }
+
+    posix_io::stat::rmdir(env, name)
 }
 
 pub(crate) fn mr_remove(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {

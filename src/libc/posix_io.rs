@@ -1,3 +1,5 @@
+pub mod stat;
+
 use crate::abi::DotDotDot;
 use crate::fs::{GuestFile, GuestOpenOptions, GuestPath};
 use crate::mem::{ConstPtr, ConstVoidPtr, GuestISize, GuestUSize, MutVoidPtr};
