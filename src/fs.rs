@@ -4,6 +4,11 @@ use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
+enum FileLocation {
+    Path(PathBuf),
+}
+
+#[derive(Debug)]
 pub enum FsError {
     AccessDenied,
     AlreadyExist,
@@ -16,8 +21,8 @@ pub enum FsError {
 
 #[derive(Debug)]
 enum FsNode {
-    HostFile {
-        location: PathBuf,
+    File {
+        location: FileLocation,
         writeable: bool,
     },
     Directory {
@@ -45,8 +50,8 @@ impl FsNode {
             if kind.is_file() {
                 children.insert(
                     name,
-                    FsNode::HostFile {
-                        location: host_path,
+                    FsNode::File {
+                        location: FileLocation::Path(host_path),
                         writeable,
                     },
                 );
@@ -83,8 +88,8 @@ impl FsNode {
         self
     }
     fn host_file(location: PathBuf) -> Self {
-        FsNode::HostFile {
-            location,
+        FsNode::File {
+            location: FileLocation::Path(location),
             writeable: false,
         }
     }
@@ -428,7 +433,7 @@ impl Fs {
         match self.lookup_node(path) {
             None => (false, false, false, false),
             Some(node) => match node {
-                FsNode::HostFile {
+                FsNode::File {
                     location: _,
                     writeable,
                 } => (true, true, *writeable, false),
@@ -442,7 +447,7 @@ impl Fs {
 
     /// Like [std::path::Path::is_file] but for the guest filesystem.
     pub fn is_file(&self, path: &GuestPath) -> bool {
-        matches!(self.lookup_node(path), Some(FsNode::HostFile { .. }))
+        matches!(self.lookup_node(path), Some(FsNode::File { .. }))
     }
 
     /// Like [std::path::Path::is_dir] but for the guest filesystem.
@@ -454,38 +459,82 @@ impl Fs {
         // TODO: error handling
         let node = self.lookup_node(path).ok_or(())?;
         match node {
-            FsNode::HostFile { location, .. } => fs::metadata(location)
-                .map(|meta| meta.len())
-                .map_err(|_| ()),
+            FsNode::File { location, .. } => match location {
+                FileLocation::Path(path) => {
+                    fs::metadata(path).map(|meta| meta.len()).map_err(|_| ())
+                }
+            },
             _ => unimplemented!(),
         }
     }
 
     /// Like [std::fs::read] but for the guest filesystem.
     pub fn read<P: AsRef<GuestPath>>(&self, path: P) -> Result<Vec<u8>, ()> {
-        let node = self.lookup_node(path.as_ref()).ok_or(())?;
-        let FsNode::HostFile {
-            location: host_path,
-            writeable: _,
-        } = node
-        else {
-            return Err(());
-        };
-        Ok(handle_open_err(std::fs::read(host_path), host_path))
+        let mut file = self.open(path.as_ref())?;
+        let mut result = Vec::new();
+        file.read_to_end(&mut result).map_err(|_| ())?;
+        Ok(result)
     }
 
     /// Like [std::fs::File::open] but for the guest filesystem.
     #[allow(dead_code)]
-    pub fn open<P: AsRef<GuestPath>>(&self, path: P) -> Result<std::fs::File, ()> {
+    pub fn open<P: AsRef<GuestPath>>(&self, path: P) -> Result<GuestFile, ()> {
         let node = self.lookup_node(path.as_ref()).ok_or(())?;
-        let FsNode::HostFile {
-            location: host_path,
-            writeable: _,
-        } = node
+        match node {
+            FsNode::File { location, .. } => match location {
+                FileLocation::Path(host_path) => {
+                    let host_file = handle_open_err(File::open(host_path), host_path);
+                    Ok(GuestFile::from_host_file(host_file))
+                }
+                _ => unimplemented!(),
+            },
+            FsNode::Directory { .. } => Err(()),
+        }
+    }
+
+    pub fn rename<P: AsRef<GuestPath> + Copy>(&mut self, from: P, to: P) -> Result<(), ()> {
+        let from_node = self.lookup_node(from.as_ref()).ok_or(())?;
+        let from_host_path = match from_node {
+            FsNode::File {
+                location: from_location,
+                writeable: from_writeable,
+            } => {
+                let FileLocation::Path(from_host_path) = from_location;
+                assert!(from_writeable); // TODO: return errno
+                                         // TODO: avoid copy?
+                from_host_path.clone()
+            }
+            _ => unimplemented!(),
+        };
+
+        if self.lookup_node(to.as_ref()).is_none() {
+            // In case target guest node do not exist, we need to create one
+            let mut options = GuestOpenOptions::new();
+            options.write().create().truncate();
+            self.open_with_options(to, options)?;
+        }
+
+        let to_node = self.lookup_node(to.as_ref()).unwrap();
+        let FsNode::File {
+            location: to_location,
+            writeable: to_writeable,
+        } = to_node
         else {
+            // TODO: return EISDIR
             return Err(());
         };
-        Ok(handle_open_err(std::fs::File::open(host_path), host_path))
+        let FileLocation::Path(to_host_path) = to_location;
+        assert!(to_writeable); // TODO: return errno
+        let res = fs::rename(from_host_path, to_host_path);
+        if res.is_ok() {
+            // Remove reference to the old from node
+            let (parent_from, component) = self.lookup_parent_node(from.as_ref()).unwrap();
+            let FsNode::Directory { children, .. } = parent_from else {
+                panic!()
+            };
+            children.remove(&component).unwrap();
+        }
+        res.map_err(|_| ())
     }
 
     /// Like [File::options] but for the guest filesystem.
@@ -518,25 +567,29 @@ impl Fs {
 
         if let Some(existing_file) = children.get(&new_filename) {
             match existing_file {
-                FsNode::HostFile {
-                    location: host_path,
+                FsNode::File {
+                    ref location,
                     writeable,
                 } => {
                     if !writeable && (append || write) {
                         log!("Warning: attempt to write to read-only file {:?}", path);
                         return Err(());
                     }
-                    let file = handle_open_err(
-                        File::options()
-                            .read(read)
-                            .write(write)
-                            .append(append)
-                            .create(false)
-                            .truncate(truncate)
-                            .open(host_path),
-                        host_path,
-                    );
-                    return Ok(GuestFile::from_host_file(file));
+                    match location {
+                        FileLocation::Path(host_path) => {
+                            let file = handle_open_err(
+                                File::options()
+                                    .read(read)
+                                    .write(write)
+                                    .append(append)
+                                    .create(false)
+                                    .truncate(truncate)
+                                    .open(host_path),
+                                host_path,
+                            );
+                            return Ok(GuestFile::from_host_file(file));
+                        }
+                    }
                 }
                 FsNode::Directory { .. } => {
                     if write {
@@ -587,12 +640,90 @@ impl Fs {
         );
         children.insert(
             new_filename,
-            FsNode::HostFile {
-                location: host_path,
+            FsNode::File {
+                location: FileLocation::Path(host_path),
                 writeable: true,
             },
         );
         Ok(GuestFile::from_host_file(file))
+    }
+
+    /// Removes a file or a directory. If the node is a directory, it must be
+    /// empty.
+    pub fn remove<P: AsRef<GuestPath>>(&mut self, path: P) -> Result<(), FsError> {
+        let path = path.as_ref();
+
+        let (parent_node, node_name) = self
+            .lookup_parent_node(path)
+            .ok_or(FsError::NonexistentParentDir)?;
+
+        // Parent directory is not a directory
+        let FsNode::Directory {
+            children,
+            writeable: dir_writeable,
+        } = parent_node
+        else {
+            return Err(FsError::InvalidParentDir);
+        };
+
+        if !dir_writeable.is_some() {
+            log!("Warning: attempt to delete file or directroy at path {:?}, but parent directory is read-only", path);
+            return Err(FsError::ReadonlyParentDir);
+        };
+
+        let Some(node) = children.get(&node_name) else {
+            // There is no file/directory with this name
+            return Err(FsError::DoesNotExist);
+        };
+
+        match node {
+            FsNode::File {
+                location,
+                writeable,
+            } => {
+                // Read-only files can't be removed. (This is probably not
+                // correct, but it is safer for now.)
+                if !writeable {
+                    return Err(FsError::AccessDenied);
+                }
+
+                let host_path = match location {
+                    FileLocation::Path(host_path) => host_path,
+                };
+
+                handle_open_err(std::fs::remove_file(host_path), host_path);
+                log_dbg!(
+                    "Deleted file at path {:?} (host path: {:?})",
+                    path,
+                    host_path
+                );
+            }
+            FsNode::Directory {
+                children,
+                writeable,
+            } => {
+                // Directory is not empty
+                if !children.is_empty() {
+                    return Err(FsError::DirectoryNotEmpty);
+                }
+                // Read-only directories can't be removed. (This is probably not
+                // correct, but it is safer for now.)
+                let Some(host_path) = writeable else {
+                    return Err(FsError::AccessDenied);
+                };
+
+                handle_open_err(std::fs::remove_dir(host_path), host_path);
+                log_dbg!(
+                    "Deleted directory at path {:?} (host path: {:?})",
+                    path,
+                    host_path
+                );
+            }
+        }
+
+        children.remove(&node_name).unwrap();
+
+        Ok(())
     }
 
     /// Like [std::fs::create_dir_all] but for the guest filesystem.

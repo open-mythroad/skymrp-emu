@@ -279,3 +279,15 @@ pub(crate) fn close(env: &mut Environment, fd: FileDescriptor) -> i32 {
         }
     }
 }
+
+pub(crate) fn rename(env: &mut Environment, old: ConstPtr<u8>, new: ConstPtr<u8>) -> i32 {
+    // TODO: set errno
+    let old = env.mem.cstr_at_utf8(old).unwrap();
+    let new = env.mem.cstr_at_utf8(new).unwrap();
+    let res = match env.fs.rename(GuestPath::new(&old), GuestPath::new(&new)) {
+        Ok(_) => 0,
+        Err(_) => -1,
+    };
+    log_dbg!("rename('{}', '{}') => {}", old, new, res);
+    res
+}

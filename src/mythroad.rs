@@ -700,7 +700,7 @@ fn mr_sprintf(env: &mut Environment, buf: MutPtr<u8>, fmt: ConstPtr<u8>, args: D
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
-    libc::stdio::sprintf(env, buf, fmt, args)
+    libc::stdio::printf::sprintf(env, buf, fmt, args)
 }
 
 fn mr_atoi(env: &mut Environment, s: ConstPtr<u8>) -> i32 {
@@ -796,7 +796,7 @@ fn mr_printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i3
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
-    libc::stdio::printf(env, format, args)
+    libc::stdio::printf::printf(env, format, args)
 }
 
 fn mr_mem_get(env: &mut Environment, mem_base: u32, mem_len: u32) {
