@@ -663,7 +663,7 @@ fn mr_start_shake(_env: &mut Environment, ms: u32) -> u32 {
     MrResult::Success.to_bits()
 }
 
-fn mr_sleep(ms: u32) {
+pub(crate) fn mr_sleep(ms: u32) {
     std::thread::sleep(Duration::from_millis(ms.into()));
 }
 

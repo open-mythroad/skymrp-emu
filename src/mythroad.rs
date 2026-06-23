@@ -958,11 +958,13 @@ fn mr_get_user_info(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_sleep(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_sleep(env: &mut Environment, ms: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_sleep(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_sleep(ms={ms:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    dsm::mr_sleep(ms);
+    MrResult::Success as i32
 }
 
 fn mr_plat(env: &mut Environment, code: u32, param: u32) -> i32 {
@@ -1987,7 +1989,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_get_time())),
     Export::Func(export_c_func!(mr_get_datetime(_))),
     Export::Func(export_c_func!(mr_get_user_info(_, _, _, _))),
-    Export::Func(export_c_func!(mr_sleep(_, _, _, _))), // 37
+    Export::Func(export_c_func!(mr_sleep(_))), // 37
     Export::Func(export_c_func!(mr_plat(_, _))),
     Export::Func(export_c_func!(mr_plat_ex(_, _, _, _, _, _))), // 39
     Export::Func(export_c_func!(mr_ferrno())),
