@@ -143,24 +143,29 @@ impl Environment {
                 match event {
                     Event::Quit => panic!("User requested quit, exiting..."),
                     Event::KeyDown { key } => {
-                        dsm::mr_event(self, dsm::MR_KEY_PRESS, key as u32, 0);
+                        dsm::mr_event(self, dsm::MR_KEY_PRESS, key as i32, 0);
                     }
                     Event::KeyUp { key } => {
-                        dsm::mr_event(self, dsm::MR_KEY_RELEASE, key as u32, 0);
+                        dsm::mr_event(self, dsm::MR_KEY_RELEASE, key as i32, 0);
                     }
                     Event::MouseDown { x, y } => {
-                        dsm::mr_event(self, dsm::MR_MOUSE_DOWN, x as u32, y as u32);
+                        dsm::mr_event(self, dsm::MR_MOUSE_DOWN, x, y);
                     }
                     Event::MouseUp { x, y } => {
-                        dsm::mr_event(self, dsm::MR_MOUSE_UP, x as u32, y as u32);
+                        dsm::mr_event(self, dsm::MR_MOUSE_UP, x, y);
                     }
                     Event::MouseMove { x, y } => {
-                        dsm::mr_event(self, dsm::MR_MOUSE_MOVE, x as u32, y as u32);
+                        dsm::mr_event(self, dsm::MR_MOUSE_MOVE, x, y);
                     }
                 }
             }
 
             dsm::mr_timer(self);
+
+            let mr_state = self.mythroad.state.mr_state.get(&self.mem);
+            if mr_state == mythroad::MrRunState::Stop as u32 {
+                return;
+            }
 
             std::thread::sleep(Duration::from_millis(5));
         }

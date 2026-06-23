@@ -1,4 +1,4 @@
-use crate::abi::{DotDotDot, GuestFunction};
+use crate::abi::{CallFromHost, DotDotDot, GuestFunction};
 use crate::audio;
 use crate::cpu::Cpu;
 use crate::dsm;
@@ -18,6 +18,7 @@ const BITMAPMAX: GuestUSize = 30;
 const SPRITEMAX: GuestUSize = 10;
 const TILEMAX: GuestUSize = 3;
 const SOUNDMAX: GuestUSize = 5;
+const MR_EXIT_EVENT: i32 = 8;
 
 pub struct Mythroad {
     pub state: State,
@@ -136,6 +137,30 @@ pub struct MrDatetime {
 }
 
 impl SafeRead for MrDatetime {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub(crate) struct MrEvent {
+    pub code: i32,
+    pub param0: i32,
+    pub param1: i32,
+    pub param2: i32,
+    pub param3: i32,
+}
+
+impl MrEvent {
+    pub fn new(code: i32, param0: i32, param1: i32) -> Self {
+        Self {
+            code,
+            param0,
+            param1,
+            param2: 0,
+            param3: 0,
+        }
+    }
+}
+
+impl SafeRead for MrEvent {}
 
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -736,11 +761,81 @@ fn mr_rand(env: &mut Environment) -> i32 {
     libc::stdlib::rand(env)
 }
 
-fn mr_stop_ex(env: &mut Environment) {
+pub(crate) fn mr_stop(env: &mut Environment) -> i32 {
     log_dbg!(
-        "Mythroad: mr_stop_ex() called from {:#x}",
+        "Mythroad: mr_stop() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    let stop_function = env.mythroad.state.mr_stop_function;
+    if stop_function.addr_without_thumb_bit() != 0 {
+        let status: i32 = stop_function.call_from_host(env, ());
+        env.mythroad.state.mr_stop_function = GuestFunction::from_addr_with_thumb_bit(0);
+        if status != MrResult::Ignored as i32 {
+            return status;
+        }
+    }
+
+    mr_stop_ex(env, 1)
+}
+
+fn mr_stop_ex(env: &mut Environment, freemem: i16) -> i32 {
+    log_dbg!(
+        "Mythroad: mr_stop_ex(freemem={freemem}) called from {:#x}",
+        env.cpu.regs()[crate::cpu::Cpu::PC]
+    );
+
+    let mr_state = env.mythroad.state.mr_state.get(&env.mem);
+    if mr_state == MrRunState::Idle as u32 {
+        return MrResult::Ignored as i32;
+    }
+
+    if mr_state == MrRunState::Run as u32 || mr_state == MrRunState::Pause as u32 {
+        let event_function = env.mythroad.state.mr_event_function;
+        let mut event_status = MrResult::Ignored as i32;
+        if event_function.addr_without_thumb_bit() != 0 {
+            event_status = event_function.call_from_host(env, (MR_EXIT_EVENT, 0i32, 0i32));
+        }
+
+        if event_status == MrResult::Ignored as i32
+            && env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0
+        {
+            let event_ptr: MutPtr<MrEvent> = env.mem.alloc(guest_size_of::<MrEvent>()).cast();
+            env.mem.write(event_ptr, MrEvent::new(MR_EXIT_EVENT, 0, 0));
+            dsm::mr_test_com_c(
+                env,
+                801,
+                event_ptr.cast_void(),
+                guest_size_of::<MrEvent>(),
+                1,
+            );
+            env.mem.free(event_ptr.cast_void());
+        }
+    }
+
+    env.mythroad
+        .state
+        .mr_state
+        .set(&mut env.mem, MrRunState::Idle as u32);
+    env.mythroad
+        .state
+        .mr_timer_state
+        .set(&mut env.mem, MrTimerState::Idle as u32);
+    env.mythroad
+        .state
+        .mr_timer_run_without_pause
+        .set(&mut env.mem, 0);
+    env.mythroad.state.mr_timer_interval = 0;
+    env.mythroad.state.mr_timer_start_time = dsm::mr_get_time(env);
+
+    if freemem != 0 {
+        env.mythroad
+            .state
+            .mr_screen_buf
+            .set(&mut env.mem, MutPtr::<u16>::null());
+    }
+
+    MrResult::Success as i32
 }
 
 fn mr_c_function_new(env: &mut Environment, func: GuestFunction, len: u32) -> i32 {
@@ -1103,11 +1198,23 @@ fn mr_find_stop(env: &mut Environment, search_handle: i32) -> i32 {
     dsm::mr_find_stop(env, search_handle)
 }
 
-fn mr_exit(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_exit(env: &mut Environment) -> i32 {
     log_dbg!(
-        "Mythroad: mr_exit(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_exit() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    env.mythroad
+        .state
+        .mr_state
+        .set(&mut env.mem, MrRunState::Stop as u32);
+    env.mythroad
+        .state
+        .mr_timer_state
+        .set(&mut env.mem, MrTimerState::Idle as u32);
+    env.mythroad.state.mr_timer_interval = 0;
+
+    MrResult::Success as i32
 }
 
 fn mr_start_shake(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1964,7 +2071,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_strtoul(_, _, _))), // 20
     Export::Func(export_c_func!(mr_rand())),
     Export::Data(null),
-    Export::Func(export_c_func!(mr_stop_ex())), // V1939
+    Export::Func(export_c_func!(mr_stop_ex(_))), // V1939
     Export::Data(export_c_data!(state.mr_c_internal_table)), // _mr_c_internal_table
     Export::Data(export_c_data!(state.mr_c_port_table)), // _mr_c_port_table
     Export::Func(export_c_func!(mr_c_function_new(_, _))), // 26
@@ -1996,7 +2103,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_find_start(_, _, _))),
     Export::Func(export_c_func!(mr_find_get_next(_, _, _))),
     Export::Func(export_c_func!(mr_find_stop(_))), // 54
-    Export::Func(export_c_func!(mr_exit(_, _, _, _))),
+    Export::Func(export_c_func!(mr_exit())),
     Export::Func(export_c_func!(mr_start_shake(_, _, _, _))),
     Export::Func(export_c_func!(mr_stop_shake(_, _, _, _))),
     Export::Func(export_c_func!(mr_play_sound(_, _, _, _))),

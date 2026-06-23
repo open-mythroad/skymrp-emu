@@ -4,10 +4,10 @@ use crate::fs::GuestPath;
 use crate::libc;
 use crate::libc::posix_io::stat::mode_t;
 use crate::libc::posix_io::{self, OpenFlag};
-use crate::mem::{ConstPtr, ConstVoidPtr, MutPtr, MutVoidPtr};
+use crate::mem::{guest_size_of, ConstPtr, ConstVoidPtr, MutPtr, MutVoidPtr};
 use crate::mrp;
 use crate::mythroad::{
-    mr_free, mr_malloc, reset_resource_tables, MrResult, MrRunState, MrTimerState,
+    mr_free, mr_malloc, mr_stop, reset_resource_tables, MrEvent, MrResult, MrRunState, MrTimerState,
 };
 use crate::Environment;
 
@@ -21,11 +21,11 @@ const MR_FILE_CREATE: u32 = 8;
 const MR_IS_FILE: i32 = 1;
 const MR_IS_DIR: i32 = 2;
 const MR_IS_INVALID: i32 = 8;
-pub(crate) const MR_KEY_PRESS: u32 = 0;
-pub(crate) const MR_KEY_RELEASE: u32 = 1;
-pub(crate) const MR_MOUSE_DOWN: u32 = 2;
-pub(crate) const MR_MOUSE_UP: u32 = 3;
-pub(crate) const MR_MOUSE_MOVE: u32 = 12;
+pub(crate) const MR_KEY_PRESS: i32 = 0;
+pub(crate) const MR_KEY_RELEASE: i32 = 1;
+pub(crate) const MR_MOUSE_DOWN: i32 = 2;
+pub(crate) const MR_MOUSE_UP: i32 = 3;
+pub(crate) const MR_MOUSE_MOVE: i32 = 12;
 
 pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> i32 {
     let pack_filename = match entry {
@@ -606,6 +606,16 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
     let mr_state = env.mythroad.state.mr_state.get(&env.mem);
     let timer_runs_while_paused = env.mythroad.state.mr_timer_run_without_pause.get(&env.mem) != 0;
 
+    if mr_state == MrRunState::Restart as u32 {
+        let start_filename = env
+            .mem
+            .cstr_at_utf8(env.mythroad.state.start_filename.cast_const())
+            .unwrap()
+            .to_owned();
+        mr_stop(env);
+        return intra_start(env, &start_filename, None);
+    }
+
     if mr_state != MrRunState::Run as u32
         && !(timer_runs_while_paused && mr_state == MrRunState::Pause as u32)
     {
@@ -625,7 +635,7 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
     MrResult::Success as i32
 }
 
-pub(crate) fn mr_event(env: &mut Environment, code: u32, param0: u32, param1: u32) -> i32 {
+pub(crate) fn mr_event(env: &mut Environment, code: i32, param0: i32, param1: i32) -> i32 {
     log_dbg!("Mythroad: mr_event(code={code}, param0={param0}, param1={param1})");
 
     let mr_state = env.mythroad.state.mr_state.get(&env.mem);
@@ -645,16 +655,21 @@ pub(crate) fn mr_event(env: &mut Environment, code: u32, param0: u32, param1: u3
         }
     }
 
-    let event = env.mem.alloc(5 * std::mem::size_of::<u32>() as u32);
-    let event_words: MutPtr<u32> = event.cast();
-    env.mem.write(event_words, code);
-    env.mem.write(event_words + 1, param0);
-    env.mem.write(event_words + 2, param1);
-    env.mem.write(event_words + 3, 0u32);
-    env.mem.write(event_words + 4, 0u32);
+    if env.mythroad.state.mr_c_function.addr_without_thumb_bit() == 0 {
+        return MrResult::Ignored as i32;
+    }
 
-    let result = mr_test_com_c(env, 801, event, 5 * std::mem::size_of::<u32>() as u32, 1);
-    env.mem.free(event);
+    let event_ptr: MutPtr<MrEvent> = env.mem.alloc(guest_size_of::<MrEvent>()).cast();
+    env.mem.write(event_ptr, MrEvent::new(code, param0, param1));
+
+    let result = mr_test_com_c(
+        env,
+        801,
+        event_ptr.cast_void(),
+        guest_size_of::<MrEvent>(),
+        1,
+    );
+    env.mem.free(event_ptr.cast_void());
     result
 }
 
@@ -736,6 +751,7 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
             .state
             .mr_state
             .set(&mut env.mem, MrRunState::Error as u32);
+        mr_stop(env);
         return MrResult::Failed as i32;
     }
 
