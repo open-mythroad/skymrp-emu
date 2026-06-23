@@ -12,6 +12,7 @@ use crate::mem::{
 };
 use crate::syscall::{export_c_data, export_c_func, Export, FunctionExports};
 use crate::Environment;
+use chrono::{Datelike, Local, Timelike};
 
 const BITMAPMAX: GuestUSize = 30;
 const SPRITEMAX: GuestUSize = 10;
@@ -140,6 +141,19 @@ pub struct MrSprite {
 }
 
 impl SafeRead for MrSprite {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct MrDatetime {
+    pub year: u16,
+    pub month: u8,
+    pub day: u8,
+    pub hour: u8,
+    pub minute: u8,
+    pub second: u8,
+}
+
+impl SafeRead for MrDatetime {}
 
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -911,11 +925,30 @@ fn mr_get_time(env: &mut Environment) -> u32 {
     time
 }
 
-fn mr_get_datetime(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_get_datetime(env: &mut Environment, datetime: MutPtr<MrDatetime>) -> i32 {
     log_dbg!(
-        "Mythroad: mr_getDatetime(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_getDatetime(datetime={datetime:?}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    if datetime.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    let now = Local::now();
+    env.mem.write(
+        datetime,
+        MrDatetime {
+            year: now.year() as u16,
+            month: now.month() as u8,
+            day: now.day() as u8,
+            hour: now.hour() as u8,
+            minute: now.minute() as u8,
+            second: now.second() as u8,
+        },
+    );
+
+    MrResult::Success as i32
 }
 
 fn mr_get_user_info(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1952,7 +1985,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_timer_start(_))),
     Export::Func(export_c_func!(mr_timer_stop())),
     Export::Func(export_c_func!(mr_get_time())),
-    Export::Func(export_c_func!(mr_get_datetime(_, _, _, _))),
+    Export::Func(export_c_func!(mr_get_datetime(_))),
     Export::Func(export_c_func!(mr_get_user_info(_, _, _, _))),
     Export::Func(export_c_func!(mr_sleep(_, _, _, _))), // 37
     Export::Func(export_c_func!(mr_plat(_, _))),

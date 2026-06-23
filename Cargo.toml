@@ -23,6 +23,7 @@ cmake = "0.1.49"
 rusty-hook = "0.11.2"
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 encoding_rs = "0.8"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 sdl2 = { version = "0.38.0", features = ["bundled", "static-link", "unsafe_textures"] }
