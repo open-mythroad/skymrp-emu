@@ -45,12 +45,6 @@ pub enum MrResult {
     Waiting = 2,
 }
 
-impl MrResult {
-    pub fn to_bits(self) -> u32 {
-        self as i32 as u32
-    }
-}
-
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MrRunState {
@@ -68,12 +62,6 @@ impl Default for MrRunState {
     }
 }
 
-impl MrRunState {
-    pub fn to_bits(self) -> u32 {
-        self as u32
-    }
-}
-
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MrTimerState {
@@ -86,12 +74,6 @@ pub enum MrTimerState {
 impl Default for MrTimerState {
     fn default() -> Self {
         Self::Idle
-    }
-}
-
-impl MrTimerState {
-    pub fn to_bits(self) -> u32 {
-        self as u32
     }
 }
 
@@ -188,10 +170,10 @@ impl From<u16> for BitmapRasterOp {
 }
 
 pub struct MrHeap {
-    pub mem_base: GuestVar<u32>,
-    pub mem_len: GuestVar<u32>,
-    pub mem_end: GuestVar<u32>,
-    pub mem_left: GuestVar<u32>,
+    pub mem_base: GuestVar<u8>,
+    pub mem_len: GuestVar<i32>,
+    pub mem_end: GuestVar<u8>,
+    pub mem_left: GuestVar<i32>,
     pub mem_min: GuestVar<u32>,
     pub mem_top: GuestVar<u32>,
     pub mem_free: MutPtr<u32>,
@@ -203,29 +185,29 @@ impl MrHeap {
     const MR_HEAP_END: GuestUSize = Self::MR_HEAP_BASE + Self::MR_HEAP_LEN;
     pub fn new(mem: &mut Memory) -> Self {
         Self {
-            mem_base: GuestVar::new(mem, Self::MR_HEAP_BASE),
-            mem_len: GuestVar::new(mem, Self::MR_HEAP_LEN),
-            mem_end: GuestVar::new(mem, Self::MR_HEAP_END),
-            mem_left: GuestVar::new(mem, Self::MR_HEAP_LEN),
+            mem_base: GuestVar::new(mem, Self::MR_HEAP_BASE as u8),
+            mem_len: GuestVar::new(mem, Self::MR_HEAP_LEN as i32),
+            mem_end: GuestVar::new(mem, Self::MR_HEAP_END as u8),
+            mem_left: GuestVar::new(mem, Self::MR_HEAP_LEN as i32),
             mem_min: GuestVar::new(mem, Self::MR_HEAP_LEN),
             mem_top: GuestVar::new(mem, 0u32),
             mem_free: write_u32_table(mem, &[0, 0]),
         }
     }
 
-    pub fn malloc(&mut self, mem: &mut Memory, len: GuestUSize) -> MutVoidPtr {
+    pub fn malloc(&mut self, mem: &mut Memory, len: u32) -> MutVoidPtr {
         if len == 0 {
             return MutVoidPtr::null();
         }
 
         let ptr = mem.alloc(len);
-        let left = self.mem_left.get(mem).saturating_sub(len);
+        let left = self.mem_left.get(mem).saturating_sub(len as i32);
         self.mem_left.set(mem, left);
-        self.mem_min.update(mem, |min| min.min(left));
+        self.mem_min.update(mem, |min| min.min(left as u32));
         ptr
     }
 
-    pub fn free(&mut self, mem: &mut Memory, ptr: MutVoidPtr, len: GuestUSize) {
+    pub fn free(&mut self, mem: &mut Memory, ptr: MutVoidPtr, len: u32) {
         if ptr.is_null() || len == 0 {
             return;
         }
@@ -234,8 +216,8 @@ impl MrHeap {
         let left = self
             .mem_left
             .get(mem)
-            .saturating_add(len)
-            .min(Self::MR_HEAP_LEN);
+            .saturating_add(len as i32)
+            .min(Self::MR_HEAP_LEN as i32);
         self.mem_left.set(mem, left);
     }
 }
@@ -295,9 +277,9 @@ const MR_M0_FILES: GuestUSize = 8;
 const MR_SMS_CFG_BUF_LEN: GuestUSize = 120 * 36;
 
 pub struct SysInfo {
-    pub screen_width: u32,
-    pub screen_height: u32,
-    pub screen_bits: u32,
+    pub screen_width: i32,
+    pub screen_height: i32,
+    pub screen_bits: i32,
 }
 
 impl SysInfo {
@@ -328,10 +310,10 @@ impl State {
 
         let mr_m0_files = alloc_array(mem, MR_M0_FILES);
         let vm_state = GuestVar::new(mem, 0u32);
-        let mr_state = GuestVar::new(mem, MrRunState::Idle.to_bits());
+        let mr_state = GuestVar::new(mem, MrRunState::Idle as u32);
         let bi = GuestVar::new(mem, 0u32);
         let mr_timer_p = GuestVar::new(mem, 0u32);
-        let mr_timer_state = GuestVar::new(mem, MrTimerState::Idle.to_bits());
+        let mr_timer_state = GuestVar::new(mem, MrTimerState::Idle as u32);
         let mr_timer_start_time = 0;
         let mr_timer_interval = 0;
         let mr_timer_run_without_pause = GuestVar::new(mem, 0u32);
@@ -340,7 +322,10 @@ impl State {
         let mr_sms_return_flag = GuestVar::new(mem, 0u32);
         let mr_sms_return_val = GuestVar::new(mem, 0u32);
         let sysinfo = SysInfo::default();
-        let screen_buf = alloc_array(mem, sysinfo.screen_width * sysinfo.screen_height);
+        let screen_buf = alloc_array(
+            mem,
+            sysinfo.screen_width as u32 * sysinfo.screen_height as u32,
+        );
         let mr_screen_buf = GuestVar::new(mem, screen_buf);
         let mr_screen_w = GuestVar::new(mem, sysinfo.screen_width as i32);
         let mr_screen_h = GuestVar::new(mem, sysinfo.screen_height as i32);
@@ -758,7 +743,7 @@ fn mr_stop_ex(env: &mut Environment) {
     );
 }
 
-fn mr_c_function_new(env: &mut Environment, func: GuestFunction, len: u32) -> u32 {
+fn mr_c_function_new(env: &mut Environment, func: GuestFunction, len: u32) -> i32 {
     log_dbg!(
         "Mythroad: mr_c_function_new(func={:#010x}, len={len}) called from {:#x}",
         func.addr_with_thumb_bit(),
@@ -779,8 +764,8 @@ fn mr_c_function_new(env: &mut Environment, func: GuestFunction, len: u32) -> u3
         env.mythroad
             .state
             .mr_state
-            .set(&mut env.mem, MrRunState::Error.to_bits());
-        return MrResult::Failed.to_bits();
+            .set(&mut env.mem, MrRunState::Error as u32);
+        return MrResult::Failed as i32;
     }
 
     env.mem.bytes_at_mut(addr.cast(), len).fill(0);
@@ -800,7 +785,7 @@ fn mr_c_function_new(env: &mut Environment, func: GuestFunction, len: u32) -> u3
         addr.to_bits(),
     );
 
-    MrResult::Success.to_bits()
+    MrResult::Success as i32
 }
 
 fn mr_printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
@@ -883,7 +868,7 @@ fn mr_get_char_bitmap(
     font::get_char_bitmap(env, ch, font_size, width, height)
 }
 
-fn mr_timer_start(env: &mut Environment, interval: u16) -> u32 {
+fn mr_timer_start(env: &mut Environment, interval: u16) -> i32 {
     log_dbg!(
         "Mythroad: mr_timerStart(t={interval}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -894,12 +879,12 @@ fn mr_timer_start(env: &mut Environment, interval: u16) -> u32 {
     env.mythroad
         .state
         .mr_timer_state
-        .set(&mut env.mem, MrTimerState::Running.to_bits());
+        .set(&mut env.mem, MrTimerState::Running as u32);
 
-    MrResult::Success.to_bits()
+    MrResult::Success as i32
 }
 
-fn mr_timer_stop(env: &mut Environment) -> u32 {
+fn mr_timer_stop(env: &mut Environment) -> i32 {
     log_dbg!(
         "Mythroad: mr_timerStop() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -908,11 +893,11 @@ fn mr_timer_stop(env: &mut Environment) -> u32 {
     env.mythroad
         .state
         .mr_timer_state
-        .set(&mut env.mem, MrTimerState::Idle.to_bits());
+        .set(&mut env.mem, MrTimerState::Idle as u32);
     env.mythroad.state.mr_timer_interval = 0;
     env.mythroad.state.mr_timer_start_time = dsm::mr_get_time(env);
 
-    MrResult::Success.to_bits()
+    MrResult::Success as i32
 }
 
 fn mr_get_time(env: &mut Environment) -> u32 {
@@ -1343,7 +1328,7 @@ fn mr_win_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_get_screen_info(env: &mut Environment, screen_info: MutPtr<u32>) -> u32 {
+fn mr_get_screen_info(env: &mut Environment, screen_info: MutPtr<u32>) -> i32 {
     log_dbg!(
         "Mythroad: mr_getScreenInfo(s={:#x}) called from {:#x}",
         screen_info.to_bits(),
@@ -1351,13 +1336,17 @@ fn mr_get_screen_info(env: &mut Environment, screen_info: MutPtr<u32>) -> u32 {
     );
 
     env.mem
-        .write(screen_info, env.mythroad.state.sysinfo.screen_width);
-    env.mem
-        .write(screen_info + 1, env.mythroad.state.sysinfo.screen_height);
-    env.mem
-        .write(screen_info + 2, env.mythroad.state.sysinfo.screen_bits);
+        .write(screen_info, env.mythroad.state.sysinfo.screen_width as u32);
+    env.mem.write(
+        screen_info + 1,
+        env.mythroad.state.sysinfo.screen_height as u32,
+    );
+    env.mem.write(
+        screen_info + 2,
+        env.mythroad.state.sysinfo.screen_bits as u32,
+    );
 
-    MrResult::Success.to_bits()
+    MrResult::Success as i32
 }
 
 fn mr_init_network(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1719,7 +1708,7 @@ fn draw_text(
     b: u8,
     is_unicode: u32,
     font: u16,
-) -> u32 {
+) -> i32 {
     let color = (u16::from(b) >> 3) | ((u16::from(g) >> 2) << 5) | ((u16::from(r) >> 3) << 11);
 
     log_dbg!(
@@ -1730,7 +1719,7 @@ fn draw_text(
 
     let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
     if screen_w <= 0 {
-        return MrResult::Success.to_bits();
+        return MrResult::Success as i32;
     }
 
     let mut converted_len = 0u32;
@@ -1765,7 +1754,7 @@ fn draw_text(
     if is_unicode == 0 {
         mr_free(env, pc_text.cast_mut().cast_void(), converted_len);
     }
-    MrResult::Success.to_bits()
+    MrResult::Success as i32
 }
 
 fn bitmap_check(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -1819,7 +1808,7 @@ fn mr_eff_set_con(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_test_com(env: &mut Environment, l: u32, input0: u32, input1: u32) -> u32 {
+fn mr_test_com(env: &mut Environment, l: u32, input0: u32, input1: u32) -> i32 {
     log_dbg!(
         "Mythroad: _mr_TestCom(L={l}, input0={input0}, input1={input1}) called from {:#x}",
         env.cpu.regs()[Cpu::PC]
@@ -1827,7 +1816,7 @@ fn mr_test_com(env: &mut Environment, l: u32, input0: u32, input1: u32) -> u32 {
     dsm::test_com(env, l, input0, input1)
 }
 
-fn mr_test_com1(env: &mut Environment, l: u32, input0: u32, input1: MutPtr<u8>, len: u32) -> u32 {
+fn mr_test_com1(env: &mut Environment, l: u32, input0: u32, input1: MutPtr<u8>, len: u32) -> i32 {
     log_dbg!(
         "Mythroad: _mr_TestCom1(L={l:#x}, input0={input0:#x}, input1={:#x}, len={len}) called from {:#x}",
         input1.to_bits(),

@@ -110,7 +110,7 @@ impl Environment {
     /// Run the emulator.
     fn run(&mut self) {
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            dsm::mr_start_dsm_c(self, Some("*A")) == mythroad::MrResult::Success.to_bits()
+            dsm::mr_start_dsm_c(self, Some("*A")) == mythroad::MrResult::Success as i32
         }));
 
         match res {

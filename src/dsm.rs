@@ -27,7 +27,7 @@ pub(crate) const MR_MOUSE_DOWN: u32 = 2;
 pub(crate) const MR_MOUSE_UP: u32 = 3;
 pub(crate) const MR_MOUSE_MOVE: u32 = 12;
 
-pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> u32 {
+pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> i32 {
     let pack_filename = match entry {
         Some(entry) if entry.starts_with('*') => entry,
         Some(entry) if entry.starts_with('%') => &entry[1..],
@@ -342,34 +342,34 @@ pub(crate) fn mr_seek(env: &mut Environment, handle: u32, pos: i32, method: i32)
     }
 }
 
-pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32) -> u32 {
+pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32) -> i32 {
     match input0 {
-        0x01 => mr_get_time(env),
+        0x01 => mr_get_time(env) as i32,
         0x02 => {
             env.mythroad.state.mr_event_function = GuestFunction::from_addr_with_thumb_bit(input1);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x03 => {
             env.mythroad.state.mr_timer_function = GuestFunction::from_addr_with_thumb_bit(input1);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x04 => {
             env.mythroad.state.mr_stop_function = GuestFunction::from_addr_with_thumb_bit(input1);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x05 => {
             env.mythroad.state.mr_pause_app_function =
                 GuestFunction::from_addr_with_thumb_bit(input1);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x06 => {
             env.mythroad.state.mr_resume_app_function =
                 GuestFunction::from_addr_with_thumb_bit(input1);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
-        0x07 => input1,
-        0x64 => env.mythroad.state.heap.mem_min.get(&env.mem),
-        0x65 => env.mythroad.state.heap.mem_top.get(&env.mem),
+        0x07 => input1 as i32,
+        0x64 => env.mythroad.state.heap.mem_min.get(&env.mem) as i32,
+        0x65 => env.mythroad.state.heap.mem_top.get(&env.mem) as i32,
         0x66 => env.mythroad.state.heap.mem_left.get(&env.mem),
         0xc8 => mr_start_shake(env, input1),
         0x12c => {
@@ -377,7 +377,7 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
                 .state
                 .mr_sound_on
                 .set(&mut env.mem, input1 as i8);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x12d => {
             env.mythroad
@@ -385,23 +385,23 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
                 .mr_shake_on
                 .set(&mut env.mem, input1 as i8);
             env.mythroad.state.bi.update(&mut env.mem, |bi| bi | 0x4);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x12e => {
             env.mythroad.state.bi.update(&mut env.mem, |bi| bi | 0x4);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x12f => {
             env.mythroad.state.bi.update(&mut env.mem, |bi| bi & !0x4);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x130 => {
             env.mythroad.state.bi.update(&mut env.mem, |bi| bi | 0x8);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x131 => {
             env.mythroad.state.bi.update(&mut env.mem, |bi| bi & !0x8);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x132 => {
             env.mythroad.state.mr_sms_return_flag.set(&mut env.mem, 1);
@@ -409,19 +409,19 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
                 .state
                 .mr_sms_return_val
                 .set(&mut env.mem, input1);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x133 => {
             env.mythroad.state.mr_sms_return_flag.set(&mut env.mem, 0);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x190 => {
             mr_sleep(input1);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x191 => {
             let old = env.mythroad.state.sysinfo.screen_width;
-            env.mythroad.state.sysinfo.screen_width = input1;
+            env.mythroad.state.sysinfo.screen_width = input1 as i32;
             env.mythroad
                 .state
                 .mr_screen_w
@@ -431,16 +431,16 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
         0x194 => {
             log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: _mr_newSIMInd((int16)input1, NULL);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x195 => {
             log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: ret = mr_closeNetwork();
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x196 => {
             let old = env.mythroad.state.sysinfo.screen_height;
-            env.mythroad.state.sysinfo.screen_height = input1;
+            env.mythroad.state.sysinfo.screen_height = input1 as i32;
             env.mythroad
                 .state
                 .mr_screen_h
@@ -454,49 +454,49 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
                 .mr_timer_run_without_pause
                 .set(&mut env.mem, input1);
             self::mr_plat(env, 1202, input1);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x198 => {
             log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: implement this branch.
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x1f4 => {
             log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: ret = _mr_load_sms_cfg();
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x1f7 => {
             log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: _mr_smsGetBytes(5, &dst, 1); ret = dst;
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0x1f8 => {
             log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: ret = _mr_save_sms_cfg(input1);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0xcb3 => {
             if input1 == 0x9e67a {
                 env.mythroad.state.bi.update(&mut env.mem, |bi| bi & !0x2);
             }
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0xe2d => {
             if input1 == 0xb61 {
                 env.mythroad.state.bi.update(&mut env.mem, |bi| bi | 0x1);
             }
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         0xf51 => {
             if input1 == 0x18030 {
                 env.mythroad.state.bi.update(&mut env.mem, |bi| bi | 0x2);
             }
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         _ => {
             log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
-            MrResult::Ignored.to_bits()
+            MrResult::Ignored as i32
         }
     }
 }
@@ -507,7 +507,7 @@ pub(crate) fn test_com1(
     input0: u32,
     input1: MutPtr<u8>,
     len: u32,
-) -> u32 {
+) -> i32 {
     match input0 {
         2 => {
             let old_ram_file = env.mythroad.state.mr_ram_file.get(&env.mem);
@@ -523,7 +523,7 @@ pub(crate) fn test_com1(
                 .state
                 .mr_ram_file_len
                 .set(&mut env.mem, len as i32);
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         3 => {
             libc::string::memset(
@@ -556,7 +556,7 @@ pub(crate) fn test_com1(
                 start_file_name.cast_const(),
                 127,
             );
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         4 => {
             libc::string::memset(
@@ -573,12 +573,12 @@ pub(crate) fn test_com1(
                     127,
                 );
             }
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
-        7 | 8 | 9 => MrResult::Success.to_bits(),
+        7 | 8 | 9 => MrResult::Success as i32,
         _ => {
             log_dbg!("Mythroad: _mr_TestCom1 got unknown param: code={input0}");
-            MrResult::Ignored.to_bits()
+            MrResult::Ignored as i32
         }
     }
 }
@@ -587,29 +587,29 @@ pub(crate) fn mr_get_time(env: &Environment) -> u32 {
     env.startup_time.elapsed().as_millis() as u32
 }
 
-pub(crate) fn mr_timer(env: &mut Environment) -> u32 {
-    if env.mythroad.state.mr_timer_state.get(&env.mem) != MrTimerState::Running.to_bits() {
-        return MrResult::Ignored.to_bits();
+pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
+    if env.mythroad.state.mr_timer_state.get(&env.mem) != MrTimerState::Running as u32 {
+        return MrResult::Ignored as i32;
     }
 
     let elapsed = mr_get_time(env).wrapping_sub(env.mythroad.state.mr_timer_start_time);
     if elapsed < env.mythroad.state.mr_timer_interval {
-        return MrResult::Waiting.to_bits();
+        return MrResult::Waiting as i32;
     }
 
     env.mythroad
         .state
         .mr_timer_state
-        .set(&mut env.mem, MrTimerState::Idle.to_bits());
+        .set(&mut env.mem, MrTimerState::Idle as u32);
     env.mythroad.state.mr_timer_interval = 0;
 
     let mr_state = env.mythroad.state.mr_state.get(&env.mem);
     let timer_runs_while_paused = env.mythroad.state.mr_timer_run_without_pause.get(&env.mem) != 0;
 
-    if mr_state != MrRunState::Run.to_bits()
-        && !(timer_runs_while_paused && mr_state == MrRunState::Pause.to_bits())
+    if mr_state != MrRunState::Run as u32
+        && !(timer_runs_while_paused && mr_state == MrRunState::Pause as u32)
     {
-        return MrResult::Ignored.to_bits();
+        return MrResult::Ignored as i32;
     }
 
     let timer_function = env.mythroad.state.mr_timer_function;
@@ -617,30 +617,30 @@ pub(crate) fn mr_timer(env: &mut Environment) -> u32 {
         return mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 2);
     }
 
-    let timer_status: u32 = timer_function.call_from_host(env, ());
-    if timer_status == MrResult::Ignored.to_bits() {
+    let timer_status: i32 = timer_function.call_from_host(env, ());
+    if timer_status == MrResult::Ignored as i32 {
         return mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 2);
     }
 
-    MrResult::Success.to_bits()
+    MrResult::Success as i32
 }
 
-pub(crate) fn mr_event(env: &mut Environment, code: u32, param0: u32, param1: u32) -> u32 {
+pub(crate) fn mr_event(env: &mut Environment, code: u32, param0: u32, param1: u32) -> i32 {
     log_dbg!("Mythroad: mr_event(code={code}, param0={param0}, param1={param1})");
 
     let mr_state = env.mythroad.state.mr_state.get(&env.mem);
     let timer_runs_while_paused = env.mythroad.state.mr_timer_run_without_pause.get(&env.mem) != 0;
 
-    if mr_state != MrRunState::Run.to_bits()
-        && !(timer_runs_while_paused && mr_state == MrRunState::Pause.to_bits())
+    if mr_state != MrRunState::Run as u32
+        && !(timer_runs_while_paused && mr_state == MrRunState::Pause as u32)
     {
-        return MrResult::Ignored.to_bits();
+        return MrResult::Ignored as i32;
     }
 
     let event_function = env.mythroad.state.mr_event_function;
     if event_function.addr_without_thumb_bit() != 0 {
-        let event_status: u32 = event_function.call_from_host(env, (code, param0, param1));
-        if event_status != MrResult::Ignored.to_bits() {
+        let event_status: i32 = event_function.call_from_host(env, (code, param0, param1));
+        if event_status != MrResult::Ignored as i32 {
             return event_status;
         }
     }
@@ -658,16 +658,16 @@ pub(crate) fn mr_event(env: &mut Environment, code: u32, param0: u32, param1: u3
     result
 }
 
-fn mr_start_shake(_env: &mut Environment, ms: u32) -> u32 {
+fn mr_start_shake(_env: &mut Environment, ms: u32) -> i32 {
     log_dbg!("Mythroad: mr_startShake(ms={ms})");
-    MrResult::Success.to_bits()
+    MrResult::Success as i32
 }
 
 pub(crate) fn mr_sleep(ms: u32) {
     std::thread::sleep(Duration::from_millis(ms.into()));
 }
 
-fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>) -> u32 {
+fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>) -> i32 {
     let null_function = GuestFunction::from_addr_with_thumb_bit(0);
 
     env.mythroad.state.mr_event_function = null_function;
@@ -695,7 +695,7 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
     env.mythroad
         .state
         .mr_timer_state
-        .set(&mut env.mem, MrTimerState::Idle.to_bits());
+        .set(&mut env.mem, MrTimerState::Idle as u32);
     env.mythroad
         .state
         .mr_timer_run_without_pause
@@ -708,8 +708,8 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
         env.mythroad
             .state
             .mr_state
-            .set(&mut env.mem, MrRunState::Error.to_bits());
-        return MrResult::Failed.to_bits();
+            .set(&mut env.mem, MrRunState::Error as u32);
+        return MrResult::Failed as i32;
     }
     reset_resource_tables(env);
 
@@ -722,24 +722,24 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
     env.mythroad
         .state
         .mr_state
-        .set(&mut env.mem, MrRunState::Run.to_bits());
+        .set(&mut env.mem, MrRunState::Run as u32);
 
     log_dbg!("Mythroad: mr_intra_start(filename={start_file_name}, entry={entry})");
 
     let mut ret = mr_do_ext(env, start_file_name);
-    if ret != MrResult::Success.to_bits() {
+    if ret != MrResult::Success as i32 {
         ret = mr_do_ext(env, mrp::LOGO_EXT_FILE_NAME);
     }
 
-    if ret != MrResult::Success.to_bits() {
+    if ret != MrResult::Success as i32 {
         env.mythroad
             .state
             .mr_state
-            .set(&mut env.mem, MrRunState::Error.to_bits());
-        return MrResult::Failed.to_bits();
+            .set(&mut env.mem, MrRunState::Error as u32);
+        return MrResult::Failed as i32;
     }
 
-    MrResult::Success.to_bits()
+    MrResult::Success as i32
 }
 
 fn reset_screen_buffer(env: &mut Environment) -> bool {
@@ -774,7 +774,7 @@ fn reset_screen_buffer(env: &mut Environment) -> bool {
     true
 }
 
-fn mr_do_ext(env: &mut Environment, filename: &str) -> u32 {
+fn mr_do_ext(env: &mut Environment, filename: &str) -> i32 {
     log_dbg!("Mythroad: mr_doExt(filename={filename})");
 
     match env.executable.read_file(&env.mem, filename) {
@@ -787,9 +787,9 @@ fn mr_do_ext(env: &mut Environment, filename: &str) -> u32 {
 
             test_com(env, 0, 0xe2d, 0xb61);
 
-            if mr_test_com_c(env, 800, addr, len, 0) != MrResult::Success.to_bits() {
+            if mr_test_com_c(env, 800, addr, len, 0) != MrResult::Success as i32 {
                 mr_free(env, addr, len);
-                return MrResult::Failed.to_bits();
+                return MrResult::Failed as i32;
             }
 
             mr_test_com_c(env, 801, addr, 0x7cd, 6);
@@ -799,15 +799,15 @@ fn mr_do_ext(env: &mut Environment, filename: &str) -> u32 {
 
             mr_test_com_c(env, 801, addr, 0x7cd, 0);
 
-            MrResult::Success.to_bits()
+            MrResult::Success as i32
         }
         Ok(_) => {
             log_dbg!("Mythroad: mr_doExt failed: {filename} is empty");
-            MrResult::Failed.to_bits()
+            MrResult::Failed as i32
         }
         Err(err) => {
             log_dbg!("Mythroad: mr_doExt failed: {err}");
-            MrResult::Failed.to_bits()
+            MrResult::Failed as i32
         }
     }
 }
@@ -1012,7 +1012,7 @@ pub(crate) fn mr_test_com_c(
     input: MutVoidPtr,
     len: u32,
     code: u32,
-) -> u32 {
+) -> i32 {
     log_dbg!(
         "Mythroad: mr_testComC(type={kind}, input={:#x}, len={len}, code={code})",
         input.to_bits()
