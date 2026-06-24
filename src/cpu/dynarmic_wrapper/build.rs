@@ -13,8 +13,16 @@ fn link_lib(lib: &str) {
 fn main() {
     let package_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = package_root.join("../../..");
+    let dynarmic_root = workspace_root.join("vendor/dynarmic");
 
-    let dynarmic_out = cmake::build(workspace_root.join("vendor/dynarmic"));
+    let mut build = cmake::Config::new(&dynarmic_root);
+    build.define("DYNARMIC_FRONTENDS", "A32");
+    build.define("DYNARMIC_WARNINGS_AS_ERRORS", "OFF");
+    build.define("DYNARMIC_TESTS", "OFF");
+    build.define("DYNARMIC_USE_BUNDLED_EXTERNALS", "ON");
+    build.define("CMAKE_POLICY_VERSION_MINIMUM", "3.5");
+    let dynarmic_out = build.build();
+
     link_search(&dynarmic_out.join("lib"));
     link_lib("dynarmic");
     link_search(&dynarmic_out.join("build/externals/fmt"));
