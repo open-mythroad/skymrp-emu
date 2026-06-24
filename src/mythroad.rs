@@ -140,6 +140,19 @@ impl SafeRead for MrDatetime {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
+pub struct MrUserInfo {
+    pub imei: [u8; 16],
+    pub imsi: [u8; 16],
+    pub manufactory: [u8; 8],
+    pub r#type: [u8; 8],
+    pub ver: u32,
+    pub spare: [u8; 12],
+}
+
+impl SafeRead for MrUserInfo {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct MrEvent {
     pub code: i32,
     pub param0: i32,
@@ -1031,11 +1044,30 @@ fn mr_get_datetime(env: &mut Environment, datetime: MutPtr<MrDatetime>) -> i32 {
     MrResult::Success as i32
 }
 
-fn mr_get_user_info(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_get_user_info(env: &mut Environment, user_info: MutPtr<MrUserInfo>) -> i32 {
     log_dbg!(
-        "Mythroad: mr_getUserInfo(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_getUserInfo(user_info={user_info:?}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    if user_info.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    libc::string::memset(env, user_info.cast_void(), 0, guest_size_of::<MrUserInfo>());
+
+    env.mem.write(
+        user_info,
+        MrUserInfo {
+            imei: [0; 16],
+            imsi: [0; 16],
+            manufactory: [0; 8],
+            r#type: [0; 8],
+            ver: make_plat_version(1, 8, 0, 18, 0),
+            spare: [0; 12],
+        },
+    );
+
+    MrResult::Success as i32
 }
 
 fn mr_sleep(env: &mut Environment, ms: u32) -> i32 {
@@ -1586,6 +1618,11 @@ fn maker_rgb(r: u32, g: u32, b: u32) -> u16 {
     (((r >> 3) << 11) + ((g >> 2) << 5) + (b >> 3)) as u16
 }
 
+#[inline]
+fn make_plat_version(plat: u32, ver: u32, card: u32, r#impl: u32, brun: u32) -> u32 {
+    100_000_000 + (plat * 1_000_000) + (ver * 10_000) + (card * 1_000) + (r#impl * 10) + brun
+}
+
 fn draw_bitmap(
     env: &mut Environment,
     p: MutPtr<u16>,
@@ -2084,7 +2121,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_timer_stop())),
     Export::Func(export_c_func!(mr_get_time())),
     Export::Func(export_c_func!(mr_get_datetime(_))),
-    Export::Func(export_c_func!(mr_get_user_info(_, _, _, _))),
+    Export::Func(export_c_func!(mr_get_user_info(_))),
     Export::Func(export_c_func!(mr_sleep(_))), // 37
     Export::Func(export_c_func!(mr_plat(_, _))),
     Export::Func(export_c_func!(mr_plat_ex(_, _, _, _, _, _))), // 39
