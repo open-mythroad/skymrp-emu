@@ -320,12 +320,6 @@ pub struct SysInfo {
     pub screen_bits: i32,
 }
 
-impl SysInfo {
-    pub fn new() -> SysInfo {
-        Self::default()
-    }
-}
-
 impl Default for SysInfo {
     fn default() -> SysInfo {
         Self {
@@ -1607,15 +1601,30 @@ fn disp_up_ex(env: &mut Environment, x: i16, y: i16, w: u16, h: u16) -> i32 {
     MrResult::Success as i32
 }
 
-fn draw_point(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn draw_point(env: &mut Environment, x: i16, y: i16, native_color: u16) {
     log_dbg!(
-        "Mythroad: _DrawPoint(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _DrawPoint(x={x}, y={y}, native_color={native_color}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    let state = &env.mythroad.state;
+
+    let screen_buf = state.mr_screen_buf.get(&env.mem);
+    let screen_w = state.mr_screen_w.get(&env.mem) as i16;
+    let screen_h = state.mr_screen_h.get(&env.mem) as i16;
+
+    if x < 0 || y < 0 || x >= screen_w || y >= screen_h {
+        return;
+    }
+
+    let offset = screen_w.saturating_mul(y).saturating_add(x) as u32;
+
+    env.mem.write(screen_buf + offset, native_color);
 }
 
-fn maker_rgb(r: u32, g: u32, b: u32) -> u16 {
-    (((r >> 3) << 11) + ((g >> 2) << 5) + (b >> 3)) as u16
+#[inline]
+fn make_rgb565(r: u32, g: u32, b: u32) -> u16 {
+    (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)) as u16
 }
 
 #[inline]
@@ -1631,13 +1640,13 @@ fn draw_bitmap(
     w: u16,
     h: u16,
     rop: u16,
-    transcoler: u16,
+    transcolor: u16,
     sx: i16,
     sy: i16,
     mw: i16,
 ) {
     log_dbg!(
-        "Mythroad: _DrawBitmap(p={:#x}, x={x}, y={y}, w={w}, h={h}, rop={rop}, transcoler={transcoler:#x}, sx={sx}, sy={sy}, mw={mw}) called from {:#x}",
+        "Mythroad: _DrawBitmap(p={:#x}, x={x}, y={y}, w={w}, h={h}, rop={rop}, transcolor={transcolor:#x}, sx={sx}, sy={sy}, mw={mw}) called from {:#x}",
         p.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
@@ -1713,7 +1722,7 @@ fn draw_bitmap(
             let src_pixel: u16 = env.mem.read(src);
             match rop {
                 BitmapRasterOp::Transparent => {
-                    if transcoler != src_pixel {
+                    if transcolor != src_pixel {
                         env.mem.write(dest, src_pixel);
                     }
                 }
@@ -1741,16 +1750,16 @@ fn draw_bitmap(
                     env.mem.write(dest, dest_pixel & src_pixel);
                 }
                 BitmapRasterOp::Gray => {
-                    if transcoler != src_pixel {
+                    if transcolor != src_pixel {
                         let r = u32::from((src_pixel >> 11) & 0x1f);
                         let g = u32::from((src_pixel >> 5) & 0x3f);
                         let b = u32::from(src_pixel & 0x1f);
                         let gray = (0.299 * r as f64 + 0.587 * g as f64 + 0.114 * b as f64) as u32;
-                        env.mem.write(dest, maker_rgb(gray, gray, gray));
+                        env.mem.write(dest, make_rgb565(gray, gray, gray));
                     }
                 }
                 BitmapRasterOp::Reverse => {
-                    if transcoler != src_pixel {
+                    if transcolor != src_pixel {
                         env.mem.write(dest, !src_pixel);
                     }
                 }
@@ -1803,7 +1812,7 @@ fn draw_rect(env: &mut Environment, x: i32, y: i32, w: i32, h: i32, r: u8, g: u8
         return;
     }
 
-    let color = (u16::from(b) >> 3) | ((u16::from(g) >> 2) << 5) | ((u16::from(r) >> 3) << 11);
+    let color = make_rgb565(r as u32, g as u32, b as u32);
     let x_min = x_min as u32;
     let y_min = y_min as u32;
     let x_max = x_max as u32;
@@ -1853,7 +1862,7 @@ fn draw_text(
     is_unicode: u32,
     font: u16,
 ) -> i32 {
-    let color = (u16::from(b) >> 3) | ((u16::from(g) >> 2) << 5) | ((u16::from(r) >> 3) << 11);
+    let color = make_rgb565(r as u32, g as u32, b as u32);
 
     log_dbg!(
         "Mythroad: _DrawText(pcText={:#x}, x={x}, y={y}, r={r}, g={g}, b={b}, is_unicode={is_unicode}, font={font}) called from {:#x}",
@@ -2205,7 +2214,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_load_sms_cfg(_, _, _, _))),
     Export::Func(export_c_func!(mr_save_sms_cfg(_, _, _, _))),
     Export::Func(export_c_func!(disp_up_ex(_, _, _, _))),
-    Export::Func(export_c_func!(draw_point(_, _, _, _))),
+    Export::Func(export_c_func!(draw_point(_, _, _))),
     Export::Func(export_c_func!(draw_bitmap(_, _, _, _, _, _, _, _, _, _))),
     Export::Func(export_c_func!(draw_bitmap_ex(_, _, _, _))),
     Export::Func(export_c_func!(draw_rect(_, _, _, _, _, _, _))),
