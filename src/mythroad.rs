@@ -6,6 +6,7 @@ use crate::encoding;
 use crate::font;
 use crate::gzip;
 use crate::libc;
+use crate::md5::{self, Md5State};
 use crate::mem::{
     guest_size_of, ConstPtr, ConstVoidPtr, GuestUSize, GuestVar, Memory, MutPtr, MutVoidPtr, Ptr,
     SafeRead,
@@ -1636,25 +1637,36 @@ fn mr_sendto(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_md5_init(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_md5_init(env: &mut Environment, pms: MutPtr<Md5State>) {
     log_dbg!(
-        "Mythroad: mr_md5_init(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_md5_init(pms={:#x}) called from {:#x}",
+        pms.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    md5::init(env, pms);
 }
 
-fn mr_md5_append(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_md5_append(env: &mut Environment, pms: MutPtr<Md5State>, data: ConstPtr<u8>, nbytes: i32) {
     log_dbg!(
-        "Mythroad: mr_md5_append(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_md5_append(pms={:#x}, data={:#x}, nbytes={nbytes}) called from {:#x}",
+        pms.to_bits(),
+        data.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    md5::append(env, pms, data, nbytes);
 }
 
-fn mr_md5_finish(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_md5_finish(env: &mut Environment, pms: MutPtr<Md5State>, digest: MutPtr<u8>) {
     log_dbg!(
-        "Mythroad: mr_md5_finish(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_md5_finish(pms={:#x}, digest={:#x}) called from {:#x}",
+        pms.to_bits(),
+        digest.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    md5::finish(env, pms, digest);
 }
 
 fn mr_load_sms_cfg(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -2312,9 +2324,9 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Data(export_c_data!(state.heap.mem_end)),  // &LG_mem_end
     Export::Data(export_c_data!(state.heap.mem_left)), // &LG_mem_left
     Export::Data(export_c_data!(state.mr_sms_cfg_buf)), // &mr_sms_cfg_buf
-    Export::Func(export_c_func!(mr_md5_init(_, _, _, _))),
-    Export::Func(export_c_func!(mr_md5_append(_, _, _, _))),
-    Export::Func(export_c_func!(mr_md5_finish(_, _, _, _))),
+    Export::Func(export_c_func!(mr_md5_init(_))),
+    Export::Func(export_c_func!(mr_md5_append(_, _, _))),
+    Export::Func(export_c_func!(mr_md5_finish(_, _))),
     Export::Func(export_c_func!(mr_load_sms_cfg(_, _, _, _))),
     Export::Func(export_c_func!(mr_save_sms_cfg(_, _, _, _))),
     Export::Func(export_c_func!(disp_up_ex(_, _, _, _))),

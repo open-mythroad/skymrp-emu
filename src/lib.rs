@@ -9,6 +9,7 @@ mod font;
 mod fs;
 mod gzip;
 mod libc;
+mod md5;
 mod mem;
 mod mrp;
 mod mythroad;
