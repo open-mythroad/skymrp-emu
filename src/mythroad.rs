@@ -2084,18 +2084,20 @@ fn mr_c2u(
     encoding::mr_c2u(env, cp, err, size)
 }
 
-fn mr_div(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_div(env: &mut Environment, a: i32, b: i32) -> i32 {
     log_dbg!(
-        "Mythroad: _mr_div(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _mr_div(a={a}, b={b}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    a / b
 }
 
-fn mr_mod(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_mod(env: &mut Environment, a: i32, b: i32) -> i32 {
     log_dbg!(
-        "Mythroad: _mr_mod(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _mr_mod(a={a}, b={b}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+    a % b
 }
 
 fn mr_updcrc(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -2317,8 +2319,8 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_test_com(_, _, _))),
     Export::Func(export_c_func!(mr_test_com1(_, _, _, _))), // 1938
     Export::Func(export_c_func!(mr_c2u(_, _, _))),          // 1939
-    Export::Func(export_c_func!(mr_div(_, _, _, _))),       // 1941
-    Export::Func(export_c_func!(mr_mod(_, _, _, _))),
+    Export::Func(export_c_func!(mr_div(_, _))),             // 1941
+    Export::Func(export_c_func!(mr_mod(_, _))),
     Export::Data(export_c_data!(state.heap.mem_min)), // &LG_mem_min
     Export::Data(export_c_data!(state.heap.mem_top)), // &LG_mem_top
     Export::Func(export_c_func!(mr_updcrc(_, _, _, _))), // 1943
