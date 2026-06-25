@@ -2177,13 +2177,6 @@ fn mr_unzip(
     MrResult::Success as i32
 }
 
-fn mr_entry(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    log_dbg!(
-        "Mythroad: mr_entry(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
-}
-
 fn mr_plat_draw_char(env: &mut Environment, ch: u16, x: i32, y: i32, color: u32) {
     log_dbg!(
         "Mythroad: mr_platDrawChar(ch={ch}, x={x}, y={y}, color={color:#x}) called from {:#x}",
@@ -2355,7 +2348,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_unzip(_, _, _, _))), // 1950
     Export::Data(export_c_data!(state.mr_exit_cb)),   // &mr_exit_cb
     Export::Data(export_c_data!(state.mr_exit_cb_data)), // &mr_exit_cb_data
-    Export::Func(export_c_func!(mr_entry(_, _, _, _))), // 1952
+    Export::Data(export_c_data!(state.entry)),        // mr_entry
     Export::Func(export_c_func!(mr_plat_draw_char(_, _, _, _))), // 2004
     Export::Data(export_c_data!(state.heap.mem_free)), // &LG_mem_free
     Export::Func(export_c_func!(mr_transbitmap_draw(_, _, _, _))),
