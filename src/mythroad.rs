@@ -33,8 +33,16 @@ impl Mythroad {
         }
     }
 
-    pub fn register_app(&self, mem: &mut Memory, index: u32, ptr: MutPtr<u8>) {
+    pub fn register_app(&self, mem: &mut Memory, index: i32, ptr: MutPtr<u8>) -> bool {
+        let Ok(index) = u32::try_from(index) else {
+            return false;
+        };
+        if index >= MR_M0_FILES {
+            return false;
+        }
+
         mem.write(self.state.mr_m0_files + index, ptr.to_bits());
+        true
     }
 }
 
@@ -2013,11 +2021,19 @@ fn mr_wstrlen(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_register_app(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_register_app(env: &mut Environment, p: MutPtr<u8>, len: i32, index: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_registerAPP(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_registerAPP(p={:#x}, len={len}, index={index}) called from {:#x}",
+        p.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    if !env.mythroad.register_app(&mut env.mem, index, p) {
+        log_dbg!("Mythroad: mr_registerAPP failed");
+        return MrResult::Failed as i32;
+    }
+
+    MrResult::Success as i32
 }
 
 fn draw_text_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -2295,7 +2311,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(bitmap_check(_, _, _, _))),
     Export::Func(export_c_func!(mr_read_file(_, _, _))),
     Export::Func(export_c_func!(mr_wstrlen(_, _, _, _))),
-    Export::Func(export_c_func!(mr_register_app(_, _, _, _))),
+    Export::Func(export_c_func!(mr_register_app(_, _, _))),
     Export::Func(export_c_func!(draw_text_ex(_, _, _, _))), // 1936
     Export::Func(export_c_func!(mr_eff_set_con(_, _, _, _))),
     Export::Func(export_c_func!(mr_test_com(_, _, _))),
