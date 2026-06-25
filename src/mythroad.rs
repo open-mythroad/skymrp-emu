@@ -1342,123 +1342,196 @@ fn mr_connect_wap(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     );
 }
 
-fn mr_menu_create(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_menu_create(env: &mut Environment, title: ConstPtr<u8>, num: i16) -> i32 {
     log_dbg!(
-        "Mythroad: mr_menuCreate(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_menuCreate(title={:#x}, num={num}) called from {:#x}",
+        title.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Failed as i32
 }
 
-fn mr_menu_set_item(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_menu_set_item(env: &mut Environment, menu: i32, text: ConstPtr<u8>, index: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_menuSetItem(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_menuSetItem(menu={menu}, text={:#x}, index={index}) called from {:#x}",
+        text.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Failed as i32
 }
 
-fn mr_menu_show(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_menu_show(env: &mut Environment, menu: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_menuShow(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_menuShow(menu={menu}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_menu_set_focus(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_menu_set_focus(env: &mut Environment, menu: i32, index: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_menuSetFocus(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_menuSetFocus(menu={menu}, index={index}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_menu_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_menu_release(env: &mut Environment, menu: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_menuRelease(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_menuRelease(menu={menu}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_menu_refresh(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_menu_refresh(env: &mut Environment, menu: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_menuRefresh(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_menuRefresh(menu={menu}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_dialog_create(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_dialog_create(
+    env: &mut Environment,
+    title: ConstPtr<u8>,
+    text: ConstPtr<u8>,
+    type_: i32,
+) -> i32 {
     log_dbg!(
-        "Mythroad: mr_dialogCreate(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_dialogCreate(title={:#x}, text={:#x}, type={type_}) called from {:#x}",
+        title.to_bits(),
+        text.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_dialog_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_dialog_release(env: &mut Environment, dialog: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_dialogRelease(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_dialogRelease(dialog={dialog}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_dialog_refresh(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_dialog_refresh(
+    env: &mut Environment,
+    dialog: i32,
+    title: ConstPtr<u8>,
+    text: ConstPtr<u8>,
+    type_: i32,
+) -> i32 {
     log_dbg!(
-        "Mythroad: mr_dialogRefresh(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_dialogRefresh(dialog={dialog}, title={:#x}, text={:#x}, type={type_}) called from {:#x}",
+        title.to_bits(),
+        text.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_text_create(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_text_create(
+    env: &mut Environment,
+    title: ConstPtr<u8>,
+    text: ConstPtr<u8>,
+    type_: i32,
+) -> i32 {
     log_dbg!(
-        "Mythroad: mr_textCreate(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_textCreate(title={:#x}, text={:#x}, type={type_}) called from {:#x}",
+        title.to_bits(),
+        text.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_text_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_text_release(env: &mut Environment, text: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_textRelease(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_textRelease(text={text}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_text_refresh(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_text_refresh(
+    env: &mut Environment,
+    handle: i32,
+    title: ConstPtr<u8>,
+    text: ConstPtr<u8>,
+) -> i32 {
     log_dbg!(
-        "Mythroad: mr_textRefresh(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_textRefresh(handle={handle}, title={:#x}, text={:#x}) called from {:#x}",
+        title.to_bits(),
+        text.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_edit_create(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_edit_create(
+    env: &mut Environment,
+    title: ConstPtr<u8>,
+    text: ConstPtr<u8>,
+    type_: i32,
+    max_size: i32,
+) -> i32 {
     log_dbg!(
-        "Mythroad: mr_editCreate(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_editCreate(title={:#x}, text={:#x}, type={type_}, max_size={max_size}) called from {:#x}",
+        title.to_bits(),
+        text.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_edit_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_edit_release(env: &mut Environment, edit: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_editRelease(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_editRelease(edit={edit}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_edit_get_text(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_edit_get_text(env: &mut Environment, edit: i32) -> ConstPtr<u8> {
     log_dbg!(
-        "Mythroad: mr_editGetText(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_editGetText(edit={edit}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    Ptr::from_bits(MrResult::Ignored as u32)
 }
 
-fn mr_win_create(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_win_create(env: &mut Environment) -> i32 {
     log_dbg!(
-        "Mythroad: mr_winCreate(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_winCreate() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
-fn mr_win_release(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_win_release(env: &mut Environment, win: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_winRelease(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_winRelease(win={win}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Ignored as i32
 }
 
 fn mr_get_screen_info(env: &mut Environment, screen_info: MutPtr<u32>) -> i32 {
@@ -2158,23 +2231,23 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_call(_, _, _, _))),
     Export::Func(export_c_func!(mr_get_network_id(_, _, _, _))),
     Export::Func(export_c_func!(mr_connect_wap(_, _, _, _))),
-    Export::Func(export_c_func!(mr_menu_create(_, _, _, _))),
-    Export::Func(export_c_func!(mr_menu_set_item(_, _, _, _))),
-    Export::Func(export_c_func!(mr_menu_show(_, _, _, _))),
-    Export::Func(export_c_func!(mr_menu_set_focus(_, _, _, _))),
-    Export::Func(export_c_func!(mr_menu_release(_, _, _, _))),
-    Export::Func(export_c_func!(mr_menu_refresh(_, _, _, _))),
-    Export::Func(export_c_func!(mr_dialog_create(_, _, _, _))),
-    Export::Func(export_c_func!(mr_dialog_release(_, _, _, _))),
+    Export::Func(export_c_func!(mr_menu_create(_, _))),
+    Export::Func(export_c_func!(mr_menu_set_item(_, _, _))),
+    Export::Func(export_c_func!(mr_menu_show(_))),
+    Export::Func(export_c_func!(mr_menu_set_focus(_, _))),
+    Export::Func(export_c_func!(mr_menu_release(_))),
+    Export::Func(export_c_func!(mr_menu_refresh(_))),
+    Export::Func(export_c_func!(mr_dialog_create(_, _, _))),
+    Export::Func(export_c_func!(mr_dialog_release(_))),
     Export::Func(export_c_func!(mr_dialog_refresh(_, _, _, _))),
-    Export::Func(export_c_func!(mr_text_create(_, _, _, _))),
-    Export::Func(export_c_func!(mr_text_release(_, _, _, _))),
-    Export::Func(export_c_func!(mr_text_refresh(_, _, _, _))),
+    Export::Func(export_c_func!(mr_text_create(_, _, _))),
+    Export::Func(export_c_func!(mr_text_release(_))),
+    Export::Func(export_c_func!(mr_text_refresh(_, _, _))),
     Export::Func(export_c_func!(mr_edit_create(_, _, _, _))),
-    Export::Func(export_c_func!(mr_edit_release(_, _, _, _))),
-    Export::Func(export_c_func!(mr_edit_get_text(_, _, _, _))),
-    Export::Func(export_c_func!(mr_win_create(_, _, _, _))),
-    Export::Func(export_c_func!(mr_win_release(_, _, _, _))),
+    Export::Func(export_c_func!(mr_edit_release(_))),
+    Export::Func(export_c_func!(mr_edit_get_text(_))),
+    Export::Func(export_c_func!(mr_win_create())),
+    Export::Func(export_c_func!(mr_win_release(_))),
     Export::Func(export_c_func!(mr_get_screen_info(_))),
     Export::Func(export_c_func!(mr_init_network(_, _, _, _))),
     Export::Func(export_c_func!(mr_close_network(_, _, _, _))),
