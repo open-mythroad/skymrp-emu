@@ -316,6 +316,7 @@ pub struct State {
     pub mr_sms_cfg_buf: MutPtr<u8>,
     pub mr_exit_cb: GuestVar<u32>,
     pub mr_exit_cb_data: GuestVar<i32>,
+    pub mr_updcrc: crc32fast::Hasher,
 }
 
 const MR_FILE_MAX_LEN: GuestUSize = 128;
@@ -380,6 +381,7 @@ impl State {
         let mr_sms_cfg_buf = alloc_array(mem, MR_SMS_CFG_BUF_LEN);
         let mr_exit_cb = GuestVar::new(mem, 0u32);
         let mr_exit_cb_data = GuestVar::new(mem, 0i32);
+        let mr_updcrc = crc32fast::Hasher::new();
 
         let mr_c_function_p = MutVoidPtr::null();
         let mr_c_function_p_len = 0;
@@ -454,6 +456,7 @@ impl State {
             mr_sms_cfg_buf,
             mr_exit_cb,
             mr_exit_cb_data,
+            mr_updcrc,
         }
     }
 }
@@ -2100,11 +2103,21 @@ fn mr_mod(env: &mut Environment, a: i32, b: i32) -> i32 {
     a % b
 }
 
-fn mr_updcrc(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_updcrc(env: &mut Environment, s: ConstPtr<u8>, n: u32) -> u32 {
     log_dbg!(
-        "Mythroad: mr_updcrc(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_updcrc(s={:#x}, n={n}) called from {:#x}",
+        s.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    if s.is_null() {
+        env.mythroad.state.mr_updcrc = crc32fast::Hasher::new();
+    } else if n != 0 {
+        let bytes = env.mem.bytes_at(s, n);
+        env.mythroad.state.mr_updcrc.update(bytes);
+    }
+
+    env.mythroad.state.mr_updcrc.clone().finalize()
 }
 
 fn mr_unzip(
@@ -2323,7 +2336,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_mod(_, _))),
     Export::Data(export_c_data!(state.heap.mem_min)), // &LG_mem_min
     Export::Data(export_c_data!(state.heap.mem_top)), // &LG_mem_top
-    Export::Func(export_c_func!(mr_updcrc(_, _, _, _))), // 1943
+    Export::Func(export_c_func!(mr_updcrc(_, _))),    // 1943
     Export::Data(export_c_data!(state.start_file_parameter)), // start_fileparameter
     Export::Data(export_c_data!(state.mr_sms_return_flag)), // &mr_sms_return_flag
     Export::Data(export_c_data!(state.mr_sms_return_val)), // &mr_sms_return_val

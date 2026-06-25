@@ -383,6 +383,7 @@ dependencies = [
  "cc",
  "chrono",
  "cmake",
+ "crc32fast",
  "encoding_rs",
  "flate2",
  "rusty-hook",
