@@ -5,6 +5,7 @@ use crate::dsm;
 use crate::encoding;
 use crate::font;
 use crate::gzip;
+use crate::haptics;
 use crate::libc;
 use crate::md5::{self, Md5State};
 use crate::mem::{
@@ -1255,18 +1256,34 @@ fn mr_exit(env: &mut Environment) -> i32 {
     MrResult::Success as i32
 }
 
-fn mr_start_shake(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_start_shake(env: &mut Environment, ms: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_startShake(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_startShake(ms={ms}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    match haptics::start(ms) {
+        Ok(()) => MrResult::Success as i32,
+        Err(err) => {
+            log!("Mythroad: mr_startShake failed: {err}");
+            MrResult::Failed as i32
+        }
+    }
 }
 
-fn mr_stop_shake(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_stop_shake(env: &mut Environment) -> i32 {
     log_dbg!(
-        "Mythroad: mr_stopShake(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_stopShake() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    match haptics::stop() {
+        Ok(()) => MrResult::Success as i32,
+        Err(err) => {
+            log!("Mythroad: mr_stopShake failed: {err}");
+            MrResult::Failed as i32
+        }
+    }
 }
 
 fn mr_play_sound(
@@ -2259,8 +2276,8 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_find_get_next(_, _, _))),
     Export::Func(export_c_func!(mr_find_stop(_))), // 54
     Export::Func(export_c_func!(mr_exit())),
-    Export::Func(export_c_func!(mr_start_shake(_, _, _, _))),
-    Export::Func(export_c_func!(mr_stop_shake(_, _, _, _))),
+    Export::Func(export_c_func!(mr_start_shake(_))),
+    Export::Func(export_c_func!(mr_stop_shake())),
     Export::Func(export_c_func!(mr_play_sound(_, _, _, _))),
     Export::Func(export_c_func!(mr_stop_sound(_))), // 59
     Export::Func(export_c_func!(mr_send_sms(_, _, _))),

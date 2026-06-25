@@ -8,6 +8,7 @@ mod encoding;
 mod font;
 mod fs;
 mod gzip;
+mod haptics;
 mod libc;
 mod md5;
 mod mem;
@@ -74,6 +75,7 @@ impl Environment {
     fn new(mrp_path: PathBuf) -> Result<Environment, String> {
         let window = window::Window::new("SKYMRP");
         audio::init(window.sdl_context()).map_err(|e| e.to_string())?;
+        haptics::init(window.sdl_context()).map_err(|e| e.to_string())?;
 
         let mut mem = mem::Memory::new();
 

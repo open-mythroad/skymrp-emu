@@ -1,6 +1,7 @@
 use crate::abi::{CallFromHost, GuestFunction};
 use crate::encoding;
 use crate::fs::GuestPath;
+use crate::haptics;
 use crate::libc;
 use crate::libc::posix_io::stat::mode_t;
 use crate::libc::posix_io::{self, OpenFlag};
@@ -371,7 +372,15 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
         0x64 => env.mythroad.state.heap.mem_min.get(&env.mem) as i32,
         0x65 => env.mythroad.state.heap.mem_top.get(&env.mem) as i32,
         0x66 => env.mythroad.state.heap.mem_left.get(&env.mem),
-        0xc8 => mr_start_shake(env, input1),
+        0xc8 => {
+            let mr_state = env.mythroad.state.mr_state.get(&env.mem);
+            let mr_shake_on = env.mythroad.state.mr_shake_on.get(&env.mem);
+            if mr_state == MrRunState::Run as u32 && mr_shake_on != 0 {
+                mr_start_shake(env, input1)
+            } else {
+                MrResult::Success as i32
+            }
+        }
         0x12c => {
             env.mythroad
                 .state
@@ -675,7 +684,13 @@ pub(crate) fn mr_event(env: &mut Environment, code: i32, param0: i32, param1: i3
 
 fn mr_start_shake(_env: &mut Environment, ms: u32) -> i32 {
     log_dbg!("Mythroad: mr_startShake(ms={ms})");
-    MrResult::Success as i32
+    match haptics::start(ms as i32) {
+        Ok(()) => MrResult::Success as i32,
+        Err(err) => {
+            log!("Mythroad: mr_startShake failed: {err}");
+            MrResult::Failed as i32
+        }
+    }
 }
 
 pub(crate) fn mr_sleep(ms: u32) {
