@@ -343,6 +343,17 @@ impl Memory {
         std::str::from_utf8(bytes).map_err(|_| bytes)
     }
 
+    pub fn wstr_len_bytes_at<const MUT: bool>(&self, ptr: Ptr<u8, MUT>) -> GuestUSize {
+        let mut len = 0;
+        while ((u16::from(self.read::<u8, MUT>(ptr + len)) << 8)
+            | u16::from(self.read::<u8, MUT>(ptr + len + 1)))
+            != 0
+        {
+            len += 2;
+        }
+        len
+    }
+
     pub fn reserve(&mut self, base: VAddr, size: GuestUSize) {
         self.allocator.reserve(allocator::Chunk::new(base, size));
     }

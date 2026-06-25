@@ -2046,11 +2046,14 @@ fn mr_read_file(
     dsm::mr_read_file(env, filename, filelen, lookfor)
 }
 
-fn mr_wstrlen(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_wstrlen(env: &mut Environment, str: ConstPtr<u8>) -> i32 {
     log_dbg!(
-        "Mythroad: mr_wstrlen(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_wstrlen(str={:#x}) called from {:#x}",
+        str.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    env.mem.wstr_len_bytes_at(str) as i32
 }
 
 fn mr_register_app(env: &mut Environment, p: MutPtr<u8>, len: i32, index: i32) -> i32 {
@@ -2347,7 +2350,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(draw_text(_, _, _, _, _, _, _, _))),
     Export::Func(export_c_func!(bitmap_check(_, _, _, _))),
     Export::Func(export_c_func!(mr_read_file(_, _, _))),
-    Export::Func(export_c_func!(mr_wstrlen(_, _, _, _))),
+    Export::Func(export_c_func!(mr_wstrlen(_))),
     Export::Func(export_c_func!(mr_register_app(_, _, _))),
     Export::Func(export_c_func!(draw_text_ex(_, _, _, _))), // 1936
     Export::Func(export_c_func!(mr_eff_set_con(_, _, _, _))),
