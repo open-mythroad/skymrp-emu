@@ -169,8 +169,30 @@ impl Environment {
                 return;
             }
 
-            std::thread::sleep(Duration::from_millis(5));
+            let sleep_duration = self.event_loop_sleep_duration();
+            if !sleep_duration.is_zero() {
+                std::thread::sleep(sleep_duration);
+            }
         }
+    }
+
+    fn event_loop_sleep_duration(&self) -> Duration {
+        const MAX_SLEEP: Duration = Duration::from_millis(1000 / 60);
+
+        if self.mythroad.state.mr_timer_state.get(&self.mem)
+            != mythroad::MrTimerState::Running as u32
+        {
+            return MAX_SLEEP;
+        }
+
+        let elapsed = dsm::mr_get_time(self).wrapping_sub(self.mythroad.state.mr_timer_start_time);
+        if elapsed >= self.mythroad.state.mr_timer_interval {
+            return Duration::ZERO;
+        }
+
+        let remaining =
+            Duration::from_millis(u64::from(self.mythroad.state.mr_timer_interval - elapsed));
+        remaining.min(MAX_SLEEP)
     }
 
     fn run_inner(&mut self, root: bool) {

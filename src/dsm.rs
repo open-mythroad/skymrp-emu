@@ -610,7 +610,6 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
         .state
         .mr_timer_state
         .set(&mut env.mem, MrTimerState::Idle as u32);
-    env.mythroad.state.mr_timer_interval = 0;
 
     let mr_state = env.mythroad.state.mr_state.get(&env.mem);
     let timer_runs_while_paused = env.mythroad.state.mr_timer_run_without_pause.get(&env.mem) != 0;
@@ -622,7 +621,8 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
             .unwrap()
             .to_owned();
         mr_stop(env);
-        return intra_start(env, &start_filename, None);
+        intra_start(env, &start_filename, None);
+        return MrResult::Success as i32;
     }
 
     if mr_state != MrRunState::Run as u32
@@ -633,14 +633,16 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
 
     let timer_function = env.mythroad.state.mr_timer_function;
     if timer_function.addr_without_thumb_bit() == 0 {
-        return mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 2);
+        mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 2);
+        return MrResult::Success as i32;
     }
 
     let timer_status: i32 = timer_function.call_from_host(env, ());
-    if timer_status == MrResult::Ignored as i32 {
-        return mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 2);
+    if timer_status != MrResult::Ignored as i32 {
+        return timer_status;
     }
 
+    mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 2);
     MrResult::Success as i32
 }
 
