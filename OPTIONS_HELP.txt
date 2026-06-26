@@ -4,3 +4,7 @@ View options:
 
     --scale=...
         Set a scaling factor for the window. The default is no scale hack, which is equivalent to a value of 1.
+
+Font options:
+    --font-size-override=small|medium|big
+        Override the font size used for Mythroad text rendering.

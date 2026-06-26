@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 /// The struct containing the entire emulator state.
 pub struct Environment {
+    pub options: options::Options,
     pub window: window::Window,
     pub mem: mem::Memory,
     pub fs: fs::Fs,
@@ -46,6 +47,7 @@ impl Environment {
         cpu.set_cpsr(cpu::Cpu::CPSR_USER_MODE);
 
         Ok(Environment {
+            options,
             window,
             mem,
             fs,

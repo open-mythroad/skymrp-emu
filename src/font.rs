@@ -18,20 +18,36 @@ struct GlyphBitmap {
     bits: Vec<u8>,
 }
 
-#[repr(u16)]
-enum FontSize {
-    Small = 0,
-    Medium = 1,
-    Big = 2,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FontSize {
+    Small,
+    Medium,
+    Big,
 }
 
 impl FontSize {
-    fn from_bits(bits: u16) -> Option<Self> {
-        match bits {
-            0 => Some(Self::Small),
-            1 => Some(Self::Medium),
-            2 => Some(Self::Big),
-            _ => None,
+    pub(crate) fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "small" => Ok(Self::Small),
+            "medium" => Ok(Self::Medium),
+            "big" => Ok(Self::Big),
+            _ => Err("Invalid font size, expected small, medium, or big".to_string()),
+        }
+    }
+
+    fn from_mythroad_font_size(font_size: u16) -> Self {
+        match font_size {
+            0 => Self::Small,
+            1 => Self::Medium,
+            _ => Self::Big,
+        }
+    }
+
+    fn pixel_size(self) -> u32 {
+        match self {
+            Self::Small => 12,
+            Self::Medium => 16,
+            Self::Big => 16,
         }
     }
 }
@@ -48,7 +64,7 @@ impl Font {
         Self {
             font12: None,
             font16: None,
-            current_pixel_size: 16,
+            current_pixel_size: FontSize::Medium.pixel_size(),
             bitmap_buf: mem.calloc(FONT_BITMAP_BUF_LEN).cast(),
         }
     }
@@ -115,12 +131,10 @@ impl Font {
         Self::load_font_data(font_data_cache, fs, path, pixel_size)
     }
 
-    fn select_mythroad_font(&mut self, font_size: u16) {
-        self.current_pixel_size = match FontSize::from_bits(font_size) {
-            Some(FontSize::Small) => 12,
-            Some(FontSize::Medium | FontSize::Big) => 16,
-            None => 16,
-        }
+    fn select_mythroad_font(&mut self, font_size: u16, font_size_override: Option<FontSize>) {
+        self.current_pixel_size = font_size_override
+            .unwrap_or_else(|| FontSize::from_mythroad_font_size(font_size))
+            .pixel_size();
     }
 
     fn current_pixel_size(&self) -> u32 {
@@ -297,7 +311,10 @@ pub(crate) fn get_char_bitmap(
     width: MutPtr<i32>,
     height: MutPtr<i32>,
 ) -> ConstPtr<u8> {
-    env.mythroad.font.select_mythroad_font(font_size);
+    let font_size_override = env.options.font_size_override;
+    env.mythroad
+        .font
+        .select_mythroad_font(font_size, font_size_override);
     let pixel_size = env.mythroad.font.current_pixel_size();
     env.mythroad.font.ensure_font_loaded(&env.fs, pixel_size);
 
@@ -314,7 +331,10 @@ pub(crate) fn get_char_bitmap(
 }
 
 pub(crate) fn measure_char(env: &mut Environment, ch: u16, font_size: u16) -> (i32, i32) {
-    env.mythroad.font.select_mythroad_font(font_size);
+    let font_size_override = env.options.font_size_override;
+    env.mythroad
+        .font
+        .select_mythroad_font(font_size, font_size_override);
     let pixel_size = env.mythroad.font.current_pixel_size();
     env.mythroad.font.ensure_font_loaded(&env.fs, pixel_size);
 
