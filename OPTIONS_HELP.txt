@@ -1,0 +1,6 @@
+View options:
+    --fullscreen
+        Display the app in full screen.
+
+    --scale=...
+        Set a scaling factor for the window. The default is no scale hack, which is equivalent to a value of 1.

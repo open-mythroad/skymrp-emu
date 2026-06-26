@@ -1,15 +1,38 @@
+use crate::options::Options;
 use sdl2::pixels::PixelFormatEnum;
+use sdl2::rect::Rect;
 use sdl2::render::{Canvas, Texture};
-use sdl2::video::Window as SdlWindow;
 use std::collections::VecDeque;
+use std::num::NonZeroU32;
+
+pub type Coords = (f32, f32);
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum DeviceOrientation {
+    Portrait,
+    PortraitUpsideDown,
+    LandscapeLeft,
+    LandscapeRight,
+}
+
+fn size_for_orientation(orientation: DeviceOrientation, scale: NonZeroU32) -> (u32, u32) {
+    let (width, height) = (240, 320);
+    let scale = scale.get();
+    match orientation {
+        DeviceOrientation::Portrait => (width * scale, height * scale),
+        DeviceOrientation::PortraitUpsideDown => (width * scale, height * scale),
+        DeviceOrientation::LandscapeLeft => (height * scale, width * scale),
+        DeviceOrientation::LandscapeRight => (height * scale, width * scale),
+    }
+}
 
 pub enum Event {
     Quit,
-    KeyDown { key: MrKey },
-    KeyUp { key: MrKey },
-    MouseDown { x: i32, y: i32 },
-    MouseUp { x: i32, y: i32 },
-    MouseMove { x: i32, y: i32 },
+    KeyDown(MrKey),
+    KeyUp(MrKey),
+    MouseDown(Coords),
+    MouseUp(Coords),
+    MouseMove(Coords),
 }
 
 #[repr(u32)]
@@ -43,21 +66,40 @@ pub struct Window {
     _video_ctx: sdl2::VideoSubsystem,
     texture: Option<Texture>,
     texture_size: Option<(u32, u32)>,
-    canvas: Canvas<SdlWindow>,
+    canvas: Canvas<sdl2::video::Window>,
     event_pump: sdl2::EventPump,
     event_queue: VecDeque<Event>,
+    fullscreen: bool,
+    scale: NonZeroU32,
+    device_orientation: DeviceOrientation,
 }
 
 impl Window {
-    pub fn new(title: &str) -> Window {
+    pub fn new(title: &str, options: &Options) -> Window {
         let sdl_ctx = sdl2::init().unwrap();
         let video_ctx = sdl_ctx.video().unwrap();
 
-        let window = video_ctx
-            .window(title, 240, 320)
-            .position_centered()
-            .build()
-            .unwrap();
+        let device_orientation = DeviceOrientation::Portrait;
+        let fullscreen = options.fullscreen;
+        let scale = options.scale;
+
+        let window = if fullscreen {
+            let (width, height) = video_ctx.display_bounds(0).unwrap().size();
+            let window = video_ctx
+                .window(title, width, height)
+                .fullscreen_desktop()
+                .build()
+                .unwrap();
+            window
+        } else {
+            let (width, height) = size_for_orientation(device_orientation, scale);
+            let window = video_ctx
+                .window(title, width, height)
+                .position_centered()
+                .build()
+                .unwrap();
+            window
+        };
 
         let canvas = window.into_canvas().present_vsync().build().unwrap();
 
@@ -71,6 +113,9 @@ impl Window {
             canvas,
             event_pump,
             event_queue: VecDeque::new(),
+            fullscreen,
+            scale,
+            device_orientation: device_orientation,
         }
     }
 
@@ -78,25 +123,37 @@ impl Window {
         &self._sdl_ctx
     }
 
-    pub fn refresh(&mut self, framebuffer: &[u8], screen_width: u32, screen_height: u32) {
-        let pitch = screen_width as usize * 2;
-        if framebuffer.len() != pitch * screen_height as usize {
+    pub fn refresh(
+        &mut self,
+        framebuffer: &[u8],
+        guest_screen_width: u32,
+        guest_screen_height: u32,
+    ) {
+        let pitch = guest_screen_width as usize * 2;
+        if framebuffer.len() != pitch * guest_screen_height as usize {
             return;
         }
 
-        if self.texture_size != Some((screen_width, screen_height)) {
+        if self.texture_size != Some((guest_screen_width, guest_screen_height)) {
             self.texture = Some(
                 self.canvas
-                    .create_texture_streaming(PixelFormatEnum::RGB565, screen_width, screen_height)
+                    .create_texture_streaming(
+                        PixelFormatEnum::RGB565,
+                        guest_screen_width,
+                        guest_screen_height,
+                    )
                     .unwrap(),
             );
-            self.texture_size = Some((screen_width, screen_height));
+            self.texture_size = Some((guest_screen_width, guest_screen_height));
         }
+
+        let viewport = self.viewport();
+        let dst = Rect::new(viewport.0 as i32, viewport.1 as i32, viewport.2, viewport.3);
 
         let texture = self.texture.as_mut().unwrap();
         texture.update(None, framebuffer, pitch).unwrap();
         self.canvas.clear();
-        self.canvas.copy(texture, None, None).unwrap();
+        self.canvas.copy(texture, None, Some(dst)).unwrap();
         self.canvas.present();
     }
 
@@ -113,7 +170,7 @@ impl Window {
                 } => {
                     if !repeat {
                         if let Some(key) = keycode_to_mr_key(keycode) {
-                            self.event_queue.push_back(Event::KeyDown { key });
+                            self.event_queue.push_back(Event::KeyDown(key));
                         }
                     }
                 }
@@ -122,34 +179,37 @@ impl Window {
                     ..
                 } => {
                     if let Some(key) = keycode_to_mr_key(keycode) {
-                        self.event_queue.push_back(Event::KeyUp { key });
+                        self.event_queue.push_back(Event::KeyUp(key));
                     }
                 }
                 E::MouseButtonDown { x, y, .. } => {
-                    let (x, y) = self.window_point_to_screen(x, y);
-                    self.event_queue.push_back(Event::MouseDown { x, y });
+                    let coords = transform_input_coords(self, (x as f32, y as f32), false);
+                    self.event_queue.push_back(Event::MouseDown(coords));
                 }
                 E::MouseButtonUp { x, y, .. } => {
-                    let (x, y) = self.window_point_to_screen(x, y);
-                    self.event_queue.push_back(Event::MouseUp { x, y });
+                    let coords = transform_input_coords(self, (x as f32, y as f32), false);
+                    self.event_queue.push_back(Event::MouseUp(coords));
                 }
                 E::MouseMotion {
                     x, y, mousestate, ..
                 } if mousestate.left() || mousestate.right() || mousestate.middle() => {
-                    let (x, y) = self.window_point_to_screen(x, y);
-                    self.event_queue.push_back(Event::MouseMove { x, y });
+                    let coords = transform_input_coords(self, (x as f32, y as f32), false);
+                    self.event_queue.push_back(Event::MouseMove(coords));
                 }
                 E::FingerDown { x, y, .. } => {
-                    let (x, y) = self.normalized_point_to_screen(x, y);
-                    self.event_queue.push_back(Event::MouseDown { x, y });
+                    let abs_coords = finger_absolute_coords(self, (x, y));
+                    let coords = transform_input_coords(self, abs_coords, false);
+                    self.event_queue.push_back(Event::MouseDown(coords));
                 }
                 E::FingerUp { x, y, .. } => {
-                    let (x, y) = self.normalized_point_to_screen(x, y);
-                    self.event_queue.push_back(Event::MouseUp { x, y });
+                    let abs_coords = finger_absolute_coords(self, (x, y));
+                    let coords = transform_input_coords(self, abs_coords, false);
+                    self.event_queue.push_back(Event::MouseUp(coords));
                 }
                 E::FingerMotion { x, y, .. } => {
-                    let (x, y) = self.normalized_point_to_screen(x, y);
-                    self.event_queue.push_back(Event::MouseMove { x, y });
+                    let abs_coords = finger_absolute_coords(self, (x, y));
+                    let coords = transform_input_coords(self, abs_coords, false);
+                    self.event_queue.push_back(Event::MouseMove(coords));
                 }
                 _ => {}
             }
@@ -160,33 +220,72 @@ impl Window {
         self.event_queue.pop_front()
     }
 
-    fn screen_size(&self) -> (u32, u32) {
-        self.texture_size
-            .or_else(|| self.canvas.output_size().ok())
-            .unwrap_or((240, 320))
+    /// Returns the current device orientation
+    pub fn current_rotation(&self) -> DeviceOrientation {
+        self.device_orientation
     }
 
-    fn window_point_to_screen(&self, x: i32, y: i32) -> (i32, i32) {
-        let (screen_w, screen_h) = self.screen_size();
-        let (window_w, window_h) = self.canvas.output_size().unwrap_or((screen_w, screen_h));
-
-        let x = x * screen_w as i32 / window_w.max(1) as i32;
-        let y = y * screen_h as i32 / window_h.max(1) as i32;
-        clamp_screen_point(x, y, screen_w, screen_h)
+    /// Get the size in pixels of the window without rotation or scaling.
+    ///
+    /// The aspect ratio, scale and orientation reflect the guest app's view of
+    /// the world.
+    pub fn size_unrotated_unscaled(&self) -> (u32, u32) {
+        size_for_orientation(DeviceOrientation::Portrait, NonZeroU32::new(1).unwrap())
     }
 
-    fn normalized_point_to_screen(&self, x: f32, y: f32) -> (i32, i32) {
-        let (screen_w, screen_h) = self.screen_size();
-        let x = (x.clamp(0.0, 1.0) * screen_w as f32) as i32;
-        let y = (y.clamp(0.0, 1.0) * screen_h as f32) as i32;
-        clamp_screen_point(x, y, screen_w, screen_h)
+    pub fn viewport(&self) -> (u32, u32, u32, u32) {
+        let (app_width, app_height) = size_for_orientation(self.device_orientation, self.scale);
+        if !self.fullscreen {
+            return (0, 0, app_width, app_height);
+        }
+
+        let (screen_width, screen_height) = self.canvas.window().drawable_size();
+
+        let app_aspect = app_width as f32 / app_height as f32;
+        let screen_aspect = screen_width as f32 / screen_height as f32;
+        let (scaled_width, scaled_height) = if app_aspect < screen_aspect {
+            (
+                (screen_height as f32 * app_aspect).round() as u32,
+                screen_height,
+            )
+        } else {
+            (
+                screen_width,
+                (screen_width as f32 / app_aspect).round() as u32,
+            )
+        };
+        let x = (screen_width - scaled_width) / 2;
+        let y = (screen_height - scaled_height) / 2;
+        (x, y, scaled_width, scaled_height)
     }
 }
 
-fn clamp_screen_point(x: i32, y: i32, screen_w: u32, screen_h: u32) -> (i32, i32) {
-    let max_x = screen_w.saturating_sub(1) as i32;
-    let max_y = screen_h.saturating_sub(1) as i32;
-    (x.clamp(0, max_x), y.clamp(0, max_y))
+fn finger_absolute_coords(window: &Window, (x, y): (f32, f32)) -> (f32, f32) {
+    let (screen_width, screen_height) = window.canvas.window().drawable_size();
+    (screen_width as f32 * x, screen_height as f32 * y)
+}
+fn transform_input_coords(
+    window: &Window,
+    (in_x, in_y): (f32, f32),
+    independent_of_viewport: bool,
+) -> (f32, f32) {
+    let (vx, vy, vw, vh) = if independent_of_viewport {
+        let (width, height) =
+            size_for_orientation(window.device_orientation, NonZeroU32::new(1).unwrap());
+        (0, 0, width, height)
+    } else {
+        window.viewport()
+    };
+    // normalize to unit square centred on origin
+    let x = (in_x - vx as f32) / vw as f32 - 0.5;
+    let y = (in_y - vy as f32) / vh as f32 - 0.5;
+    // rotate
+    // back to pixels
+    let (out_w, out_h) = window.size_unrotated_unscaled();
+    let out_x = (x + 0.5) * out_w as f32;
+    let out_y = (y + 0.5) * out_h as f32;
+    // Round to match touch precision of official devices.
+    (out_x.round(), out_y.round())
 }
 
 fn keycode_to_mr_key(keycode: sdl2::keyboard::Keycode) -> Option<MrKey> {
