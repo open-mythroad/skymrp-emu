@@ -1058,7 +1058,7 @@ pub(crate) fn mr_test_com_c(
             GuestFunction::from_addr_with_thumb_bit(input.to_bits() + 8);
 
         let mr_c_function_load = env.mythroad.state.mr_c_function_load;
-        return mr_c_function_load.call_from_host(env, ());
+        return mr_c_function_load.call_from_host(env, (code,));
     }
 
     let mr_c_function = env.mythroad.state.mr_c_function;
