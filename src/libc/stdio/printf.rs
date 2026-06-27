@@ -68,6 +68,10 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
                     res.extend_from_slice(format!("{}", int).as_bytes());
                 }
             }
+            b'x' => {
+                let int: i32 = args.next(env);
+                res.extend_from_slice(format!("{:x}", int).as_bytes());
+            }
             // TODO: more specifiers
             _ => unimplemented!("Format character '{}'", specifier as char),
         }
