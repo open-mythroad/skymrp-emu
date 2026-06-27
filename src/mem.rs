@@ -249,15 +249,9 @@ impl Memory {
     }
 
     pub fn bytes_at<const MUT: bool>(&self, ptr: Ptr<u8, MUT>, count: GuestUSize) -> &[u8] {
-        if ptr.to_bits() < Self::NULL_PAGE_SIZE {
-            Self::null_check_fail(ptr.to_bits(), count)
-        }
         &self.bytes()[ptr.to_bits() as usize..][..count as usize]
     }
     pub fn bytes_at_mut(&mut self, ptr: MutPtr<u8>, count: GuestUSize) -> &mut [u8] {
-        if ptr.to_bits() < Self::NULL_PAGE_SIZE {
-            Self::null_check_fail(ptr.to_bits(), count)
-        }
         &mut self.bytes_mut()[ptr.to_bits() as usize..][..count as usize]
     }
 
