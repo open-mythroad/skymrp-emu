@@ -101,11 +101,18 @@ impl FsNode {
     }
 }
 
+/// Path of the applications directory in the guest filesystem.
+pub const MYTHROAD: &GuestPath = GuestPath::new_const("/mythroad");
+
 /// Like [Path] but for the virtual filesystem.
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct GuestPath(str);
 impl GuestPath {
+    const fn new_const(s: &str) -> &GuestPath {
+        unsafe { &*(s as *const str as *const GuestPath) }
+    }
+
     pub fn new<S: AsRef<str> + ?Sized>(s: &S) -> &GuestPath {
         unsafe { &*(s.as_ref() as *const str as *const GuestPath) }
     }
@@ -255,6 +262,46 @@ impl std::borrow::Borrow<GuestPath> for GuestPathBuf {
     }
 }
 
+fn find_mythroad_mount(mrp_host_path: &Path) -> (PathBuf, GuestPathBuf) {
+    let parent = mrp_host_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+
+    if let Some(mythroad_root) = parent.ancestors().find(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("mythroad"))
+    }) {
+        let relative_host_path = mrp_host_path
+            .strip_prefix(mythroad_root)
+            .expect("Selected Mythroad root must be an ancestor of the MRP path");
+
+        let relative_guest_path = relative_host_path
+            .to_str()
+            .expect("MRP path under mythroad must be valid UTF-8")
+            .replace(std::path::MAIN_SEPARATOR, "/");
+
+        return (
+            mythroad_root.to_path_buf(),
+            MYTHROAD.join(relative_guest_path),
+        );
+    }
+
+    // Fallback for ad-hoc launches outside a real Mythroad directory tree.
+    // The MRP parent becomes Guest /mythroad, so only files under that
+    // directory are visible in the Mythroad filesystem.
+    let mrp_guest_path = GuestPathBuf::from(format!(
+        "/mythroad/{}",
+        mrp_host_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("")
+    ));
+
+    (parent, mrp_guest_path)
+}
+
 fn apply_path_component<'a>(components: &mut Vec<&'a str>, component: &'a str) {
     match component {
         "" => (),
@@ -350,25 +397,19 @@ pub struct Fs {
 }
 impl Fs {
     pub fn new(mrp_host_path: &Path) -> (Fs, GuestPathBuf) {
-        let mythroad_host_path = mrp_host_path
+        let home_directory = GuestPathBuf::from(MYTHROAD);
+        let (mythroad_host_path, mrp_guest_path) = find_mythroad_mount(mrp_host_path);
+        let working_directory = mrp_guest_path
             .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .to_path_buf();
+            .map(GuestPathBuf::from)
+            .unwrap_or_else(|| home_directory.clone());
 
         if !mythroad_host_path.is_dir() {
-            panic!("Parent directory does not exist: {:?}", mythroad_host_path);
+            panic!(
+                "Mythroad directory does not exist: {:?}",
+                mythroad_host_path
+            );
         }
-
-        let working_directory = GuestPathBuf::from("/mythroad".to_string());
-        let home_directory = GuestPathBuf::from("/mythroad".to_string());
-
-        let mrp_guest_path = GuestPathBuf::from(format!(
-            "/mythroad/{}",
-            mrp_host_path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("")
-        ));
 
         let root =
             FsNode::dir().with_child("mythroad", FsNode::from_host_dir(&mythroad_host_path, true));
