@@ -102,6 +102,30 @@ impl SafeRead for MrBitmap {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
+pub struct MrBitmapDraw {
+    pub p: MutPtr<u16>,
+    pub w: u16,
+    pub h: u16,
+    pub x: u16,
+    pub y: u16,
+}
+
+impl SafeRead for MrBitmapDraw {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct MrTransMatrix {
+    pub a: i16,
+    pub b: i16,
+    pub c: i16,
+    pub d: i16,
+    pub rop: u16,
+}
+
+impl SafeRead for MrTransMatrix {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
 pub struct MrTile {
     pub x: i16,
     pub y: i16,
@@ -200,19 +224,22 @@ enum BitmapRasterOp {
     Reverse = 9,
 }
 
-impl From<u16> for BitmapRasterOp {
-    fn from(value: u16) -> Self {
+impl TryFrom<u16> for BitmapRasterOp {
+    type Error = ();
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
-            0 => Self::Or,
-            1 => Self::Xor,
-            3 => Self::Not,
-            4 => Self::MergeNot,
-            5 => Self::AndNot,
-            6 => Self::Transparent,
-            7 => Self::And,
-            8 => Self::Gray,
-            9 => Self::Reverse,
-            _ => Self::Copy,
+            0 => Ok(Self::Or),
+            1 => Ok(Self::Xor),
+            2 => Ok(Self::Copy),
+            3 => Ok(Self::Not),
+            4 => Ok(Self::MergeNot),
+            5 => Ok(Self::AndNot),
+            6 => Ok(Self::Transparent),
+            7 => Ok(Self::And),
+            8 => Ok(Self::Gray),
+            9 => Ok(Self::Reverse),
+            _ => Err(()),
         }
     }
 }
@@ -1828,7 +1855,7 @@ fn draw_bitmap(
 
     let mut dest = screen_buf + (y as u32 * screen_w as u32 + x as u32);
     let mut src = p + (sy as u32 * mw as u32 + sx as u32);
-    let rop = BitmapRasterOp::from(rop);
+    let rop = BitmapRasterOp::try_from(rop).unwrap_or(BitmapRasterOp::Copy);
 
     for _ in 0..h as u32 {
         for _ in 0..w as u32 {
@@ -1888,11 +1915,126 @@ fn draw_bitmap(
     }
 }
 
-fn draw_bitmap_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn draw_bitmap_ex(
+    env: &mut Environment,
+    srcbmp: ConstPtr<MrBitmapDraw>,
+    dstbmp: ConstPtr<MrBitmapDraw>,
+    w: u16,
+    h: u16,
+    p_trans: ConstPtr<MrTransMatrix>,
+    transcolor: u16,
+) {
     log_dbg!(
-        "Mythroad: _DrawBitmapEx(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _DrawBitmapEx(srcbmp={:#x}, dstbmp={:#x}, w={w}, h={h}, pTrans={:#x}, transcolor={transcolor:#x}) called from {:#x}",
+        srcbmp.to_bits(),
+        dstbmp.to_bits(),
+        p_trans.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    if srcbmp.is_null() || dstbmp.is_null() || p_trans.is_null() || w == 0 || h == 0 {
+        return;
+    }
+
+    let srcbmp: MrBitmapDraw = env.mem.read(srcbmp);
+    let dstbmp: MrBitmapDraw = env.mem.read(dstbmp);
+    let trans: MrTransMatrix = env.mem.read(p_trans);
+    if srcbmp.p.is_null() || dstbmp.p.is_null() || srcbmp.w == 0 || dstbmp.w == 0 {
+        return;
+    }
+
+    let a = i32::from(trans.a);
+    let b = i32::from(trans.b);
+    let c = i32::from(trans.c);
+    let d = i32::from(trans.d);
+    let determinant = a * d - b * c;
+    if determinant == 0 {
+        return;
+    }
+
+    let w = i32::from(w);
+    let h = i32::from(h);
+    let center_x = i32::from(dstbmp.x) + w / 2;
+    let center_y = i32::from(dstbmp.y) + h / 2;
+
+    let mut max_y = (c.abs() * w + d.abs() * h) >> 9;
+    let mut min_y = -max_y;
+    max_y = max_y.min(i32::from(dstbmp.h) - center_y);
+    min_y = min_y.max(-center_y);
+
+    for dy in min_y..max_y {
+        let half_w_det = (w * determinant) >> 9;
+        let half_h_det = (h * determinant) >> 9;
+        let max_x_by_d = if d == 0 {
+            999
+        } else {
+            ((half_w_det + b * dy) / d).max((b * dy - half_w_det) / d)
+        };
+        let max_x_by_c = if c == 0 {
+            999
+        } else {
+            ((a * dy + half_h_det) / c).max((a * dy - half_h_det) / c)
+        };
+        let min_x_by_d = if d == 0 {
+            -999
+        } else {
+            ((b * dy - half_w_det) / d).min((half_w_det + b * dy) / d)
+        };
+        let min_x_by_c = if c == 0 {
+            -999
+        } else {
+            ((a * dy - half_h_det) / c).min((a * dy + half_h_det) / c)
+        };
+
+        let max_x = max_x_by_d
+            .min(max_x_by_c)
+            .min(i32::from(dstbmp.w) - center_x);
+        let min_x = min_x_by_d.min(min_x_by_c).max(-center_x);
+        if min_x >= max_x {
+            continue;
+        }
+
+        let mut dstp = dstbmp.p + ((dy + center_y) * i32::from(dstbmp.w) + min_x + center_x) as u32;
+        match BitmapRasterOp::try_from(trans.rop).ok() {
+            Some(BitmapRasterOp::Transparent) => {
+                for dx in min_x..max_x {
+                    let offset_y = ((((a * dy - c * dx) as i64) << 8) / i64::from(determinant)
+                        + i64::from(h / 2)) as i32;
+                    let offset_x = ((((d * dx - b * dy) as i64) << 8) / i64::from(determinant)
+                        + i64::from(w / 2)) as i32;
+                    if offset_y >= 0 && offset_y < h && offset_x >= 0 && offset_x < w {
+                        let srcp = srcbmp.p
+                            + ((offset_y + i32::from(srcbmp.y)) * i32::from(srcbmp.w)
+                                + offset_x
+                                + i32::from(srcbmp.x)) as u32;
+                        let pixel: u16 = env.mem.read(srcp);
+                        if pixel != transcolor {
+                            env.mem.write(dstp, pixel);
+                        }
+                    }
+                    dstp += 1;
+                }
+            }
+            Some(BitmapRasterOp::Copy) => {
+                for dx in min_x..max_x {
+                    let offset_y = ((((a * dy - c * dx) as i64) << 8) / i64::from(determinant)
+                        + i64::from(h / 2)) as i32;
+                    let offset_x = ((((d * dx - b * dy) as i64) << 8) / i64::from(determinant)
+                        + i64::from(w / 2)) as i32;
+                    if offset_y >= 0 && offset_y < h && offset_x >= 0 && offset_x < w {
+                        let srcp = srcbmp.p
+                            + ((offset_y + i32::from(srcbmp.y)) * i32::from(srcbmp.w)
+                                + offset_x
+                                + i32::from(srcbmp.x)) as u32;
+                        let pixel: u16 = env.mem.read(srcp);
+                        env.mem.write(dstp, pixel);
+                    }
+                    dstp += 1;
+                }
+            }
+            Some(_) | None => {}
+        }
+    }
 }
 
 fn draw_rect(env: &mut Environment, x: i32, y: i32, w: i32, h: i32, r: u8, g: u8, b: u8) {
@@ -2345,7 +2487,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(disp_up_ex(_, _, _, _))),
     Export::Func(export_c_func!(draw_point(_, _, _))),
     Export::Func(export_c_func!(draw_bitmap(_, _, _, _, _, _, _, _, _, _))),
-    Export::Func(export_c_func!(draw_bitmap_ex(_, _, _, _))),
+    Export::Func(export_c_func!(draw_bitmap_ex(_, _, _, _, _, _))),
     Export::Func(export_c_func!(draw_rect(_, _, _, _, _, _, _))),
     Export::Func(export_c_func!(draw_text(_, _, _, _, _, _, _, _))),
     Export::Func(export_c_func!(bitmap_check(_, _, _, _))),
