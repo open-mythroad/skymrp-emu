@@ -126,6 +126,21 @@ impl SafeRead for MrTransMatrix {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
+pub struct MrTransBitmap {
+    pub p_data: MutVoidPtr,
+    pub width: i32,
+    pub height: i32,
+    pub max_width: i32,
+    pub trans_color: u16,
+    pub p_matrix: MutPtr<i16>,
+    pub mark_count: i32,
+    pub p_zion: MutPtr<u8>,
+}
+
+impl SafeRead for MrTransBitmap {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
 pub struct MrTile {
     pub x: i16,
     pub y: i16,
@@ -2396,11 +2411,141 @@ fn mr_plat_draw_char(env: &mut Environment, ch: u16, x: i32, y: i32, color: u32)
     font::draw_char(env, x, y, ch, color as u16);
 }
 
-fn mr_transbitmap_draw(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_transbitmap_draw(
+    env: &mut Environment,
+    h_trans_bmp: ConstPtr<MrTransBitmap>,
+    dst_buf: MutPtr<u16>,
+    dest_max_w: i32,
+    dest_max_h: i32,
+    mut sx: i32,
+    mut sy: i32,
+    mut width: i32,
+    mut height: i32,
+    mut dx: i32,
+    mut dy: i32,
+) -> i32 {
     log_dbg!(
-        "Mythroad: mr_transbitmapDraw(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_transbitmapDraw(hTransBmp={:#x}, dstBuf={:#x}, dest_max_w={dest_max_w}, dest_max_h={dest_max_h}, sx={sx}, sy={sy}, width={width}, height={height}, dx={dx}, dy={dy}) called from {:#x}",
+        h_trans_bmp.to_bits(),
+        dst_buf.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    if h_trans_bmp.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    let trans_bmp: MrTransBitmap = env.mem.read(h_trans_bmp);
+    if dst_buf.is_null()
+        || trans_bmp.p_data.is_null()
+        || trans_bmp.p_matrix.is_null()
+        || dest_max_w <= 0
+        || dest_max_h <= 0
+        || trans_bmp.max_width <= 0
+        || trans_bmp.mark_count <= 0
+    {
+        return MrResult::Failed as i32;
+    }
+
+    if dx < 0 {
+        sx += -dx;
+        width += dx;
+        dx = 0;
+    }
+
+    if dy < 0 {
+        sy += -dy;
+        height += dy;
+        dy = 0;
+    }
+
+    if sx < 0 {
+        width += sx;
+        dx += -sx;
+        sx = 0;
+    }
+
+    if sy < 0 {
+        height += sy;
+        dy += -sy;
+        sy = 0;
+    }
+
+    width = width.min(dest_max_w - dx);
+    if height > dest_max_h - dy {
+        height = dest_max_h - dy;
+    }
+
+    if width <= 0 || height <= 0 || dx >= dest_max_w || dy >= dest_max_h {
+        return MrResult::Success as i32;
+    }
+
+    let mut matrix = trans_bmp.p_matrix + (sy * 2 * trans_bmp.mark_count) as u32;
+    let mut src_line = trans_bmp.p_data.cast::<u16>() + (trans_bmp.max_width * sy) as u32;
+    let mut dest_line = dst_buf + (dest_max_w * dy + dx) as u32;
+    let pos1_e = sx + width;
+
+    for _ in sy..(sy + height) {
+        let mut has_next = false;
+        let mut next_pixel = 0;
+
+        for j in 0..trans_bmp.mark_count {
+            let mark = matrix + (j * 2) as u32;
+            let mut start_pixel: i32 = i32::from(env.mem.read(mark));
+            if start_pixel < 0 {
+                break;
+            }
+
+            let mut len: i32 = i32::from(env.mem.read(mark + 1));
+            if j == trans_bmp.mark_count - 1 {
+                has_next = (len & 0x4000) != 0;
+                len &= 0x3fff;
+                if has_next {
+                    next_pixel = start_pixel + len;
+                }
+            }
+
+            let mut pos2_e = start_pixel + len;
+            if pos2_e < start_pixel || pos1_e < sx {
+                continue;
+            }
+
+            start_pixel = start_pixel.max(sx);
+            pos2_e = pos2_e.min(pos1_e);
+            let actual_len = pos2_e - start_pixel;
+            if actual_len > 0 {
+                let src_pixel = src_line + start_pixel as u32;
+                let dest_pixel = dest_line + (start_pixel - sx) as u32;
+                libc::string::memcpy(
+                    env,
+                    dest_pixel.cast_void(),
+                    src_pixel.cast_const().cast_void(),
+                    actual_len as u32 * guest_size_of::<u16>(),
+                );
+            }
+        }
+
+        if has_next {
+            let start_pixel = next_pixel.max(sx);
+            let mut src_pixel = src_line + start_pixel as u32;
+            let mut dest_pixel = dest_line + (start_pixel - sx) as u32;
+
+            for _ in start_pixel..(sx + width) {
+                let src: u16 = env.mem.read(src_pixel);
+                if src != trans_bmp.trans_color {
+                    env.mem.write(dest_pixel, src);
+                }
+                dest_pixel += 1;
+                src_pixel += 1;
+            }
+        }
+
+        src_line += trans_bmp.max_width as u32;
+        dest_line += dest_max_w as u32;
+        matrix += (trans_bmp.mark_count * 2) as u32;
+    }
+
+    MrResult::Success as i32
 }
 
 fn mr_draw_region(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -2414,6 +2559,7 @@ fn null(_: &Mythroad) -> u32 {
     MutVoidPtr::null().to_bits()
 }
 
+#[rustfmt::skip]
 pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_malloc(_))),
     Export::Func(export_c_func!(mr_free(_, _))),
@@ -2562,7 +2708,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Data(export_c_data!(state.entry)),        // mr_entry
     Export::Func(export_c_func!(mr_plat_draw_char(_, _, _, _))), // 2004
     Export::Data(export_c_data!(state.heap.mem_free)), // &LG_mem_free
-    Export::Func(export_c_func!(mr_transbitmap_draw(_, _, _, _))),
+    Export::Func(export_c_func!(mr_transbitmap_draw(_, _, _, _, _, _, _, _, _, _))),
     Export::Func(export_c_func!(mr_draw_region(_, _, _, _))),
     Export::Data(null),
 ];
