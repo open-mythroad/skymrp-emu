@@ -2165,11 +2165,60 @@ fn draw_text(
     MrResult::Success as i32
 }
 
-fn bitmap_check(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn bitmap_check(
+    env: &mut Environment,
+    p: ConstPtr<u16>,
+    x: i16,
+    y: i16,
+    w: u16,
+    h: u16,
+    transcolor: u16,
+    color_check: u16,
+) -> i32 {
     log_dbg!(
-        "Mythroad: _BitmapCheck(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _BitmapCheck(p={:#x}, x={x}, y={y}, w={w}, h={h}, transcolor={transcolor:#x}, color_check={color_check:#x}) called from {:#x}",
+        p.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    let screen_buf: MutPtr<u16> = env.mythroad.state.mr_screen_buf.get(&env.mem);
+    let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
+    let screen_h = env.mythroad.state.mr_screen_h.get(&env.mem);
+    if p.is_null() || screen_buf.is_null() || screen_w <= 0 || screen_h <= 0 || w == 0 || h == 0 {
+        return 0;
+    }
+
+    let x = i32::from(x);
+    let y = i32::from(y);
+    let w = i32::from(w);
+    let h = i32::from(h);
+    let max_y = screen_h.min(y + h);
+    let max_x = screen_w.min(x + w);
+    let min_y = 0.max(y);
+    let min_x = 0.max(x);
+
+    if min_y >= max_y || min_x >= max_x {
+        return 0;
+    }
+
+    let mut result = 0i32;
+    for dy in min_y..max_y {
+        let mut dstp = screen_buf + (dy * screen_w + min_x) as u32;
+        let mut srcp = p + ((dy - y) * w + (min_x - x)) as u32;
+        for _ in min_x..max_x {
+            let src_pixel: u16 = env.mem.read(srcp);
+            if src_pixel != transcolor {
+                let dst_pixel: u16 = env.mem.read(dstp);
+                if dst_pixel != color_check {
+                    result += 1;
+                }
+            }
+            dstp += 1;
+            srcp += 1;
+        }
+    }
+
+    result
 }
 
 fn mr_read_file(
@@ -2490,7 +2539,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(draw_bitmap_ex(_, _, _, _, _, _))),
     Export::Func(export_c_func!(draw_rect(_, _, _, _, _, _, _))),
     Export::Func(export_c_func!(draw_text(_, _, _, _, _, _, _, _))),
-    Export::Func(export_c_func!(bitmap_check(_, _, _, _))),
+    Export::Func(export_c_func!(bitmap_check(_, _, _, _, _, _, _))),
     Export::Func(export_c_func!(mr_read_file(_, _, _))),
     Export::Func(export_c_func!(mr_wstrlen(_))),
     Export::Func(export_c_func!(mr_register_app(_, _, _))),
