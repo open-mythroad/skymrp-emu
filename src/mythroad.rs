@@ -1120,23 +1120,27 @@ fn mr_send_sms(
     MrResult::Success as i32
 }
 
-fn mr_call(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_call(env: &mut Environment, number: ConstPtr<u8>) {
     log_dbg!(
-        "Mythroad: mr_call(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_call(number={:#x}) called from {:#x}",
+        number.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
 
-fn mr_get_network_id(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_get_network_id(env: &mut Environment) -> i32 {
     log_dbg!(
-        "Mythroad: mr_getNetworkID(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_getNetworkID() -> 0 called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    0
 }
 
-fn mr_connect_wap(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_connect_wap(env: &mut Environment, wap: ConstPtr<u8>) {
     log_dbg!(
-        "Mythroad: mr_connectWAP(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_connectWAP(wap={:#x}) called from {:#x}",
+        wap.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
@@ -1657,9 +1661,9 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_play_sound(_, _, _, _))),
     Export::Func(export_c_func!(mr_stop_sound(_))), // 59
     Export::Func(export_c_func!(mr_send_sms(_, _, _))),
-    Export::Func(export_c_func!(mr_call(_, _, _, _))),
-    Export::Func(export_c_func!(mr_get_network_id(_, _, _, _))),
-    Export::Func(export_c_func!(mr_connect_wap(_, _, _, _))),
+    Export::Func(export_c_func!(mr_call(_))),
+    Export::Func(export_c_func!(mr_get_network_id())),
+    Export::Func(export_c_func!(mr_connect_wap(_))),
     Export::Func(export_c_func!(mr_menu_create(_, _))),
     Export::Func(export_c_func!(mr_menu_set_item(_, _, _))),
     Export::Func(export_c_func!(mr_menu_show(_))),
