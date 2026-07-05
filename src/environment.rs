@@ -146,6 +146,10 @@ impl Environment {
         remaining.min(MAX_SLEEP)
     }
 
+    pub fn sleep(&mut self, duration: Duration) {
+        std::thread::sleep(duration)
+    }
+
     fn run_inner(&mut self, root: bool) {
         loop {
             self.window.poll_for_events();

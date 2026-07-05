@@ -2,6 +2,7 @@ pub mod stat;
 
 use crate::abi::DotDotDot;
 use crate::fs::{GuestFile, GuestOpenOptions, GuestPath};
+use crate::libc::sys::socket::close_socket;
 use crate::mem::{ConstPtr, ConstVoidPtr, GuestISize, GuestUSize, MutVoidPtr};
 use crate::Environment;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -266,6 +267,10 @@ pub(crate) fn close(env: &mut Environment, fd: FileDescriptor) -> i32 {
     // of scope. The return value is about whether flushing succeeds.
     match file.file {
         GuestFile::Directory => 0,
+        GuestFile::Socket => {
+            close_socket(env, fd);
+            0
+        }
         _ => {
             match file.file.sync_all() {
                 Ok(()) => {
@@ -292,4 +297,42 @@ pub(crate) fn rename(env: &mut Environment, old: ConstPtr<u8>, new: ConstPtr<u8>
     };
     log_dbg!("rename('{}', '{}') => {}", old, new, res);
     res
+}
+
+fn find_or_create_fd(env: &mut Environment, host_object: PosixFileHostObject) -> FileDescriptor {
+    let idx = if let Some(free_idx) = env
+        .libc_state
+        .posix_io
+        .files
+        .iter()
+        .position(|f| f.is_none())
+    {
+        env.libc_state.posix_io.files[free_idx] = Some(host_object);
+        free_idx
+    } else {
+        let idx = env.libc_state.posix_io.files.len();
+        env.libc_state.posix_io.files.push(Some(host_object));
+        idx
+    };
+    file_idx_to_fd(idx)
+}
+
+pub fn find_or_create_socket(env: &mut Environment) -> FileDescriptor {
+    let host_object = PosixFileHostObject {
+        file: GuestFile::Socket,
+    };
+    find_or_create_fd(env, host_object)
+}
+
+pub fn is_socket(env: &mut Environment, fd: FileDescriptor) -> bool {
+    let guest_file = &env
+        .libc_state
+        .posix_io
+        .files
+        .get(fd_to_file_idx(fd))
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .file;
+    matches!(guest_file, GuestFile::Socket)
 }
