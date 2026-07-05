@@ -197,7 +197,10 @@ impl Read for GuestFile {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             GuestFile::File(file) => file.read(buf),
-            GuestFile::Directory => panic!("Attempt to read from a directory as a guest file"),
+            GuestFile::Directory => Err(std::io::Error::new(
+                std::io::ErrorKind::IsADirectory,
+                "Attempt to read from a directory as a guest file",
+            )),
             _ => unimplemented!(),
         }
     }
@@ -225,7 +228,13 @@ impl Seek for GuestFile {
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
         match self {
             GuestFile::File(file) => file.seek(pos),
-            GuestFile::Directory => panic!("Attempt to seek in a directory as a guest file"),
+            GuestFile::Directory => {
+                log!("Warning: Seeking a directory as a guest file!");
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::IsADirectory,
+                    "Attempt to seek a directory as a guest file",
+                ))
+            }
             _ => unimplemented!(),
         }
     }
