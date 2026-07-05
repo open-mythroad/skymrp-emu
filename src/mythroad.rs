@@ -1439,18 +1439,29 @@ fn mr_md5_finish(env: &mut Environment, pms: MutPtr<Md5State>, digest: MutPtr<u8
     md5::finish(env, pms, digest);
 }
 
-fn mr_load_sms_cfg(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_load_sms_cfg(env: &mut Environment) -> i32 {
     log_dbg!(
-        "Mythroad: _mr_load_sms_cfg(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _mr_load_sms_cfg() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    libc::string::memset(
+        env,
+        env.mythroad.state.mr_sms_cfg_buf.cast_void(),
+        0,
+        MR_SMS_CFG_BUF_LEN,
+    );
+
+    MrResult::Success as i32
 }
 
-fn mr_save_sms_cfg(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+fn mr_save_sms_cfg(env: &mut Environment, f: i32) -> i32 {
     log_dbg!(
-        "Mythroad: _mr_save_sms_cfg(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _mr_save_sms_cfg(f={f}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    MrResult::Success as i32
 }
 
 #[inline]
@@ -1717,8 +1728,8 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_md5_init(_))),
     Export::Func(export_c_func!(mr_md5_append(_, _, _))),
     Export::Func(export_c_func!(mr_md5_finish(_, _))),
-    Export::Func(export_c_func!(mr_load_sms_cfg(_, _, _, _))),
-    Export::Func(export_c_func!(mr_save_sms_cfg(_, _, _, _))),
+    Export::Func(export_c_func!(mr_load_sms_cfg())),
+    Export::Func(export_c_func!(mr_save_sms_cfg(_))),
     Export::Func(export_c_func!(disp_up_ex(_, _, _, _))),
     Export::Func(export_c_func!(draw_point(_, _, _))),
     Export::Func(export_c_func!(draw_bitmap(_, _, _, _, _, _, _, _, _, _))),
