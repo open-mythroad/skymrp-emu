@@ -526,7 +526,7 @@ impl Fs {
                     fs::metadata(path).map(|meta| meta.len()).map_err(|_| ())
                 }
             },
-            _ => unimplemented!(),
+            FsNode::Directory { .. } => Err(()),
         }
     }
 
