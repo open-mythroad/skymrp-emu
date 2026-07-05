@@ -50,6 +50,11 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
         }
 
         match specifier {
+            b'c' => {
+                let c: u8 = args.next(env);
+                assert!(pad_char == ' ' && pad_width == 0); // TODO
+                res.push(c);
+            }
             b's' => {
                 let c_string: ConstPtr<u8> = args.next(env);
                 assert!(pad_char == ' ' && pad_width == 0); // TODO
