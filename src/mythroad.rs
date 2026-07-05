@@ -658,7 +658,7 @@ fn mr_memset(env: &mut Environment, dst: MutVoidPtr, ch: u32, n: u32) -> MutVoid
     libc::string::memset(env, dst, ch as i32, n)
 }
 
-fn mr_strlen(env: &mut Environment, str: ConstPtr<u8>) -> u32 {
+pub(crate) fn mr_strlen(env: &mut Environment, str: ConstPtr<u8>) -> u32 {
     log_dbg!(
         "Mythroad: mr_strlen(str={:#x}) called from {:#x}",
         str.to_bits(),

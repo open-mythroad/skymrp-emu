@@ -1,6 +1,6 @@
 use crate::abi::{CallFromHost, GuestFunction};
 use crate::encoding;
-use crate::fs::GuestPath;
+use crate::fs::{GuestPath, GuestPathBuf, MYTHROAD};
 use crate::haptics;
 use crate::libc;
 use crate::libc::posix_io::stat::mode_t;
@@ -12,8 +12,14 @@ use crate::mythroad::{
 };
 use crate::Environment;
 
+use encoding_rs::GBK;
 use std::time::Duration;
 
+const DSM_MAX_FILE_LEN: usize = 256;
+const DSM_HIDE_DRIVE: &str = ".disk";
+const DSM_DRIVE_A: &str = "a";
+const DSM_DRIVE_B: &str = "b";
+const DSM_ROOT_PATH_SYS: &str = "mythroad";
 const MR_FILE_HANDLE_OFFSET: i32 = 5;
 const MR_FILE_RDONLY: u32 = 1;
 const MR_FILE_WRONLY: u32 = 2;
@@ -22,6 +28,17 @@ const MR_FILE_CREATE: u32 = 8;
 const MR_IS_FILE: i32 = 1;
 const MR_IS_DIR: i32 = 2;
 const MR_IS_INVALID: i32 = 8;
+const MR_MALLOC_EX: u32 = 1001;
+const MR_MFREE_EX: u32 = 1002;
+const MR_MALLOC_CACHE: u32 = 1012;
+const MR_MFREE_CACHE: u32 = 1013;
+const MR_MALLOC_SCRRAM: u32 = 1014;
+const MR_FREE_SCRRAM: u32 = 1015;
+const MR_CHARACTER_HEIGHT: u32 = 1201;
+const MR_SWITCHPATH: u32 = 1204;
+const MR_UCS2GB: u32 = 1207;
+const MR_TURN_ON_BACKLIGHT: u32 = 1222;
+const MR_TURN_OFF_BACKLIGHT: u32 = 1223;
 const MR_CONNECT: u32 = 1001;
 const MR_SET_SOCTIME: u32 = 1002;
 const MR_SMS_PROMPT: u32 = 1011;
@@ -194,15 +211,224 @@ pub(crate) fn mr_open(env: &mut Environment, filename: ConstPtr<u8>, mode: u32) 
 }
 
 pub(crate) fn mr_plat_ex(
-    _env: &mut Environment,
-    _code: u32,
-    _input: ConstPtr<u8>,
-    _input_len: u32,
-    _output: MutPtr<MutPtr<u8>>,
-    _output_len: MutPtr<i32>,
+    env: &mut Environment,
+    code: u32,
+    input: ConstPtr<u8>,
+    input_len: u32,
+    output: MutPtr<MutPtr<u8>>,
+    output_len: MutPtr<i32>,
     _cb: MutVoidPtr,
 ) -> i32 {
-    MrResult::Ignored as i32
+    match code {
+        MR_MALLOC_EX => {
+            if output.is_null() || output_len.is_null() {
+                return MrResult::Failed as i32;
+            }
+
+            let screen_buf = env.mythroad.state.mr_screen_buf.get(&env.mem).cast();
+            let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
+            let screen_h = env.mythroad.state.mr_screen_h.get(&env.mem);
+            let screen_len = screen_w
+                .checked_mul(screen_h)
+                .and_then(|pixels| pixels.checked_mul(guest_size_of::<u16>() as i32))
+                .unwrap_or(0);
+
+            env.mem.write(output, screen_buf);
+            env.mem.write(output_len, screen_len);
+            MrResult::Success as i32
+        }
+        MR_MFREE_EX => MrResult::Success as i32,
+        MR_MALLOC_CACHE => {
+            if !output.is_null() {
+                env.mem.write(output, MutPtr::null());
+            }
+            MrResult::Success as i32
+        }
+        MR_MFREE_CACHE => MrResult::Success as i32,
+        MR_MALLOC_SCRRAM | MR_FREE_SCRRAM => MrResult::Ignored as i32,
+        MR_CHARACTER_HEIGHT => {
+            if output.is_null() || output_len.is_null() {
+                return MrResult::Failed as i32;
+            }
+
+            let word_info = env.mem.alloc_and_write(0x1008_1010i32);
+            env.mem.write(output, word_info.cast());
+            env.mem.write(output_len, guest_size_of::<i32>() as i32);
+            MrResult::Success as i32
+        }
+        MR_SWITCHPATH => dsm_switch_path(env, input, input_len, output, output_len),
+        MR_UCS2GB => mr_ucs2gb(env, input, input_len, output),
+        MR_TURN_ON_BACKLIGHT | MR_TURN_OFF_BACKLIGHT => MrResult::Success as i32,
+        _ => {
+            log_dbg!("Mythroad: mr_platEx(code={code}, input={input:?}, input_len={input_len}) not implemented");
+            MrResult::Ignored as i32
+        }
+    }
+}
+
+fn dsm_switch_path(
+    env: &mut Environment,
+    input: ConstPtr<u8>,
+    _input_len: u32,
+    output: MutPtr<MutPtr<u8>>,
+    output_len: MutPtr<i32>,
+) -> i32 {
+    if input.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    let input_bytes = env.mem.cstr_at(input);
+    if input_bytes.len() > DSM_MAX_FILE_LEN - 3 {
+        return MrResult::Failed as i32;
+    }
+
+    match input_bytes
+        .first()
+        .copied()
+        .map(|ch| ch.to_ascii_lowercase())
+    {
+        Some(b'z') => {
+            set_dsm_work_path(env, MYTHROAD);
+        }
+        Some(b'y') => {
+            if output.is_null() || output_len.is_null() {
+                return MrResult::Failed as i32;
+            }
+
+            let drive_path = dsm_drive_path_from_guest_path(env.fs.working_directory());
+            let output_buf = env.mem.alloc_and_write_cstr(drive_path.as_bytes());
+            env.mem.write(output, output_buf);
+            env.mem.write(output_len, drive_path.len() as i32);
+        }
+        Some(b'x') => {
+            let path = GuestPathBuf::from(format!(
+                "{}/{}/{}/{}",
+                MYTHROAD.as_str(),
+                DSM_HIDE_DRIVE,
+                DSM_DRIVE_A,
+                DSM_ROOT_PATH_SYS
+            ));
+            set_dsm_work_path(env, &path);
+        }
+        _ => {
+            let input_path = String::from_utf8_lossy(input_bytes);
+            let path = dsm_guest_path_from_drive_path(&input_path);
+            set_dsm_work_path(env, &path);
+        }
+    }
+
+    MrResult::Success as i32
+}
+
+fn set_dsm_work_path<P: AsRef<GuestPath>>(env: &mut Environment, path: P) {
+    let path = path.as_ref();
+    match env.fs.change_working_directory(path) {
+        Ok(new) => {
+            log_dbg!("Change directory success, new working directory: {:?}", new,);
+        }
+        Err(()) => {
+            log!(
+                "Warning: change directory failed, could not change working directory to {:?}",
+                path
+            );
+        }
+    }
+}
+
+fn dsm_guest_path_from_drive_path(path: &str) -> GuestPathBuf {
+    let drive = path.as_bytes().first().copied().unwrap_or(b'c');
+    let rest = if path.len() > 3 { &path[3..] } else { "" };
+
+    match drive.to_ascii_lowercase() {
+        b'a' => GuestPathBuf::from(format!(
+            "{}/{}/{}/{}",
+            MYTHROAD.as_str(),
+            DSM_HIDE_DRIVE,
+            DSM_DRIVE_A,
+            rest.trim_start_matches(['/', '\\'])
+        )),
+        b'b' => GuestPathBuf::from(format!(
+            "{}/{}/{}/{}",
+            MYTHROAD.as_str(),
+            DSM_HIDE_DRIVE,
+            DSM_DRIVE_B,
+            rest.trim_start_matches(['/', '\\'])
+        )),
+        _ if rest.is_empty() => GuestPathBuf::from(MYTHROAD),
+        _ => GuestPathBuf::from(format!(
+            "{}/{}",
+            MYTHROAD.as_str(),
+            rest.trim_start_matches(['/', '\\'])
+        )),
+    }
+}
+
+fn dsm_drive_path_from_guest_path(path: &GuestPath) -> String {
+    let path = path.as_str().trim_end_matches('/');
+    let drive_a = format!("{}/{}/{}", MYTHROAD.as_str(), DSM_HIDE_DRIVE, DSM_DRIVE_A);
+    let drive_b = format!("{}/{}/{}", MYTHROAD.as_str(), DSM_HIDE_DRIVE, DSM_DRIVE_B);
+
+    if path == drive_a {
+        "a:/".to_owned()
+    } else if let Some(rest) = path.strip_prefix(&(drive_a + "/")) {
+        format!("a:/{rest}")
+    } else if path == drive_b {
+        "b:/".to_owned()
+    } else if let Some(rest) = path.strip_prefix(&(drive_b + "/")) {
+        format!("b:/{rest}")
+    } else if path == MYTHROAD.as_str() {
+        "c:/".to_owned()
+    } else if let Some(rest) = path.strip_prefix(&(MYTHROAD.as_str().to_owned() + "/")) {
+        format!("c:/{rest}")
+    } else {
+        format!("c:/{}", path.trim_start_matches('/'))
+    }
+}
+
+fn mr_ucs2gb(
+    env: &mut Environment,
+    input: ConstPtr<u8>,
+    input_len: u32,
+    output: MutPtr<MutPtr<u8>>,
+) -> i32 {
+    if input.is_null() || input_len == 0 {
+        log_dbg!("Mythroad: mr_platEx(1207) input error");
+        return MrResult::Failed as i32;
+    }
+    if output.is_null() {
+        log_dbg!("Mythroad: mr_platEx(1207) output pointer error");
+        return MrResult::Failed as i32;
+    }
+
+    let output_buf: MutPtr<u8> = env.mem.read(output);
+    if output_buf.is_null() {
+        log_dbg!("Mythroad: mr_platEx(1207) output buffer error");
+        return MrResult::Failed as i32;
+    }
+
+    let mut utf16 = Vec::new();
+    let mut offset = 0;
+    while offset + 1 < input_len {
+        let word = u16::from_be_bytes([
+            env.mem.read(input + offset),
+            env.mem.read(input + offset + 1),
+        ]);
+        if word == 0 {
+            break;
+        }
+        utf16.push(word);
+        offset += 2;
+    }
+
+    let text = String::from_utf16_lossy(&utf16);
+    let (gb, _, _) = GBK.encode(&text);
+    let copy_len: u32 = gb.len().try_into().unwrap_or(u32::MAX);
+    env.mem
+        .bytes_at_mut(output_buf, copy_len)
+        .copy_from_slice(gb.as_ref());
+    env.mem.write(output_buf + copy_len, b'\0');
+
+    MrResult::Success as i32
 }
 
 pub(crate) fn mr_plat(env: &mut Environment, code: u32, param: u32) -> i32 {
