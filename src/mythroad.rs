@@ -141,6 +141,53 @@ impl SafeRead for MrTransBitmap {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
+pub struct MrJGraphicsMutableValues {
+    pub clip_x: i32,
+    pub clip_y: i32,
+    pub clip_width: i32,
+    pub clip_height: i32,
+    pub clip_x_right: i32,
+    pub clip_y_bottom: i32,
+    pub translate_x: i32,
+    pub translate_y: i32,
+    pub font: i32,
+    pub color_r: u8,
+    pub color_g: u8,
+    pub color_b: u8,
+    pub color_565: u16,
+}
+
+impl SafeRead for MrJGraphicsMutableValues {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct MrJGraphicsContext {
+    pub mutable_values: MrJGraphicsMutableValues,
+    pub screen_buffer: MutPtr<u16>,
+    pub screen_width: i32,
+    pub screen_height: i32,
+    pub flag: i32,
+    pub real_screen_buffer: MutPtr<u16>,
+    pub real_screen_width: i32,
+    pub real_screen_height: i32,
+}
+
+impl SafeRead for MrJGraphicsContext {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct MrJImage {
+    pub data: MutPtr<u16>,
+    pub width: u16,
+    pub height: u16,
+    pub trans: u8,
+    pub transcolor: u16,
+}
+
+impl SafeRead for MrJImage {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
 pub struct MrTile {
     pub x: i16,
     pub y: i16,
@@ -2548,11 +2595,266 @@ fn mr_transbitmap_draw(
     MrResult::Success as i32
 }
 
-fn mr_draw_region(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+const TOP_GRAPHICS: i32 = 16;
+const BASELINE_GRAPHICS: i32 = 64;
+const BOTTOM_GRAPHICS: i32 = 32;
+const VCENTER_GRAPHICS: i32 = 0x2;
+const LEFT_GRAPHICS: i32 = 0x4;
+const HCENTER_GRAPHICS: i32 = 0x1;
+const RIGHT_GRAPHICS: i32 = 0x8;
+const AP_V_MASK_GRAPHICS: i32 =
+    TOP_GRAPHICS | BASELINE_GRAPHICS | BOTTOM_GRAPHICS | VCENTER_GRAPHICS;
+const AP_H_MASK_GRAPHICS: i32 = LEFT_GRAPHICS | HCENTER_GRAPHICS | RIGHT_GRAPHICS;
+
+const TRANS_NONE_SPRITE: i32 = 0;
+const TRANS_MIRROR_ROT180_SPRITE: i32 = 1;
+const TRANS_MIRROR_SPRITE: i32 = 2;
+const TRANS_ROT180_SPRITE: i32 = 3;
+const TRANS_MIRROR_ROT270_SPRITE: i32 = 4;
+const TRANS_ROT90_SPRITE: i32 = 5;
+const TRANS_ROT270_SPRITE: i32 = 6;
+const TRANS_MIRROR_ROT90_SPRITE: i32 = 7;
+
+fn ptr_offset<T, const MUT: bool>(ptr: Ptr<T, MUT>, offset: i32) -> Ptr<T, MUT> {
+    let byte_offset = i64::from(offset) * i64::from(guest_size_of::<T>());
+    Ptr::from_bits((i64::from(ptr.to_bits()) + byte_offset) as u32)
+}
+
+fn calc_anchor(
+    g_context: MrJGraphicsContext,
+    mut x: i32,
+    mut y: i32,
+    width: i32,
+    height: i32,
+    anchor: i32,
+) -> Option<(i32, i32)> {
+    x += g_context.mutable_values.translate_x;
+    y += g_context.mutable_values.translate_y;
+
+    let (anchor_h, anchor_v) = if anchor == 0 {
+        (LEFT_GRAPHICS, TOP_GRAPHICS)
+    } else {
+        (AP_H_MASK_GRAPHICS & anchor, AP_V_MASK_GRAPHICS & anchor)
+    };
+
+    if anchor_h == LEFT_GRAPHICS && anchor_v == TOP_GRAPHICS {
+        return Some((x, y));
+    }
+
+    let out_x = match anchor_h {
+        RIGHT_GRAPHICS => x - width,
+        LEFT_GRAPHICS => x,
+        HCENTER_GRAPHICS => x - width / 2,
+        _ => return None,
+    };
+
+    let out_y = match anchor_v {
+        BOTTOM_GRAPHICS => y - height,
+        TOP_GRAPHICS => y,
+        BASELINE_GRAPHICS => y - height / 2 - 3,
+        VCENTER_GRAPHICS => y - height / 2,
+        _ => return None,
+    };
+
+    Some((out_x, out_y))
+}
+
+fn mr_draw_region(
+    env: &mut Environment,
+    g_context: ConstPtr<MrJGraphicsContext>,
+    src: ConstPtr<MrJImage>,
+    sx: i32,
+    sy: i32,
+    w: i32,
+    h: i32,
+    transform: i32,
+    mut x: i32,
+    mut y: i32,
+    anchor: i32,
+) {
     log_dbg!(
-        "Mythroad: mr_drawRegion(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: mr_drawRegion(gContext={:#x}, src={:#x}, sx={sx}, sy={sy}, w={w}, h={h}, transform={transform}, x={x}, y={y}, anchor={anchor}) called from {:#x}",
+        g_context.to_bits(),
+        src.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    if g_context.is_null() || src.is_null() {
+        return;
+    }
+
+    let g_context: MrJGraphicsContext = env.mem.read(g_context);
+    let src: MrJImage = env.mem.read(src);
+    if src.data.is_null() || g_context.screen_buffer.is_null() {
+        return;
+    }
+
+    let transcolor = if src.trans != 0 {
+        if src.trans == 1 {
+            env.mem.read(src.data)
+        } else {
+            src.transcolor
+        }
+    } else {
+        0
+    };
+
+    if anchor == 20 || anchor == 0 {
+        x += g_context.mutable_values.translate_x;
+        y += g_context.mutable_values.translate_y;
+    } else {
+        let dims = if (transform >> 2) == 0 {
+            (w, h)
+        } else {
+            (h, w)
+        };
+        let Some((anchor_x, anchor_y)) = calc_anchor(g_context, x, y, dims.0, dims.1, anchor)
+        else {
+            return;
+        };
+        x = anchor_x;
+        y = anchor_y;
+    }
+
+    let min_x = x.max(g_context.mutable_values.clip_x);
+    let min_y = y.max(g_context.mutable_values.clip_y);
+    let (max_x, max_y) = if (transform >> 2) == 0 {
+        (
+            (x + w).min(g_context.mutable_values.clip_x_right),
+            (y + h).min(g_context.mutable_values.clip_y_bottom),
+        )
+    } else {
+        (
+            (x + h).min(g_context.mutable_values.clip_x_right),
+            (y + w).min(g_context.mutable_values.clip_y_bottom),
+        )
+    };
+
+    let mut dy = max_y - min_y;
+    let dx_o = max_x - min_x;
+    if dy <= 0 || dx_o <= 0 {
+        return;
+    }
+
+    let src_width = i32::from(src.width);
+    let screen_width = g_context.real_screen_width;
+    if src_width <= 0 || g_context.screen_width <= 0 || screen_width <= 0 {
+        return;
+    }
+
+    let mut value: MutPtr<u16>;
+    let k: i32;
+    let n: i32;
+
+    match transform {
+        TRANS_NONE_SPRITE => {
+            if src.trans == 0 {
+                let mut srcp = src.data + ((sx + min_y - y) * src_width + (min_x - x + sx)) as u32;
+                let mut dstp =
+                    g_context.screen_buffer + (min_y * g_context.screen_width + min_x) as u32;
+                while dy > 0 {
+                    libc::string::memcpy(
+                        env,
+                        dstp.cast_void(),
+                        srcp.cast_const().cast_void(),
+                        dx_o as u32 * guest_size_of::<u16>(),
+                    );
+                    dstp += screen_width as u32;
+                    srcp += src_width as u32;
+                    dy -= 1;
+                }
+                return;
+            }
+            value = src.data + ((sx + min_y - y) * src_width + (min_x - x + sx)) as u32;
+            k = 1;
+            n = src_width;
+        }
+        TRANS_MIRROR_ROT180_SPRITE => {
+            value = src.data + ((h - 1 - (min_y - y - sy)) * src_width + (min_x - x + sx)) as u32;
+            k = 1;
+            n = -src_width;
+
+            if src.trans == 0 {
+                let mut srcp = value;
+                let mut dstp =
+                    g_context.screen_buffer + (min_y * g_context.screen_width + min_x) as u32;
+                while dy > 0 {
+                    libc::string::memcpy(
+                        env,
+                        dstp.cast_void(),
+                        srcp.cast_const().cast_void(),
+                        dx_o as u32 * guest_size_of::<u16>(),
+                    );
+                    dstp += screen_width as u32;
+                    srcp = ptr_offset(srcp, n);
+                    dy -= 1;
+                }
+                return;
+            }
+        }
+        TRANS_ROT180_SPRITE => {
+            value = src.data
+                + ((h - 1 + sy) * src_width + w - (min_y - y) * src_width - 1 + sx - min_x + x)
+                    as u32;
+            k = -1;
+            n = -src_width;
+        }
+        TRANS_MIRROR_SPRITE => {
+            value = src.data + ((min_y - y + sy) * src_width + sx + w - 1 + x - min_x) as u32;
+            k = -1;
+            n = src_width;
+        }
+        TRANS_ROT90_SPRITE => {
+            value = src.data
+                + ((h + sy - 1) * src_width + (min_y - y) + sx - (min_x - x) * src_width) as u32;
+            k = -src_width;
+            n = 1;
+        }
+        TRANS_MIRROR_ROT90_SPRITE => {
+            value = src.data
+                + (sx + (h + sy - 1) * src_width + w - min_y + y - 1 - min_x * src_width
+                    + x * src_width) as u32;
+            k = -src_width;
+            n = -1;
+        }
+        TRANS_ROT270_SPRITE => {
+            value = src.data
+                + (sx + sy * src_width + w - (min_y - y) - 1 + min_x * src_width - x * src_width)
+                    as u32;
+            k = src_width;
+            n = -1;
+        }
+        TRANS_MIRROR_ROT270_SPRITE => {
+            value = src.data
+                + (sy * src_width - y + sx + min_y + min_x * src_width - x * src_width) as u32;
+            k = src_width;
+            n = 1;
+        }
+        _ => return,
+    }
+
+    let mut dstp_o = g_context.screen_buffer + (min_y * g_context.screen_width + min_x) as u32;
+
+    while dy > 0 {
+        let mut srcp = value;
+        let mut dstp = dstp_o;
+        let mut dx = dx_o;
+
+        while dx > 0 {
+            let pixel: u16 = env.mem.read(srcp);
+            if src.trans == 0 || pixel != transcolor {
+                env.mem.write(dstp, pixel);
+            }
+
+            srcp = ptr_offset(srcp, k);
+            dstp += 1;
+            dx -= 1;
+        }
+
+        dstp_o += screen_width as u32;
+        value = ptr_offset(value, n);
+        dy -= 1;
+    }
 }
 
 fn null(_: &Mythroad) -> u32 {
@@ -2709,6 +3011,6 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_plat_draw_char(_, _, _, _))), // 2004
     Export::Data(export_c_data!(state.heap.mem_free)), // &LG_mem_free
     Export::Func(export_c_func!(mr_transbitmap_draw(_, _, _, _, _, _, _, _, _, _))),
-    Export::Func(export_c_func!(mr_draw_region(_, _, _, _))),
+    Export::Func(export_c_func!(mr_draw_region(_, _, _, _, _, _, _, _, _, _))),
     Export::Data(null),
 ];
