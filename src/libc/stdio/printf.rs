@@ -1,4 +1,5 @@
 use crate::abi::{DotDotDot, VaList};
+use crate::libc::stdlib::str_to_int_inner_generic;
 use crate::mem::{ConstPtr, MutPtr};
 use crate::Environment;
 use std::io::Write;
@@ -60,8 +61,14 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
                 assert!(pad_char == ' ' && pad_width == 0); // TODO
                 res.extend_from_slice(env.mem.cstr_at(c_string));
             }
-            b'd' | b'i' => {
-                let int: i32 = args.next(env);
+            b'd' | b'i' | b'u' => {
+                let int: i64 = if specifier == b'u' {
+                    let uint: u32 = args.next(env);
+                    uint.into()
+                } else {
+                    let int: i32 = args.next(env);
+                    int.into()
+                };
                 // TODO: avoid copy?
                 if pad_width > 0 {
                     if pad_char == '0' {
