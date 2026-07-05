@@ -22,11 +22,86 @@ const MR_FILE_CREATE: u32 = 8;
 const MR_IS_FILE: i32 = 1;
 const MR_IS_DIR: i32 = 2;
 const MR_IS_INVALID: i32 = 8;
+const MR_CONNECT: u32 = 1001;
+const MR_SET_SOCTIME: u32 = 1002;
+const MR_SMS_PROMPT: u32 = 1011;
+const MR_SIGNAL_INIT: u32 = 1016;
+const MR_SMS_CENTER: u32 = 1106;
+const MR_CHECK_TOUCH: u32 = 1205;
+const MR_GET_HANDSET_LG: u32 = 1206;
+const MR_GET_RAND: u32 = 1211;
+const MR_SET_KEY_END: u32 = 1214;
+const MR_MSDC_STATUS: u32 = 1218;
+const MR_GET_FILE_POS: u32 = 1231;
+const MR_SET_VOL: u32 = 1302;
+const MR_WIFI_AVAILABLE: u32 = 1327;
+const MR_USE_WIFI: u32 = 1328;
+const MR_BACKGROUND_SUPPORT: u32 = 1391;
 pub(crate) const MR_KEY_PRESS: i32 = 0;
 pub(crate) const MR_KEY_RELEASE: i32 = 1;
 pub(crate) const MR_MOUSE_DOWN: i32 = 2;
 pub(crate) const MR_MOUSE_UP: i32 = 3;
 pub(crate) const MR_MOUSE_MOVE: i32 = 12;
+
+#[allow(dead_code)]
+#[repr(i32)]
+enum MrScreenType {
+    Normal = 1000,
+    Touch,
+    OnlyTouch,
+}
+
+#[allow(dead_code)]
+#[repr(i32)]
+enum MrLanguage {
+    Chinese = 1000,
+    English,
+    TraditionalChinese,
+    Spanish,
+    Danish,
+    Polish,
+    French,
+    German,
+    Italian,
+    Thai,
+    Russian,
+    Bulgarian,
+    Ukrainian,
+    Portuguese,
+    Turkish,
+    Vietnamese,
+    Indonesian,
+    Czech,
+    Malay,
+    Finnish,
+    Hungarian,
+    Slovak,
+    Dutch,
+    Norwegian,
+    Swedish,
+    Croatian,
+    Romanian,
+    Slovenian,
+    Greek,
+    Hebrew,
+    Arabic,
+    Persian,
+    Urdu,
+    Hindi,
+    Marathi,
+    Tamil,
+    Bengali,
+    Punjabi,
+    Telugu,
+}
+
+#[allow(dead_code)]
+#[repr(i32)]
+enum MrMsdcStatus {
+    NotExist = 1000,
+    Ok,
+    NotUseful,
+}
 
 pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> i32 {
     let pack_filename = match entry {
@@ -130,8 +205,52 @@ pub(crate) fn mr_plat_ex(
     MrResult::Ignored as i32
 }
 
-pub(crate) fn mr_plat(_env: &mut Environment, _code: u32, _param: u32) -> i32 {
-    MrResult::Ignored as i32
+pub(crate) fn mr_plat(env: &mut Environment, code: u32, param: u32) -> i32 {
+    match code {
+        MR_GET_FILE_POS => {
+            let Some(fd) = mr_file_handle_to_posix_fd(param) else {
+                return MrResult::Failed as i32;
+            };
+
+            let ret = posix_io::lseek(env, fd, 0, posix_io::SEEK_CUR);
+            if ret >= 0 {
+                i32::try_from(ret)
+                    .ok()
+                    .and_then(|ret| ret.checked_add(MrScreenType::Normal as i32))
+                    .unwrap_or(MrResult::Failed as i32)
+            } else {
+                MrResult::Failed as i32
+            }
+        }
+        MR_CONNECT => MrResult::Failed as i32,
+        MR_SET_SOCTIME => MrResult::Ignored as i32,
+        MR_GET_RAND => {
+            let Ok(limit) = i32::try_from(param) else {
+                return MrResult::Failed as i32;
+            };
+            if limit <= 0 {
+                return MrResult::Failed as i32;
+            }
+
+            crate::libc::stdlib::srand(env, mr_get_time(env));
+            MrScreenType::Normal as i32 + crate::libc::stdlib::rand(env) % limit
+        }
+        MR_CHECK_TOUCH => MrScreenType::Normal as i32,
+        MR_GET_HANDSET_LG => MrLanguage::Chinese as i32,
+        MR_BACKGROUND_SUPPORT => MrResult::Ignored as i32,
+        MR_SMS_CENTER => MrResult::Waiting as i32,
+        MR_SIGNAL_INIT => MrResult::Success as i32,
+        MR_SET_VOL => MrResult::Success as i32,
+        MR_SET_KEY_END => MrResult::Success as i32,
+        MR_WIFI_AVAILABLE => MrResult::Ignored as i32,
+        MR_USE_WIFI => MrResult::Success as i32,
+        MR_SMS_PROMPT => MrResult::Success as i32,
+        MR_MSDC_STATUS => MrMsdcStatus::Ok as i32,
+        _ => {
+            log_dbg!("Mythroad: mr_plat(code={code}, param={param}) not implemented");
+            MrResult::Ignored as i32
+        }
+    }
 }
 
 pub(crate) fn mr_read(env: &mut Environment, handle: u32, buffer: MutVoidPtr, len: u32) -> i32 {
