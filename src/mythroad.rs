@@ -24,8 +24,8 @@ use self::fs::{
 };
 use graphics::{
     bitmap_check, disp_up_ex, draw_bitmap, draw_bitmap_ex, draw_point, draw_rect, draw_text,
-    draw_text_ex, mr_draw_bitmap, mr_draw_region, mr_get_char_bitmap, mr_get_screen_info,
-    mr_plat_draw_char, mr_transbitmap_draw, MrBitmap, MrSprite, MrTile,
+    draw_text_ex, mr_draw_bitmap, mr_draw_region, mr_eff_set_con, mr_get_char_bitmap,
+    mr_get_screen_info, mr_plat_draw_char, mr_transbitmap_draw, MrBitmap, MrSprite, MrTile,
 };
 
 const BITMAPMAX: GuestUSize = 30;
@@ -1479,13 +1479,6 @@ fn mr_register_app(env: &mut Environment, p: MutPtr<u8>, len: i32, index: i32) -
     MrResult::Success as i32
 }
 
-fn mr_eff_set_con(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    log_dbg!(
-        "Mythroad: _mr_EffSetCon(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
-}
-
 fn mr_test_com(env: &mut Environment, l: u32, input0: u32, input1: u32) -> i32 {
     log_dbg!(
         "Mythroad: _mr_TestCom(L={l}, input0={input0}, input1={input1}) called from {:#x}",
@@ -1733,7 +1726,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_wstrlen(_))),
     Export::Func(export_c_func!(mr_register_app(_, _, _))),
     Export::Func(export_c_func!(draw_text_ex(_, _, _, _))), // 1936
-    Export::Func(export_c_func!(mr_eff_set_con(_, _, _, _))),
+    Export::Func(export_c_func!(mr_eff_set_con(_, _, _, _, _, _, _))),
     Export::Func(export_c_func!(mr_test_com(_, _, _))),
     Export::Func(export_c_func!(mr_test_com1(_, _, _, _))), // 1938
     Export::Func(export_c_func!(mr_c2u(_, _, _))),          // 1939

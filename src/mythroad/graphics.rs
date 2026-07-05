@@ -746,6 +746,59 @@ pub(super) fn bitmap_check(
     result
 }
 
+pub(super) fn mr_eff_set_con(
+    env: &mut Environment,
+    x: i16,
+    y: i16,
+    w: i16,
+    h: i16,
+    perr: i16,
+    perg: i16,
+    perb: i16,
+) -> i32 {
+    log_dbg!(
+        "Mythroad: _mr_EffSetCon(x={x}, y={y}, w={w}, h={h}, perr={perr}, perg={perg}, perb={perb}) called from {:#x}",
+        env.cpu.regs()[crate::cpu::Cpu::PC]
+    );
+
+    let screen_buf: MutPtr<u16> = env.mythroad.state.mr_screen_buf.get(&env.mem);
+    let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
+    let screen_h = env.mythroad.state.mr_screen_h.get(&env.mem);
+    if screen_buf.is_null() || screen_w <= 0 || screen_h <= 0 || w <= 0 || h <= 0 {
+        return 0;
+    }
+
+    let x = i32::from(x);
+    let y = i32::from(y);
+    let w = i32::from(w);
+    let h = i32::from(h);
+    let perr = u32::from(perr as u16);
+    let perg = u32::from(perg as u16);
+    let perb = u32::from(perb as u16);
+
+    let max_y = screen_h.min(y + h);
+    let max_x = screen_w.min(x + w);
+    let min_y = 0.max(y);
+    let min_x = 0.max(x);
+    if min_y >= max_y || min_x >= max_x {
+        return 0;
+    }
+
+    for dy in min_y..max_y {
+        let mut p = screen_buf + (screen_w * dy + min_x) as u32;
+        for _ in min_x..max_x {
+            let pixel = u32::from(env.mem.read::<u16, _>(p));
+            let mut pixel_new = (((pixel & 0xf800) * perr) >> 8) & 0xf800;
+            pixel_new |= (((pixel & 0x07e0) * perg) >> 8) & 0x07e0;
+            pixel_new |= (((pixel & 0x001f) * perb) >> 8) & 0x001f;
+            env.mem.write(p, pixel_new as u16);
+            p += 1;
+        }
+    }
+
+    0
+}
+
 pub(super) fn draw_text_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     log_dbg!(
         "Mythroad: _DrawTextEx(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
