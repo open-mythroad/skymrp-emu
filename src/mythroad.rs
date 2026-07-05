@@ -1725,7 +1725,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_read_file(_, _, _))),
     Export::Func(export_c_func!(mr_wstrlen(_))),
     Export::Func(export_c_func!(mr_register_app(_, _, _))),
-    Export::Func(export_c_func!(draw_text_ex(_, _, _, _))), // 1936
+    Export::Func(export_c_func!(draw_text_ex(_, _, _, _, _, _, _))), // 1936
     Export::Func(export_c_func!(mr_eff_set_con(_, _, _, _, _, _, _))),
     Export::Func(export_c_func!(mr_test_com(_, _, _))),
     Export::Func(export_c_func!(mr_test_com1(_, _, _, _))), // 1938

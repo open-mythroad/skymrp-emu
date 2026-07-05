@@ -1,3 +1,4 @@
+use crate::abi::GuestArg;
 use crate::encoding;
 use crate::font;
 use crate::libc;
@@ -56,6 +57,57 @@ pub struct MrTransBitmap {
 }
 
 impl SafeRead for MrTransBitmap {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct MrScreenRect {
+    x: u16,
+    y: u16,
+    w: u16,
+    h: u16,
+}
+
+impl GuestArg for MrScreenRect {
+    const REG_COUNT: usize = 2;
+
+    fn from_regs(regs: &[u32]) -> Self {
+        Self {
+            x: regs[0] as u16,
+            y: (regs[0] >> 16) as u16,
+            w: regs[1] as u16,
+            h: (regs[1] >> 16) as u16,
+        }
+    }
+
+    fn to_regs(self, regs: &mut [u32]) {
+        regs[0] = u32::from(self.x) | (u32::from(self.y) << 16);
+        regs[1] = u32::from(self.w) | (u32::from(self.h) << 16);
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct MrColour {
+    r: u8,
+    g: u8,
+    b: u8,
+}
+
+impl GuestArg for MrColour {
+    const REG_COUNT: usize = 1;
+
+    fn from_regs(regs: &[u32]) -> Self {
+        Self {
+            r: regs[0] as u8,
+            g: (regs[0] >> 8) as u8,
+            b: (regs[0] >> 16) as u8,
+        }
+    }
+
+    fn to_regs(self, regs: &mut [u32]) {
+        regs[0] = u32::from(self.r) | (u32::from(self.g) << 8) | (u32::from(self.b) << 16);
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -799,11 +851,104 @@ pub(super) fn mr_eff_set_con(
     0
 }
 
-pub(super) fn draw_text_ex(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
+const DRAW_TEXT_EX_IS_UNICODE: i32 = 1;
+const DRAW_TEXT_EX_IS_AUTO_NEWLINE: i32 = 2;
+
+pub(super) fn draw_text_ex(
+    env: &mut Environment,
+    pc_text: ConstPtr<u8>,
+    x: i16,
+    y: i16,
+    rect: MrScreenRect,
+    color: MrColour,
+    flag: i32,
+    font: u16,
+) -> i32 {
+    let native_color = make_rgb565(u32::from(color.r), u32::from(color.g), u32::from(color.b));
+
     log_dbg!(
-        "Mythroad: _DrawTextEx(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
+        "Mythroad: _DrawTextEx(pcText={:#x}, x={x}, y={y}, rect=({}, {}, {}, {}), color=({}, {}, {}), flag={flag:#x}, font={font}) called from {:#x}",
+        pc_text.to_bits(),
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        color.r,
+        color.g,
+        color.b,
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    if pc_text.is_null() {
+        log_dbg!("Mythroad: _DrawTextEx ignored because pcText is null");
+        return 0;
+    }
+
+    let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
+    let screen_h = env.mythroad.state.mr_screen_h.get(&env.mem);
+    if screen_w <= 0 || screen_h <= 0 {
+        return MrResult::Success as i32;
+    }
+
+    let is_unicode = flag & DRAW_TEXT_EX_IS_UNICODE != 0;
+    let auto_newline = flag & DRAW_TEXT_EX_IS_AUTO_NEWLINE != 0;
+
+    let mut converted_len = 0u32;
+    let pc_text = if is_unicode {
+        pc_text
+    } else {
+        let converted = encoding::c2u(env, pc_text, false);
+        converted_len = converted.size;
+        if converted.ptr.is_null() {
+            log_dbg!("Mythroad: _DrawTextEx failed to convert text to unicode");
+            return 0;
+        }
+        converted.ptr.cast::<u8>().cast_const()
+    };
+
+    let left = 0.max(i32::from(rect.x));
+    let top = 0.max(i32::from(rect.y));
+    let right = (screen_w - 1).min(i32::from(x) + i32::from(rect.w) - 1);
+    let bottom = (screen_h - 1).min(i32::from(y) + i32::from(rect.h) - 1);
+
+    let mut sx = i32::from(x);
+    let mut sy = i32::from(y);
+    let mut p = pc_text;
+
+    loop {
+        let high: u8 = env.mem.read(p);
+        let low: u8 = env.mem.read(p + 1);
+        if high == 0 && low == 0 {
+            break;
+        }
+
+        let ch = (u16::from(high) << 8) | u16::from(low);
+        let (fw, fh) = font::measure_char(env, ch, font);
+
+        if sx >= left && sx + fw <= right && sy >= top && sy <= bottom {
+            mr_plat_draw_char(env, ch, sx, sy, u32::from(native_color));
+        }
+
+        p += 2;
+        if auto_newline && sx + fw > right {
+            sx = left;
+            sy += fh;
+            if sy > bottom {
+                break;
+            }
+        } else {
+            sx += fw;
+            if sx > right {
+                break;
+            }
+        }
+    }
+
+    if !is_unicode {
+        mr_free(env, pc_text.cast_mut().cast_void(), converted_len);
+    }
+
+    MrResult::Success as i32
 }
 
 pub(super) fn mr_plat_draw_char(env: &mut Environment, ch: u16, x: i32, y: i32, color: u32) {
