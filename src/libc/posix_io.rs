@@ -22,6 +22,9 @@ impl State {
 
 struct PosixFileHostObject {
     file: GuestFile,
+    needs_flush: bool,
+    reached_eof: bool,
+    flags: i32,
 }
 
 // TODO: stdin/stdout/stderr handling somehow
@@ -58,6 +61,19 @@ pub const O_NOFOLLOW: OpenFlag = 0x100;
 pub const O_CREAT: OpenFlag = 0x200;
 pub const O_TRUNC: OpenFlag = 0x400;
 pub const O_EXCL: OpenFlag = 0x800;
+
+/// File control command flags.
+/// This alias is for readability, POSIX just uses `int`.
+pub type FileControlCommand = i32;
+const F_GETFD: FileControlCommand = 1;
+const F_SETFD: FileControlCommand = 2;
+const F_GETFL: FileControlCommand = 3;
+const F_SETFL: FileControlCommand = 4;
+
+/// File Descriptor flags.
+/// This alias is for readability, POSIX just uses `int`.
+pub type FDFlag = i32;
+pub const FD_CLOEXEC: FDFlag = 1;
 
 pub(crate) fn open(
     env: &mut Environment,
@@ -103,7 +119,12 @@ pub(crate) fn open_direct(env: &mut Environment, path: ConstPtr<u8>, flags: i32)
         options,
     ) {
         Ok(file) => {
-            let host_object = PosixFileHostObject { file };
+            let host_object = PosixFileHostObject {
+                file,
+                needs_flush: false,
+                reached_eof: false,
+                flags: flags & (O_ACCMODE | O_NONBLOCK | O_APPEND),
+            };
 
             let idx = if let Some(free_idx) = env
                 .libc_state
@@ -231,6 +252,7 @@ pub type off_t = i64;
 pub const SEEK_SET: i32 = 0;
 pub const SEEK_CUR: i32 = 1;
 pub const SEEK_END: i32 = 2;
+
 pub(crate) fn lseek(
     env: &mut Environment,
     fd: FileDescriptor,
@@ -299,6 +321,51 @@ pub(crate) fn rename(env: &mut Environment, old: ConstPtr<u8>, new: ConstPtr<u8>
     res
 }
 
+fn fcntl(
+    env: &mut Environment,
+    fd: FileDescriptor,
+    cmd: FileControlCommand,
+    args: DotDotDot,
+) -> i32 {
+    if fd >= NORMAL_FILENO_BASE
+        && env
+            .libc_state
+            .posix_io
+            .files
+            .get(fd_to_file_idx(fd))
+            .is_none()
+    {
+        return -1;
+    }
+
+    match cmd {
+        F_GETFD => return 0,
+        F_SETFD => {
+            let flags: i32 = args.start().next(env);
+            assert!(matches!(flags, FD_CLOEXEC | 0));
+            if flags & FD_CLOEXEC == FD_CLOEXEC {
+                log!(
+                    "TODO: fcntl({}, F_SETFD, {}) called. CLOEXEC currently not supported.",
+                    fd,
+                    flags
+                );
+            }
+        }
+        F_GETFL => {
+            let file = env.libc_state.posix_io.file_for_fd(fd).unwrap();
+            return file.flags;
+        }
+        F_SETFL => {
+            let flags: i32 = args.start().next(env);
+            let file = env.libc_state.posix_io.file_for_fd(fd).unwrap();
+            let access_mode = file.flags & O_ACCMODE;
+            file.flags = access_mode | (flags & (O_NONBLOCK | O_APPEND));
+        }
+        _ => unimplemented!(),
+    }
+    0
+}
+
 fn find_or_create_fd(env: &mut Environment, host_object: PosixFileHostObject) -> FileDescriptor {
     let idx = if let Some(free_idx) = env
         .libc_state
@@ -320,6 +387,9 @@ fn find_or_create_fd(env: &mut Environment, host_object: PosixFileHostObject) ->
 pub fn find_or_create_socket(env: &mut Environment) -> FileDescriptor {
     let host_object = PosixFileHostObject {
         file: GuestFile::Socket,
+        needs_flush: false,
+        reached_eof: false,
+        flags: O_RDWR,
     };
     find_or_create_fd(env, host_object)
 }
