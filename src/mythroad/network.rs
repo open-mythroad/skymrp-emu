@@ -8,6 +8,8 @@ use super::MrResult;
 const DSM_SUPPORT_SOCK_NUM: usize = 5;
 const MR_SOCK_STREAM: i32 = 0;
 const MR_SOCK_DGRAM: i32 = 1;
+const MR_SOCKET_NONBLOCK: i32 = 1;
+const CMWAP_PROXY_IP: u32 = 0x0a0000ac;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -78,6 +80,11 @@ impl State {
         self.sockets
             .iter()
             .position(|socket| socket.socket_id == -1)
+    }
+
+    fn socket_index(&self, socket: i32) -> Option<usize> {
+        let index: usize = socket.try_into().ok()?;
+        (index < self.sockets.len() && self.sockets[index].socket_id != -1).then_some(index)
     }
 }
 
@@ -150,4 +157,59 @@ pub(crate) fn mr_socket(env: &mut Environment, type_: i32, protocol: i32) -> i32
     };
 
     index.try_into().unwrap()
+}
+
+pub(crate) fn mr_connect(
+    env: &mut Environment,
+    socket: i32,
+    ip: u32,
+    port: u16,
+    type_: i32,
+) -> i32 {
+    log_dbg!(
+        "Mythroad: mr_connect(socket={socket}, ip={ip:#010x}, port={port}, type={type_}) called from {:#x}",
+        env.cpu.regs()[crate::cpu::Cpu::PC]
+    );
+
+    let Some(index) = env.mythroad.state.network.socket_index(socket) else {
+        log!("Warning: mr_connect invalid socket {socket}, returning MR_FAILED");
+        return MrResult::Failed as i32;
+    };
+
+    match env.mythroad.state.network.sockets[index].status {
+        SocketStatus::Connected => return MrResult::Success as i32,
+        SocketStatus::Err | SocketStatus::Close => return MrResult::Failed as i32,
+        SocketStatus::Connecting => return MrResult::Waiting as i32,
+        SocketStatus::Open => {}
+    }
+
+    if ip == CMWAP_PROXY_IP {
+        set_socket_connected(env, index);
+        return MrResult::Success as i32;
+    }
+
+    let fd = env.mythroad.state.network.sockets[index].socket_id;
+    let sockaddr = libc::sys::socket::sockaddr::from_ipv4_parts(ip.to_be_bytes(), port);
+
+    if type_ == MR_SOCKET_NONBLOCK {
+        // TODO: MR_SOCKET_NONBLOCK currently still uses blocking connect and
+        // does not return MR_WAITING. This keeps networking simple until we
+        // need full Mythroad asynchronous connect semantics.
+        log!("Warning: MR_SOCKET_NONBLOCK connect does not return MR_WAITING yet");
+    }
+
+    if libc::sys::socket::connect_sockaddr(env, fd, sockaddr) == 0 {
+        set_socket_connected(env, index);
+        MrResult::Success as i32
+    } else {
+        env.mythroad.state.network.sockets[index].status = SocketStatus::Err;
+        MrResult::Failed as i32
+    }
+}
+
+fn set_socket_connected(env: &mut Environment, index: usize) {
+    let slot = &mut env.mythroad.state.network.sockets[index];
+    slot.status = SocketStatus::Connected;
+    slot.read_status = SocketReadStatus::Readable;
+    slot.write_status = SocketWriteStatus::Writeable;
 }

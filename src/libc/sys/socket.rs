@@ -353,12 +353,6 @@ fn connect(
     address: ConstPtr<sockaddr>,
     address_len: socklen_t,
 ) -> i32 {
-    let Some(socket_host_object) = State::get(env).sockets.get(&socket) else {
-        return -1;
-    };
-    let type_ = socket_host_object.type_;
-    assert!(type_ == SOCK_STREAM);
-
     assert_eq!(address_len, guest_size_of::<sockaddr>());
     let sockaddr_val = env.mem.read(address);
     log_dbg!(
@@ -367,6 +361,16 @@ fn connect(
         sockaddr_val,
         address_len
     );
+
+    connect_sockaddr(env, socket, sockaddr_val)
+}
+
+pub(crate) fn connect_sockaddr(env: &mut Environment, socket: i32, sockaddr_val: sockaddr) -> i32 {
+    let Some(socket_host_object) = State::get(env).sockets.get(&socket) else {
+        return -1;
+    };
+    let type_ = socket_host_object.type_;
+    assert!(type_ == SOCK_STREAM);
 
     let socket_address = sockaddr_val.to_sockaddr_v4();
     log_dbg!("connect: socket address {:?}", socket_address);

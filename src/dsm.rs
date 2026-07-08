@@ -448,7 +448,7 @@ pub(crate) fn mr_plat(env: &mut Environment, code: u32, param: u32) -> i32 {
                 MrResult::Failed as i32
             }
         }
-        MR_CONNECT => MrResult::Failed as i32,
+        MR_CONNECT => MrResult::Success as i32,
         MR_SET_SOCTIME => MrResult::Ignored as i32,
         MR_GET_RAND => {
             let Ok(limit) = i32::try_from(param) else {

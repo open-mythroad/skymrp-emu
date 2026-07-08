@@ -28,7 +28,7 @@ use graphics::{
     draw_text_ex, mr_draw_bitmap, mr_draw_region, mr_eff_set_con, mr_get_char_bitmap,
     mr_get_screen_info, mr_plat_draw_char, mr_transbitmap_draw, MrBitmap, MrSprite, MrTile,
 };
-use network::{mr_init_network, mr_socket};
+use network::{mr_connect, mr_init_network, mr_socket};
 
 const BITMAPMAX: GuestUSize = 30;
 const SPRITEMAX: GuestUSize = 10;
@@ -1352,13 +1352,6 @@ fn mr_close_network(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
 fn mr_get_host_by_name(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     log_dbg!(
         "Mythroad: mr_getHostByName(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
-}
-
-fn mr_connect(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    log_dbg!(
-        "Mythroad: mr_connect(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 }
