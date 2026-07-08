@@ -120,7 +120,12 @@ impl State {
     }
 }
 
-fn socket(env: &mut Environment, domain: i32, type_: i32, protocol: i32) -> FileDescriptor {
+pub(crate) fn socket(
+    env: &mut Environment,
+    domain: i32,
+    type_: i32,
+    protocol: i32,
+) -> FileDescriptor {
     assert_eq!(domain, AF_INET);
     assert!(type_ == SOCK_STREAM || type_ == SOCK_DGRAM);
     assert!(protocol == IPPROTO_TCP || protocol == IPPROTO_UDP || protocol == 0);
