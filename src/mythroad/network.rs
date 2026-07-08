@@ -1,7 +1,8 @@
 use crate::abi::GuestFunction;
 use crate::libc;
-use crate::mem::ConstPtr;
+use crate::mem::{ConstPtr, ConstVoidPtr, GuestUSize, MutVoidPtr};
 use crate::Environment;
+use std::net::ToSocketAddrs;
 
 use super::MrResult;
 
@@ -42,6 +43,9 @@ struct SocketSlot {
     status: SocketStatus,
     read_status: SocketReadStatus,
     write_status: SocketWriteStatus,
+    is_proxy: bool,
+    real_socket_id: i32,
+    real_connected: bool,
 }
 
 impl Default for SocketSlot {
@@ -51,6 +55,9 @@ impl Default for SocketSlot {
             status: SocketStatus::Close,
             read_status: SocketReadStatus::NoRead,
             write_status: SocketWriteStatus::NoWrite,
+            is_proxy: false,
+            real_socket_id: -1,
+            real_connected: false,
         }
     }
 }
@@ -154,6 +161,7 @@ pub(crate) fn mr_socket(env: &mut Environment, type_: i32, protocol: i32) -> i32
         status: SocketStatus::Open,
         read_status,
         write_status,
+        ..SocketSlot::default()
     };
 
     index.try_into().unwrap()
@@ -184,7 +192,7 @@ pub(crate) fn mr_connect(
     }
 
     if ip == CMWAP_PROXY_IP {
-        set_socket_connected(env, index);
+        set_socket_proxy_connected(env, index);
         return MrResult::Success as i32;
     }
 
@@ -207,9 +215,242 @@ pub(crate) fn mr_connect(
     }
 }
 
+pub(crate) fn mr_close_socket(env: &mut Environment, socket: i32) -> i32 {
+    log_dbg!(
+        "Mythroad: mr_closeSocket(socket={socket}) called from {:#x}",
+        env.cpu.regs()[crate::cpu::Cpu::PC]
+    );
+
+    let Some(index) = env.mythroad.state.network.socket_index(socket) else {
+        log!("Warning: mr_closeSocket invalid socket {socket}, returning MR_FAILED");
+        return MrResult::Failed as i32;
+    };
+
+    if close_socket_index(env, index) {
+        MrResult::Success as i32
+    } else {
+        MrResult::Failed as i32
+    }
+}
+
+pub(crate) fn mr_recv(env: &mut Environment, socket: i32, buffer: MutVoidPtr, len: i32) -> i32 {
+    log_dbg!(
+        "Mythroad: mr_recv(socket={socket}, buffer={:#x}, len={len}) called from {:#x}",
+        buffer.to_bits(),
+        env.cpu.regs()[crate::cpu::Cpu::PC]
+    );
+
+    let Some(length) = len.try_into().ok() else {
+        return MrResult::Failed as i32;
+    };
+    let Some(index) = env.mythroad.state.network.socket_index(socket) else {
+        log!("Warning: mr_recv invalid socket {socket}, returning MR_FAILED");
+        return MrResult::Failed as i32;
+    };
+    let Some(index) = recv_socket_index(env, index) else {
+        return 0;
+    };
+
+    let slot = env.mythroad.state.network.sockets[index];
+    if slot.status == SocketStatus::Err {
+        return MrResult::Failed as i32;
+    }
+    if slot.read_status != SocketReadStatus::Readable {
+        return 0;
+    }
+
+    let ret = libc::sys::socket::recv(env, slot.socket_id, buffer, length, 0);
+    if ret < 0 {
+        set_socket_read_error(env, index);
+    }
+    ret
+}
+
+pub(crate) fn mr_send(env: &mut Environment, socket: i32, buffer: ConstVoidPtr, len: i32) -> i32 {
+    log_dbg!(
+        "Mythroad: mr_send(socket={socket}, buffer={:#x}, len={len}) called from {:#x}",
+        buffer.to_bits(),
+        env.cpu.regs()[crate::cpu::Cpu::PC]
+    );
+
+    let Some(length) = len.try_into().ok() else {
+        return MrResult::Failed as i32;
+    };
+    let Some(index) = env.mythroad.state.network.socket_index(socket) else {
+        log!("Warning: mr_send invalid socket {socket}, returning MR_FAILED");
+        return MrResult::Failed as i32;
+    };
+    let Some(index) = send_socket_index(env, index, buffer, length) else {
+        return MrResult::Failed as i32;
+    };
+
+    let slot = env.mythroad.state.network.sockets[index];
+    if slot.status == SocketStatus::Err {
+        return MrResult::Failed as i32;
+    }
+    if slot.write_status != SocketWriteStatus::Writeable {
+        return 0;
+    }
+
+    let ret = libc::sys::socket::send(env, slot.socket_id, buffer.cast_mut(), length, 0);
+    if ret < 0 {
+        set_socket_write_error(env, index);
+    }
+    ret
+}
+
+fn close_socket_index(env: &mut Environment, index: usize) -> bool {
+    let slot = env.mythroad.state.network.sockets[index];
+    let mut ok = true;
+
+    if slot.is_proxy && slot.real_socket_id != -1 {
+        if let Some(real_index) = env.mythroad.state.network.socket_index(slot.real_socket_id) {
+            ok &= close_socket_index(env, real_index);
+        }
+    }
+
+    if libc::posix_io::close(env, slot.socket_id) == 0 {
+        env.mythroad.state.network.sockets[index] = SocketSlot::default();
+    } else {
+        env.mythroad.state.network.sockets[index].status = SocketStatus::Err;
+        ok = false;
+    }
+
+    ok
+}
+
+fn recv_socket_index(env: &mut Environment, index: usize) -> Option<usize> {
+    let slot = env.mythroad.state.network.sockets[index];
+    if !slot.is_proxy {
+        return Some(index);
+    }
+    if !slot.real_connected {
+        return None;
+    }
+    env.mythroad.state.network.socket_index(slot.real_socket_id)
+}
+
+fn send_socket_index(
+    env: &mut Environment,
+    index: usize,
+    buffer: ConstVoidPtr,
+    length: GuestUSize,
+) -> Option<usize> {
+    let slot = env.mythroad.state.network.sockets[index];
+    if !slot.is_proxy {
+        return Some(index);
+    }
+    if slot.real_connected {
+        return env.mythroad.state.network.socket_index(slot.real_socket_id);
+    }
+
+    let target = {
+        let bytes = env.mem.bytes_at(buffer.cast(), length);
+        parse_host_header(bytes)
+    };
+    let Some((host, port)) = target else {
+        log!("Warning: CMWAP proxy send failed to parse Host header");
+        set_socket_write_error(env, index);
+        return None;
+    };
+    let Some(ip) = resolve_host_ipv4(&host, port) else {
+        log!("Warning: CMWAP proxy send failed to resolve {host}:{port}");
+        set_socket_write_error(env, index);
+        return None;
+    };
+
+    let real_socket = mr_socket(env, MR_SOCK_STREAM, libc::netdb::IPPROTO_TCP);
+    if real_socket < 0 {
+        set_socket_write_error(env, index);
+        return None;
+    }
+    let real_index = env.mythroad.state.network.socket_index(real_socket)?;
+    let fd = env.mythroad.state.network.sockets[real_index].socket_id;
+    let sockaddr = libc::sys::socket::sockaddr::from_ipv4_parts(ip, port);
+    if libc::sys::socket::connect_sockaddr(env, fd, sockaddr) != 0 {
+        env.mythroad.state.network.sockets[real_index].status = SocketStatus::Err;
+        set_socket_write_error(env, index);
+        return None;
+    }
+
+    set_socket_connected(env, real_index);
+    let slot = &mut env.mythroad.state.network.sockets[index];
+    slot.real_socket_id = real_socket;
+    slot.real_connected = true;
+    Some(real_index)
+}
+
+fn parse_host_header(bytes: &[u8]) -> Option<(String, u16)> {
+    let pos = find_ascii_case_insensitive(bytes, b"Host:")?;
+    let mut value = &bytes[pos + b"Host:".len()..];
+    let line_end = value
+        .iter()
+        .position(|&b| b == b'\r' || b == b'\n')
+        .unwrap_or(value.len());
+    value = &value[..line_end];
+    value = trim_ascii(value);
+    let value = std::str::from_utf8(value).ok()?;
+
+    let (host, port) = if let Some((host, port)) = value.rsplit_once(':') {
+        (host.trim(), port.trim().parse().ok()?)
+    } else {
+        (value.trim(), 80)
+    };
+    (!host.is_empty()).then(|| (host.to_owned(), port))
+}
+
+fn find_ascii_case_insensitive(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window.eq_ignore_ascii_case(needle))
+}
+
+fn trim_ascii(bytes: &[u8]) -> &[u8] {
+    let start = bytes
+        .iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .rposition(|b| !b.is_ascii_whitespace())
+        .map(|pos| pos + 1)
+        .unwrap_or(start);
+    &bytes[start..end]
+}
+
+fn resolve_host_ipv4(host: &str, port: u16) -> Option<[u8; 4]> {
+    (host, port)
+        .to_socket_addrs()
+        .ok()?
+        .find_map(|addr| match addr {
+            std::net::SocketAddr::V4(addr) => Some(addr.ip().octets()),
+            std::net::SocketAddr::V6(_) => None,
+        })
+}
+
 fn set_socket_connected(env: &mut Environment, index: usize) {
     let slot = &mut env.mythroad.state.network.sockets[index];
     slot.status = SocketStatus::Connected;
     slot.read_status = SocketReadStatus::Readable;
     slot.write_status = SocketWriteStatus::Writeable;
+}
+
+fn set_socket_proxy_connected(env: &mut Environment, index: usize) {
+    set_socket_connected(env, index);
+    let slot = &mut env.mythroad.state.network.sockets[index];
+    slot.is_proxy = true;
+    slot.real_socket_id = -1;
+    slot.real_connected = false;
+}
+
+fn set_socket_read_error(env: &mut Environment, index: usize) {
+    let slot = &mut env.mythroad.state.network.sockets[index];
+    slot.status = SocketStatus::Err;
+    slot.read_status = SocketReadStatus::NoRead;
+}
+
+fn set_socket_write_error(env: &mut Environment, index: usize) {
+    let slot = &mut env.mythroad.state.network.sockets[index];
+    slot.status = SocketStatus::Err;
+    slot.write_status = SocketWriteStatus::NoWrite;
 }

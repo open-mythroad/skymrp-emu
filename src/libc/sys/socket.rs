@@ -738,7 +738,7 @@ fn accept(
     }
 }
 
-fn recv(
+pub(crate) fn recv(
     env: &mut Environment,
     socket: i32,
     buffer: MutVoidPtr,
@@ -827,9 +827,13 @@ fn recvfrom(
                     return -1;
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    unimplemented!("recvfrom: TCP socket {} would block on receiving.", socket)
+                    log!("recvfrom: TCP socket {} would block on receiving.", socket);
+                    return 0;
                 }
-                Err(e) => panic!("recvfrom: TCP socket {socket} encountered IO error: {e}"),
+                Err(e) => {
+                    log!("recvfrom: TCP socket {socket} encountered IO error: {e}");
+                    return -1;
+                }
             };
             (read, tcp_stream.peer_addr())
         }
@@ -844,7 +848,7 @@ fn recvfrom(
     num_bytes_read.try_into().unwrap()
 }
 
-fn send(
+pub(crate) fn send(
     env: &mut Environment,
     socket: i32,
     buffer: MutVoidPtr,
@@ -871,9 +875,13 @@ fn send(
             match tcp_stream.write(buf) {
                 Ok(written) => written,
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    unimplemented!("send: TCP socket {} would block on sending.", socket)
+                    log!("send: TCP socket {} would block on sending.", socket);
+                    return 0;
                 }
-                Err(e) => panic!("send: Socket {socket} encountered IO error: {e}"),
+                Err(e) => {
+                    log!("send: Socket {socket} encountered IO error: {e}");
+                    return -1;
+                }
             }
         }
         _ => unreachable!(),
