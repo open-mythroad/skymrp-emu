@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, SocketAddrV4, TcpListener, TcpStream, UdpSocket};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const AF_INET: i32 = 2;
 pub const SOCK_STREAM: i32 = 1;
@@ -24,6 +24,7 @@ const SO_DEBUG: i32 = 0x1;
 const SO_REUSEADDR: i32 = 0x4;
 const SO_BROADCAST: i32 = 0x20;
 const SO_ERROR: i32 = 0x1007;
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[allow(non_camel_case_types)]
 pub type sa_family_t = u8;
@@ -381,10 +382,45 @@ pub(crate) fn connect_sockaddr(env: &mut Environment, socket: i32, sockaddr_val:
         .unwrap()
         .tcp_stream
         .is_none());
-    let host_stream = TcpStream::connect(socket_address).unwrap();
+    log!(
+        "connect: begin blocking connect to {:?}, timeout {:?}",
+        socket_address,
+        DEFAULT_CONNECT_TIMEOUT
+    );
+    let start = Instant::now();
+    let host_stream = match TcpStream::connect_timeout(
+        &SocketAddr::V4(socket_address),
+        DEFAULT_CONNECT_TIMEOUT,
+    ) {
+        Ok(stream) => {
+            log!(
+                "connect: connected to {:?} after {:?}",
+                socket_address,
+                start.elapsed()
+            );
+            stream
+        }
+        Err(error) => {
+            log!(
+                "connect: failed to connect to {:?} after {:?}: {}",
+                socket_address,
+                start.elapsed(),
+                error
+            );
+            return -1;
+        }
+    };
     // We set host socket as non-blocking in order to have
     // more control of how and when it's used
-    host_stream.set_nonblocking(true).unwrap();
+    if let Err(error) = host_stream.set_nonblocking(true) {
+        log!(
+            "connect: failed to set {:?} nonblocking after {:?}: {}",
+            socket_address,
+            start.elapsed(),
+            error
+        );
+        return -1;
+    }
     State::get_mut(env)
         .sockets
         .get_mut(&socket)

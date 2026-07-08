@@ -3,6 +3,7 @@ use crate::libc;
 use crate::mem::{ConstPtr, ConstVoidPtr, GuestUSize, MutVoidPtr};
 use crate::Environment;
 use std::net::ToSocketAddrs;
+use std::time::Instant;
 
 use super::MrResult;
 
@@ -192,6 +193,7 @@ pub(crate) fn mr_connect(
     }
 
     if ip == CMWAP_PROXY_IP {
+        log!("Mythroad: mr_connect detected CMWAP proxy socket {socket}");
         set_socket_proxy_connected(env, index);
         return MrResult::Success as i32;
     }
@@ -206,10 +208,22 @@ pub(crate) fn mr_connect(
         log!("Warning: MR_SOCKET_NONBLOCK connect does not return MR_WAITING yet");
     }
 
+    log!(
+        "Mythroad: mr_connect begin backend connect socket={socket}, fd={fd}, ip={ip:#010x}, port={port}"
+    );
+    let start = Instant::now();
     if libc::sys::socket::connect_sockaddr(env, fd, sockaddr) == 0 {
+        log!(
+            "Mythroad: mr_connect backend connected socket={socket}, fd={fd}, elapsed={:?}",
+            start.elapsed()
+        );
         set_socket_connected(env, index);
         MrResult::Success as i32
     } else {
+        log!(
+            "Mythroad: mr_connect backend failed socket={socket}, fd={fd}, elapsed={:?}",
+            start.elapsed()
+        );
         env.mythroad.state.network.sockets[index].status = SocketStatus::Err;
         MrResult::Failed as i32
     }
@@ -346,6 +360,10 @@ fn send_socket_index(
 
     let target = {
         let bytes = env.mem.bytes_at(buffer.cast(), length);
+        log!(
+            "Mythroad: CMWAP proxy first send, parsing Host header from {} bytes",
+            bytes.len()
+        );
         parse_host_header(bytes)
     };
     let Some((host, port)) = target else {
@@ -353,11 +371,25 @@ fn send_socket_index(
         set_socket_write_error(env, index);
         return None;
     };
+    log!("Mythroad: CMWAP proxy Host parsed as {host}:{port}");
+
+    let resolve_start = Instant::now();
     let Some(ip) = resolve_host_ipv4(&host, port) else {
-        log!("Warning: CMWAP proxy send failed to resolve {host}:{port}");
+        log!(
+            "Warning: CMWAP proxy send failed to resolve {host}:{port} after {:?}",
+            resolve_start.elapsed()
+        );
         set_socket_write_error(env, index);
         return None;
     };
+    log!(
+        "Mythroad: CMWAP proxy resolved {host}:{port} to {}.{}.{}.{} after {:?}",
+        ip[0],
+        ip[1],
+        ip[2],
+        ip[3],
+        resolve_start.elapsed()
+    );
 
     let real_socket = mr_socket(env, MR_SOCK_STREAM, libc::netdb::IPPROTO_TCP);
     if real_socket < 0 {
@@ -367,11 +399,23 @@ fn send_socket_index(
     let real_index = env.mythroad.state.network.socket_index(real_socket)?;
     let fd = env.mythroad.state.network.sockets[real_index].socket_id;
     let sockaddr = libc::sys::socket::sockaddr::from_ipv4_parts(ip, port);
+    log!(
+        "Mythroad: CMWAP proxy begin real connect proxy_index={index}, real_socket={real_socket}, fd={fd}, target={host}:{port}"
+    );
+    let connect_start = Instant::now();
     if libc::sys::socket::connect_sockaddr(env, fd, sockaddr) != 0 {
+        log!(
+            "Mythroad: CMWAP proxy real connect failed target={host}:{port}, elapsed={:?}",
+            connect_start.elapsed()
+        );
         env.mythroad.state.network.sockets[real_index].status = SocketStatus::Err;
         set_socket_write_error(env, index);
         return None;
     }
+    log!(
+        "Mythroad: CMWAP proxy real connect succeeded target={host}:{port}, elapsed={:?}",
+        connect_start.elapsed()
+    );
 
     set_socket_connected(env, real_index);
     let slot = &mut env.mythroad.state.network.sockets[index];
