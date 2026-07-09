@@ -29,7 +29,8 @@ use graphics::{
     mr_get_screen_info, mr_plat_draw_char, mr_transbitmap_draw, MrBitmap, MrSprite, MrTile,
 };
 use network::{
-    mr_close_network, mr_close_socket, mr_connect, mr_init_network, mr_recv, mr_send, mr_socket,
+    mr_close_network, mr_close_socket, mr_connect, mr_get_host_by_name, mr_init_network, mr_recv,
+    mr_send, mr_socket,
 };
 
 const BITMAPMAX: GuestUSize = 30;
@@ -1344,13 +1345,6 @@ fn mr_win_release(env: &mut Environment, win: i32) -> i32 {
     MrResult::Ignored as i32
 }
 
-fn mr_get_host_by_name(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    log_dbg!(
-        "Mythroad: mr_getHostByName(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
-}
-
 fn mr_recvfrom(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
     log_dbg!(
         "Mythroad: mr_recvfrom(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
@@ -1653,7 +1647,7 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_get_screen_info(_))),
     Export::Func(export_c_func!(mr_init_network(_, _))),
     Export::Func(export_c_func!(mr_close_network())),
-    Export::Func(export_c_func!(mr_get_host_by_name(_, _, _, _))),
+    Export::Func(export_c_func!(mr_get_host_by_name(_, _))),
     Export::Func(export_c_func!(mr_socket(_, _))),
     Export::Func(export_c_func!(mr_connect(_, _, _, _))),
     Export::Func(export_c_func!(mr_close_socket(_))),

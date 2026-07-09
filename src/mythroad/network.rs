@@ -269,6 +269,27 @@ pub(crate) fn mr_close_network(env: &mut Environment) -> i32 {
     }
 }
 
+pub(crate) fn mr_get_host_by_name(
+    env: &mut Environment,
+    name: ConstPtr<u8>,
+    callback: GuestFunction,
+) -> i32 {
+    let host = String::from_utf8_lossy(env.mem.cstr_at(name)).into_owned();
+    log_dbg!(
+        "Mythroad: mr_getHostByName(name={host:?}, callback={callback:?}) called from {:#x}",
+        env.cpu.regs()[crate::cpu::Cpu::PC]
+    );
+
+    // The callback is part of the Mythroad async DNS API, but this simplified
+    // backend resolves synchronously and returns the IP address directly.
+    let Some(ip) = resolve_host(&host) else {
+        log!("Warning: mr_getHostByName failed to resolve {host:?}");
+        return MrResult::Failed as i32;
+    };
+
+    u32::from_be_bytes(ip) as i32
+}
+
 pub(crate) fn mr_recv(env: &mut Environment, socket: i32, buffer: MutVoidPtr, len: i32) -> i32 {
     log_dbg!(
         "Mythroad: mr_recv(socket={socket}, buffer={:#x}, len={len}) called from {:#x}",
@@ -396,7 +417,7 @@ fn send_socket_index(
     log!("Mythroad: CMWAP proxy Host parsed as {host}:{port}");
 
     let resolve_start = Instant::now();
-    let Some(ip) = resolve_host_ipv4(&host, port) else {
+    let Some(ip) = resolve_host(&host) else {
         log!(
             "Warning: CMWAP proxy send failed to resolve {host}:{port} after {:?}",
             resolve_start.elapsed()
@@ -490,8 +511,8 @@ fn trim_ascii(bytes: &[u8]) -> &[u8] {
     &bytes[start..end]
 }
 
-fn resolve_host_ipv4(host: &str, port: u16) -> Option<[u8; 4]> {
-    (host, port)
+fn resolve_host(host: &str) -> Option<[u8; 4]> {
+    (host, 80)
         .to_socket_addrs()
         .ok()?
         .find_map(|addr| match addr {
