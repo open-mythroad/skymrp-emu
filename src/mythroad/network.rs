@@ -397,6 +397,7 @@ fn send_socket_index(
         return None;
     }
     let real_index = env.mythroad.state.network.socket_index(real_socket)?;
+    env.mythroad.state.network.sockets[index].real_socket_id = real_socket;
     let fd = env.mythroad.state.network.sockets[real_index].socket_id;
     let sockaddr = libc::sys::socket::sockaddr::from_ipv4_parts(ip, port);
     log!(
@@ -409,6 +410,12 @@ fn send_socket_index(
             connect_start.elapsed()
         );
         env.mythroad.state.network.sockets[real_index].status = SocketStatus::Err;
+        if !close_socket_index(env, real_index) {
+            log!("Warning: CMWAP proxy failed to close real socket {real_socket}");
+        }
+        let slot = &mut env.mythroad.state.network.sockets[index];
+        slot.real_socket_id = -1;
+        slot.real_connected = false;
         set_socket_write_error(env, index);
         return None;
     }
@@ -419,7 +426,6 @@ fn send_socket_index(
 
     set_socket_connected(env, real_index);
     let slot = &mut env.mythroad.state.network.sockets[index];
-    slot.real_socket_id = real_socket;
     slot.real_connected = true;
     Some(real_index)
 }
