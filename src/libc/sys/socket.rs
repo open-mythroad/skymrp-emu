@@ -58,7 +58,7 @@ impl sockaddr {
     /// Returns 4 bytes for ip and a port.
     ///
     /// Port is returned in the native endian format.
-    fn to_ipv4_parts(self) -> ([u8; 4], u16) {
+    pub fn to_ipv4_parts(self) -> ([u8; 4], u16) {
         assert!(self.sa_len == 16 || self.sa_len == 0);
         assert_eq!(self.sa_family, AF_INET as u8);
         let port = u16::from_be_bytes([self.sa_data[0], self.sa_data[1]]);
@@ -784,7 +784,7 @@ pub(crate) fn recv(
     recvfrom(env, socket, buffer, length, flags, Ptr::null(), Ptr::null())
 }
 
-fn recvfrom(
+pub(crate) fn recvfrom(
     env: &mut Environment,
     socket: i32,
     buffer: MutVoidPtr,
@@ -803,12 +803,30 @@ fn recvfrom(
         address_len
     );
 
+    let (ret, addr) = recvfrom_sockaddr(env, socket, buffer, length, flags);
+    if ret >= 0 && !address.is_null() {
+        if let Some(addr) = addr {
+            env.mem.write(address, addr);
+            assert_eq!(guest_size_of::<sockaddr>(), env.mem.read(address_len));
+            env.mem.write(address_len, guest_size_of::<sockaddr>());
+        }
+    }
+    ret
+}
+
+pub(crate) fn recvfrom_sockaddr(
+    env: &mut Environment,
+    socket: i32,
+    buffer: MutVoidPtr,
+    length: GuestUSize,
+    flags: i32,
+) -> (i32, Option<sockaddr>) {
     if !State::get(env).sockets.contains_key(&socket) {
         log!(
             "Warning: recvfrom({}, ...) failed for unknown socket, returning -1",
             socket
         );
-        return -1;
+        return (-1, None);
     }
 
     let type_ = State::get(env).sockets.get(&socket).unwrap().type_;
@@ -831,21 +849,17 @@ fn recvfrom(
             let (read, addr) = match udp_socket.recv_from(buf) {
                 Ok(n) => n,
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    unimplemented!("recvfrom: UDP socket {} would block on receiving.", socket)
+                    log!("recvfrom: UDP socket {} would block on receiving.", socket);
+                    return (0, None);
                 }
-                Err(e) => panic!("recvfrom: UDP socket {socket} encountered IO error: {e}"),
+                Err(e) => {
+                    log!("recvfrom: UDP socket {socket} encountered IO error: {e}");
+                    return (-1, None);
+                }
             };
-            if !address.is_null() {
-                let guest_addr = sockaddr::from_sockaddr_v4(&addr);
-                env.mem.write(address, guest_addr);
-                assert_eq!(guest_size_of::<sockaddr>(), env.mem.read(address_len));
-                env.mem.write(address_len, guest_size_of::<sockaddr>());
-            }
-            (read, Ok(addr))
+            (read, Some(sockaddr::from_sockaddr_v4(&addr)))
         }
         SOCK_STREAM => {
-            assert!(address.is_null());
-            assert!(address_len.is_null());
             let mut tcp_stream = env
                 .libc_state
                 .socket
@@ -860,18 +874,24 @@ fn recvfrom(
                 Ok(n) => n,
                 Err(ref e) if e.kind() == io::ErrorKind::ConnectionReset => {
                     log!("recvfrom: TCP socket {}: ConnectionReset => -1", socket);
-                    return -1;
+                    return (-1, None);
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                     log!("recvfrom: TCP socket {} would block on receiving.", socket);
-                    return 0;
+                    return (0, None);
                 }
                 Err(e) => {
                     log!("recvfrom: TCP socket {socket} encountered IO error: {e}");
-                    return -1;
+                    return (-1, None);
                 }
             };
-            (read, tcp_stream.peer_addr())
+            (
+                read,
+                tcp_stream
+                    .peer_addr()
+                    .ok()
+                    .map(|addr| sockaddr::from_sockaddr_v4(&addr)),
+            )
         }
         _ => unreachable!(),
     };
@@ -879,9 +899,9 @@ fn recvfrom(
         "recvfrom: Socket {} received {} bytes from addr {:?}",
         socket,
         num_bytes_read,
-        addr.ok()
+        addr
     );
-    num_bytes_read.try_into().unwrap()
+    (num_bytes_read.try_into().unwrap(), addr)
 }
 
 pub(crate) fn send(
@@ -930,13 +950,13 @@ pub(crate) fn send(
     num_bytes_written.try_into().unwrap()
 }
 
-fn sendto(
+pub(crate) fn sendto(
     env: &mut Environment,
     socket: i32,
-    buffer: MutVoidPtr,
+    buffer: ConstVoidPtr,
     length: GuestUSize,
     flags: i32,
-    dest_address: MutPtr<sockaddr>,
+    dest_address: ConstPtr<sockaddr>,
     dest_address_len: socklen_t,
 ) -> i32 {
     let type_ = State::get(env).sockets.get(&socket).unwrap().type_;
@@ -946,17 +966,48 @@ fn sendto(
 
     assert_eq!(dest_address_len, guest_size_of::<sockaddr>());
     let sockaddr_val = env.mem.read(dest_address);
-    let socket_address = sockaddr_val.to_sockaddr_v4();
     log_dbg!(
-        "sendto({}, {:?}, {}, {}, {:?} ({:?}, {:?}), {})",
+        "sendto({}, {:?}, {}, {}, {:?} ({:?}), {})",
         socket,
         buffer,
         length,
         flags,
         dest_address,
         sockaddr_val,
-        socket_address,
         dest_address_len
+    );
+
+    sendto_sockaddr(env, socket, buffer, length, flags, sockaddr_val)
+}
+
+pub(crate) fn sendto_sockaddr(
+    env: &mut Environment,
+    socket: i32,
+    buffer: ConstVoidPtr,
+    length: GuestUSize,
+    flags: i32,
+    dest_address: sockaddr,
+) -> i32 {
+    let Some(socket_host_object) = State::get(env).sockets.get(&socket) else {
+        log!(
+            "Warning: sendto({}, ...) failed for unknown socket, returning -1",
+            socket
+        );
+        return -1;
+    };
+    let type_ = socket_host_object.type_;
+    assert!(type_ == SOCK_DGRAM);
+
+    assert_eq!(flags, 0); // TODO
+
+    let socket_address = dest_address.to_sockaddr_v4();
+    log_dbg!(
+        "sendto_sockaddr({}, {:?}, {}, {}, {:?})",
+        socket,
+        buffer,
+        length,
+        flags,
+        socket_address
     );
 
     let num_bytes_written = match type_ {
@@ -968,10 +1019,6 @@ fn sendto(
                 .udp_socket
                 .is_none()
             {
-                // For the case of broadcast we allow a lazy host UDP socket
-                // creation
-                assert!(socket_address.ip().is_broadcast());
-                // TODO: is it a correct address to bind?
                 let host_socket = UdpSocket::bind("0.0.0.0:0").unwrap();
                 assert!(host_socket.local_addr().unwrap().ip().is_unspecified());
                 // We set host socket as non-blocking in order to have
@@ -982,7 +1029,6 @@ fn sendto(
                         host_socket.set_broadcast(true).unwrap();
                     }
                 }
-                assert!(host_socket.broadcast().unwrap());
                 State::get_mut(env)
                     .sockets
                     .get_mut(&socket)
@@ -1005,9 +1051,13 @@ fn sendto(
             match udp_socket.send_to(buf, socket_address) {
                 Ok(written) => written,
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    unimplemented!("sendto: UDP socket {} would block on sending.", socket)
+                    log!("sendto: UDP socket {} would block on sending.", socket);
+                    return 0;
                 }
-                Err(e) => panic!("sendto: Socket {socket} encountered IO error: {e}"),
+                Err(e) => {
+                    log!("sendto: Socket {socket} encountered IO error: {e}");
+                    return -1;
+                }
             }
         }
         _ => unreachable!(),

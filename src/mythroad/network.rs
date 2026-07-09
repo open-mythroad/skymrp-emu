@@ -1,6 +1,6 @@
 use crate::abi::GuestFunction;
 use crate::libc;
-use crate::mem::{ConstPtr, ConstVoidPtr, GuestUSize, MutVoidPtr};
+use crate::mem::{ConstPtr, ConstVoidPtr, GuestUSize, MutPtr, MutVoidPtr};
 use crate::Environment;
 use std::net::ToSocketAddrs;
 use std::time::Instant;
@@ -323,6 +323,53 @@ pub(crate) fn mr_recv(env: &mut Environment, socket: i32, buffer: MutVoidPtr, le
     ret
 }
 
+pub(crate) fn mr_recvfrom(
+    env: &mut Environment,
+    socket: i32,
+    buffer: MutVoidPtr,
+    len: i32,
+    ip: MutPtr<i32>,
+    port: MutPtr<u16>,
+) -> i32 {
+    log_dbg!(
+        "Mythroad: mr_recvfrom(socket={socket}, buffer={:#x}, len={len}, ip={:#x}, port={:#x}) called from {:#x}",
+        buffer.to_bits(),
+        ip.to_bits(),
+        port.to_bits(),
+        env.cpu.regs()[crate::cpu::Cpu::PC]
+    );
+
+    let Some(length) = len.try_into().ok() else {
+        return MrResult::Failed as i32;
+    };
+    let Some(index) = env.mythroad.state.network.socket_index(socket) else {
+        log!("Warning: mr_recvfrom invalid socket {socket}, returning MR_FAILED");
+        return MrResult::Failed as i32;
+    };
+    if ip.is_null() || port.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    let slot = env.mythroad.state.network.sockets[index];
+    if slot.status == SocketStatus::Err {
+        return MrResult::Failed as i32;
+    }
+    if slot.read_status != SocketReadStatus::Readable {
+        return 0;
+    }
+
+    let (ret, address) =
+        libc::sys::socket::recvfrom_sockaddr(env, slot.socket_id, buffer, length, 0);
+    if ret < 0 {
+        set_socket_read_error(env, index);
+    } else if let Some(address) = address {
+        let (addr_ip, addr_port) = address.to_ipv4_parts();
+        env.mem.write(ip, i32::from_be_bytes(addr_ip));
+        env.mem.write(port, addr_port);
+    }
+    ret
+}
+
 pub(crate) fn mr_send(env: &mut Environment, socket: i32, buffer: ConstVoidPtr, len: i32) -> i32 {
     log_dbg!(
         "Mythroad: mr_send(socket={socket}, buffer={:#x}, len={len}) called from {:#x}",
@@ -350,6 +397,44 @@ pub(crate) fn mr_send(env: &mut Environment, socket: i32, buffer: ConstVoidPtr, 
     }
 
     let ret = libc::sys::socket::send(env, slot.socket_id, buffer.cast_mut(), length, 0);
+    if ret < 0 {
+        set_socket_write_error(env, index);
+    }
+    ret
+}
+
+pub(crate) fn mr_sendto(
+    env: &mut Environment,
+    socket: i32,
+    buffer: ConstVoidPtr,
+    len: i32,
+    ip: i32,
+    port: u16,
+) -> i32 {
+    log_dbg!(
+        "Mythroad: mr_sendto(socket={socket}, buffer={:#x}, len={len}, ip={ip:#010x}, port={port}) called from {:#x}",
+        buffer.to_bits(),
+        env.cpu.regs()[crate::cpu::Cpu::PC]
+    );
+
+    let Some(length) = len.try_into().ok() else {
+        return MrResult::Failed as i32;
+    };
+    let Some(index) = env.mythroad.state.network.socket_index(socket) else {
+        log!("Warning: mr_sendto invalid socket {socket}, returning MR_FAILED");
+        return MrResult::Failed as i32;
+    };
+
+    let slot = env.mythroad.state.network.sockets[index];
+    if slot.status == SocketStatus::Err {
+        return MrResult::Failed as i32;
+    }
+    if slot.write_status != SocketWriteStatus::Writeable {
+        return 0;
+    }
+
+    let address = libc::sys::socket::sockaddr::from_ipv4_parts(ip.to_be_bytes(), port);
+    let ret = libc::sys::socket::sendto_sockaddr(env, slot.socket_id, buffer, length, 0, address);
     if ret < 0 {
         set_socket_write_error(env, index);
     }

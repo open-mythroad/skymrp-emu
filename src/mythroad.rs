@@ -30,7 +30,7 @@ use graphics::{
 };
 use network::{
     mr_close_network, mr_close_socket, mr_connect, mr_get_host_by_name, mr_init_network, mr_recv,
-    mr_send, mr_socket,
+    mr_recvfrom, mr_send, mr_sendto, mr_socket,
 };
 
 const BITMAPMAX: GuestUSize = 30;
@@ -1345,20 +1345,6 @@ fn mr_win_release(env: &mut Environment, win: i32) -> i32 {
     MrResult::Ignored as i32
 }
 
-fn mr_recvfrom(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    log_dbg!(
-        "Mythroad: mr_recvfrom(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
-}
-
-fn mr_sendto(env: &mut Environment, a0: u32, a1: u32, a2: u32, a3: u32) {
-    log_dbg!(
-        "Mythroad: mr_sendto(a0={a0:#x}, a1={a1:#x}, a2={a2:#x}, a3={a3:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
-}
-
 fn mr_md5_init(env: &mut Environment, pms: MutPtr<Md5State>) {
     log_dbg!(
         "Mythroad: mr_md5_init(pms={:#x}) called from {:#x}",
@@ -1652,9 +1638,9 @@ pub const MR_C_FUNCTION_TABLE: FunctionExports = &[
     Export::Func(export_c_func!(mr_connect(_, _, _, _))),
     Export::Func(export_c_func!(mr_close_socket(_))),
     Export::Func(export_c_func!(mr_recv(_, _, _))),
-    Export::Func(export_c_func!(mr_recvfrom(_, _, _, _))),
+    Export::Func(export_c_func!(mr_recvfrom(_, _, _, _, _))),
     Export::Func(export_c_func!(mr_send(_, _, _))),
-    Export::Func(export_c_func!(mr_sendto(_, _, _, _))),
+    Export::Func(export_c_func!(mr_sendto(_, _, _, _, _))),
     Export::Data(export_c_data!(state.mr_screen_buf)), // &mr_screenBuf
     Export::Data(export_c_data!(state.mr_screen_w)),   // &mr_screen_w
     Export::Data(export_c_data!(state.mr_screen_h)),   // &mr_screen_h
