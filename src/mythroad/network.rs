@@ -247,6 +247,28 @@ pub(crate) fn mr_close_socket(env: &mut Environment, socket: i32) -> i32 {
     }
 }
 
+pub(crate) fn mr_close_network(env: &mut Environment) -> i32 {
+    log_dbg!(
+        "Mythroad: mr_closeNetwork() called from {:#x}",
+        env.cpu.regs()[crate::cpu::Cpu::PC]
+    );
+
+    let mut ok = true;
+    for index in 0..DSM_SUPPORT_SOCK_NUM {
+        if env.mythroad.state.network.sockets[index].socket_id != -1 {
+            ok &= close_socket_index(env, index);
+        }
+    }
+    env.mythroad.state.network.initialized = false;
+    env.mythroad.state.network.mode = None;
+
+    if ok {
+        MrResult::Success as i32
+    } else {
+        MrResult::Failed as i32
+    }
+}
+
 pub(crate) fn mr_recv(env: &mut Environment, socket: i32, buffer: MutVoidPtr, len: i32) -> i32 {
     log_dbg!(
         "Mythroad: mr_recv(socket={socket}, buffer={:#x}, len={len}) called from {:#x}",

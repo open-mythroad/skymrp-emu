@@ -789,8 +789,7 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
         }
         0x195 => {
             log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
-            // TODO: ret = mr_closeNetwork();
-            MrResult::Success as i32
+            crate::mythroad::network::mr_close_network(env)
         }
         0x196 => {
             let old = env.mythroad.state.sysinfo.screen_height;
