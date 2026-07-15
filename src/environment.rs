@@ -28,6 +28,7 @@ impl Environment {
         haptics::init(window.sdl_context()).map_err(|e| e.to_string())?;
 
         let mut mem = mem::Memory::new();
+        mem.reserve(0, mem::Memory::NULL_PAGE_SIZE);
 
         let (fs, guest_path) = fs::Fs::new(mrp_path.as_path());
         let executable = mrp::Mrp::load_from_file(guest_path, &fs, &mut mem)

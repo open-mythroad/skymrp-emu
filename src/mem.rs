@@ -1,3 +1,5 @@
+use crate::mem::allocator::{Chunk, HeapAllocator, VMAllocator};
+
 mod allocator;
 
 pub type GuestUSize = u32;
@@ -206,10 +208,12 @@ pub trait SafeWrite: Sized {}
 impl<T: SafeRead> SafeWrite for T {}
 
 type Bytes = [u8; 1 << 32];
+pub const PAGE_SIZE: GuestUSize = 4096;
 
 pub struct Memory {
     bytes: *mut Bytes,
-    allocator: allocator::Allocator,
+    heap_allocator: Option<HeapAllocator>,
+    vm_allocator: VMAllocator,
 }
 
 impl Drop for Memory {
@@ -226,11 +230,30 @@ impl Memory {
     pub const STACK_SIZE: GuestUSize = 1024 * 1024;
     pub const STACK_LOW_END: VAddr = 0u32.wrapping_sub(Self::STACK_SIZE);
 
+    /// This is arbitrarily set to 256 MiB, eventually the heap should grow.
+    pub const HEAP_SIZE: GuestUSize = 256 * 1024 * 1024;
+    /// This is the maximum allocation for the heap. Anything else is deferred
+    /// to the vm allocator.
+    pub const MAX_HEAP_ALLOCATION_SIZE: GuestUSize = (15 * 1024) - 1;
+
     pub fn new() -> Memory {
         let layout = std::alloc::Layout::new::<Bytes>();
         let bytes = unsafe { std::alloc::alloc_zeroed(layout) as *mut Bytes };
-        let allocator = allocator::Allocator::new();
-        Memory { bytes, allocator }
+        let vm_allocator = VMAllocator::new(0, Self::STACK_LOW_END);
+        Memory {
+            bytes,
+            vm_allocator,
+            heap_allocator: None,
+        }
+    }
+
+    fn heap_allocator(&mut self) -> &mut HeapAllocator {
+        self.heap_allocator.get_or_insert_with(|| {
+            let Some(heap) = self.vm_allocator.allocate(None, Self::HEAP_SIZE) else {
+                panic!("Failed to allocate heap space");
+            };
+            HeapAllocator::new(heap.base, heap.size.get())
+        })
     }
 
     fn bytes(&self) -> &Bytes {
@@ -256,15 +279,57 @@ impl Memory {
     }
 
     pub fn alloc(&mut self, size: GuestUSize) -> MutVoidPtr {
-        let ptr = Ptr::from_bits(self.allocator.alloc(size));
+        let ptr = if size > Self::MAX_HEAP_ALLOCATION_SIZE {
+            let ptr = self.vm_alloc(size);
+
+            self.heap_allocator()
+                .add_external_allocation(Chunk::new(ptr.to_bits(), size));
+
+            ptr
+        } else {
+            match self.heap_allocator().alloc(size) {
+                None => {
+                    panic!("Could not find large enough chunk to allocate {size:#x} bytes")
+                }
+                Some(address) => Ptr::from_bits(address),
+            }
+        };
         log_dbg!("Allocated {:?} ({:#x} bytes)", ptr, size);
         ptr
     }
 
+    /// Allocate `size` bytes using the virtual memory allocator.
+    /// All allocations are page aligned, page sized and zeroed.
+    pub fn vm_alloc(&mut self, size: GuestUSize) -> MutVoidPtr {
+        let allocation = match self.vm_allocator.allocate(None, size) {
+            None => {
+                panic!("Could not find large enough chunk to allocate {size:#x} bytes")
+            }
+            Some(chunk) => chunk,
+        };
+
+        let ptr = Ptr::from_bits(allocation.base);
+
+        // VM allocations are always 0 initialized.
+        // TODO: Can this be done with vm_advise/equivalents
+        self.bytes_at_mut(ptr.cast(), allocation.size.get()).fill(0);
+
+        ptr
+    }
+
     pub fn free(&mut self, ptr: MutVoidPtr) {
-        let size = self.allocator.free(ptr.to_bits());
+        let size = self.heap_allocator().free(ptr.to_bits());
+        if size > Self::MAX_HEAP_ALLOCATION_SIZE {
+            self.vm_free(ptr, size);
+        }
         self.bytes_at_mut(ptr.cast(), size).fill(0);
         log_dbg!("Mem: freed {:?} ({:#x} bytes)", ptr, size);
+    }
+
+    /// Free an allocation made with `vm_alloc` or `reserve`. All allocations
+    /// within the provided range are freed.
+    pub fn vm_free(&mut self, ptr: MutVoidPtr, size: GuestUSize) {
+        self.vm_allocator.deallocate(ptr.to_bits(), size);
     }
 
     pub fn calloc(&mut self, size: GuestUSize) -> MutVoidPtr {
@@ -349,6 +414,6 @@ impl Memory {
     }
 
     pub fn reserve(&mut self, base: VAddr, size: GuestUSize) {
-        self.allocator.reserve(allocator::Chunk::new(base, size));
+        self.vm_allocator.allocate(Some(base), size);
     }
 }
