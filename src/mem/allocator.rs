@@ -236,6 +236,20 @@ mod collections {
         }
     }
 
+    impl IntoIterator for ChunkMap {
+        type Item = Chunk;
+        type IntoIter = std::iter::Map<
+            std::collections::btree_map::IntoIter<VAddr, NonZeroU32>,
+            fn((VAddr, NonZeroU32)) -> Self::Item,
+        >;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.chunks
+                .into_iter()
+                .map(|(base, size)| Chunk { base, size })
+        }
+    }
+
     #[derive(Debug)]
     pub struct SizeBucketedChunkMap {
         min_chunk_size: u32,
@@ -392,31 +406,56 @@ pub struct HeapAllocator {
     unused_chunks: SizeBucketedChunkMap,
     // These are chunks that are managed by an external allocator
     external_chunks: ChunkMap,
+    backing_chunks: Vec<Chunk>,
 }
 
 impl HeapAllocator {
-    pub fn new(base: VAddr, size: GuestUSize) -> HeapAllocator {
-        let allocation_space = Chunk::new(base, size);
+    /// Size of chunks requested by the heap from the VM allocator.
+    /// This is set to 2MiB based on the original jemalloc paper.
+    pub const HEAP_CHUNK_SIZE: GuestUSize = 2 * 1024 * 1024;
 
+    /// This is the maximum allocation for the heap. Anything else is deferred
+    /// to the vm allocator.
+    pub const HEAP_ALLOCATION_THRESHOLD: GuestUSize = (15 * 1024) - 1;
+
+    pub fn new(vm: &mut VMAllocator, size: GuestUSize) -> HeapAllocator {
         let mut unused_chunks = SizeBucketedChunkMap::new(MIN_CHUNK_SIZE);
-        unused_chunks.insert(allocation_space);
+        let mut backing_chunks = Vec::new();
+
+        if size > 0 {
+            let base_chunk = vm
+                .allocate(None, size)
+                .expect("Failed to allocate heap space");
+            backing_chunks.push(base_chunk);
+            unused_chunks.insert(base_chunk);
+        }
 
         HeapAllocator {
             used_chunks: Default::default(),
             unused_chunks,
             external_chunks: Default::default(),
+            backing_chunks,
         }
     }
 
-    pub fn alloc(&mut self, size: GuestUSize) -> Option<VAddr> {
+    pub fn alloc(&mut self, vm: &mut VMAllocator, size: GuestUSize) -> Option<Chunk> {
         let size = size.max(MIN_CHUNK_SIZE);
         let size = Self::align(size, MIN_CHUNK_SIZE);
 
-        let alloc = self.unused_chunks.allocate(size)?;
+        let alloc = if size > Self::HEAP_ALLOCATION_THRESHOLD {
+            let alloc = vm.allocate(None, size).ok()?;
+            self.external_chunks.insert(alloc);
+            alloc
+        } else {
+            let alloc = self.unused_chunks.allocate(size).or_else(|| {
+                self.grow(vm);
+                self.unused_chunks.allocate(size)
+            })?;
+            self.used_chunks.insert(alloc);
+            alloc
+        };
 
-        self.used_chunks.insert(alloc);
-
-        Some(alloc.base)
+        Some(alloc)
     }
 
     fn align(size: GuestUSize, align: GuestUSize) -> GuestUSize {
@@ -438,15 +477,11 @@ impl HeapAllocator {
         size.get()
     }
 
-    /// Add a chunk that was allocated by an external allocator
-    pub fn add_external_allocation(&mut self, chunk: Chunk) {
-        self.external_chunks.insert(chunk);
-    }
-
     /// Returns the size of the freed chunk so it can be zeroed if desired
     #[must_use]
-    pub fn free(&mut self, base: VAddr) -> GuestUSize {
+    pub fn free(&mut self, vm: &mut VMAllocator, base: VAddr) -> GuestUSize {
         if let Some(freed) = self.external_chunks.remove_with_base(base) {
+            vm.deallocate(freed.base, freed.size.get());
             return freed.size.get();
         }
 
@@ -468,6 +503,28 @@ impl HeapAllocator {
 
         freed.size.get()
     }
+
+    /// Consume the allocator returning an iterator over the managed
+    /// virtual memory chunks
+    pub fn into_vm_chunks(self) -> impl Iterator<Item = Chunk> {
+        self.external_chunks.into_iter().chain(self.backing_chunks)
+    }
+
+    fn grow(&mut self, vm: &mut VMAllocator) {
+        log!("Attempting to grow heap.");
+        let chunk = vm
+            .allocate(None, Self::HEAP_CHUNK_SIZE)
+            .expect("Failed to allocate memory for heap.");
+
+        self.backing_chunks.push(chunk);
+        self.unused_chunks.insert(chunk);
+    }
+}
+
+#[derive(Debug)]
+pub enum VMAllocError {
+    AddressUnavailable,
+    NoSpace,
 }
 
 /// Virtual Memory Allocator which handles allocation with page granularity
@@ -490,7 +547,11 @@ impl VMAllocator {
         }
     }
 
-    pub fn allocate(&mut self, address: Option<VAddr>, size: GuestUSize) -> Option<Chunk> {
+    pub fn allocate(
+        &mut self,
+        address: Option<VAddr>,
+        size: GuestUSize,
+    ) -> Result<Chunk, VMAllocError> {
         let size = size.next_multiple_of(PAGE_SIZE);
         match address {
             Some(address) => {
@@ -501,7 +562,7 @@ impl VMAllocator {
         }
     }
 
-    pub fn deallocate(&mut self, address: VAddr, size: GuestUSize) {
+    pub fn deallocate(&mut self, address: VAddr, size: GuestUSize) -> Chunk {
         let size = size.next_multiple_of(PAGE_SIZE);
         let address = address & !(PAGE_SIZE - 1);
         let freed = Chunk::new(address, size);
@@ -523,9 +584,10 @@ impl VMAllocator {
         }
 
         self.unused_chunks.insert(combined);
+        freed
     }
 
-    fn allocate_at(&mut self, address: VAddr, size: GuestUSize) -> Option<Chunk> {
+    fn allocate_at(&mut self, address: VAddr, size: GuestUSize) -> Result<Chunk, VMAllocError> {
         assert!(address.is_multiple_of(PAGE_SIZE));
         assert!(size.is_multiple_of(PAGE_SIZE) && size >= PAGE_SIZE);
         let chunk = Chunk::new(address, size);
@@ -533,9 +595,10 @@ impl VMAllocator {
         let to_trisect = self
             .unused_chunks
             .iter()
-            .find(|unused_chunk| unused_chunk.trisect_by(chunk).is_some())?;
+            .find(|unused_chunk| unused_chunk.contains(address))
+            .ok_or(VMAllocError::AddressUnavailable)?;
 
-        let (before, after) = to_trisect.difference(chunk);
+        let (before, after) = to_trisect.trisect_by(chunk).ok_or(VMAllocError::NoSpace)?;
         self.unused_chunks.remove_with_base(to_trisect.base);
         if let Some(before) = before {
             self.unused_chunks.insert(before);
@@ -545,16 +608,19 @@ impl VMAllocator {
         }
         self.used_chunks.insert(chunk);
 
-        Some(chunk)
+        Ok(chunk)
     }
 
-    fn allocate_any(&mut self, size: GuestUSize) -> Option<Chunk> {
+    fn allocate_any(&mut self, size: GuestUSize) -> Result<Chunk, VMAllocError> {
         assert!(size.is_multiple_of(PAGE_SIZE) && size >= PAGE_SIZE);
 
-        let alloc = self.unused_chunks.allocate(size)?;
+        let alloc = self
+            .unused_chunks
+            .allocate(size)
+            .ok_or(VMAllocError::NoSpace)?;
 
         self.used_chunks.insert(alloc);
 
-        Some(alloc)
+        Ok(alloc)
     }
 }

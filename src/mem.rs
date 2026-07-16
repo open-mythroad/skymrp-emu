@@ -1,6 +1,7 @@
-use crate::mem::allocator::{Chunk, HeapAllocator, VMAllocator};
-
 mod allocator;
+
+use crate::mem::allocator::VMAllocator;
+pub use allocator::{HeapAllocator, VMAllocError};
 
 pub type GuestUSize = u32;
 
@@ -230,12 +231,6 @@ impl Memory {
     pub const STACK_SIZE: GuestUSize = 1024 * 1024;
     pub const STACK_LOW_END: VAddr = 0u32.wrapping_sub(Self::STACK_SIZE);
 
-    /// This is arbitrarily set to 256 MiB, eventually the heap should grow.
-    pub const HEAP_SIZE: GuestUSize = 256 * 1024 * 1024;
-    /// This is the maximum allocation for the heap. Anything else is deferred
-    /// to the vm allocator.
-    pub const MAX_HEAP_ALLOCATION_SIZE: GuestUSize = (15 * 1024) - 1;
-
     pub fn new() -> Memory {
         let layout = std::alloc::Layout::new::<Bytes>();
         let bytes = unsafe { std::alloc::alloc_zeroed(layout) as *mut Bytes };
@@ -247,13 +242,14 @@ impl Memory {
         }
     }
 
-    fn heap_allocator(&mut self) -> &mut HeapAllocator {
-        self.heap_allocator.get_or_insert_with(|| {
-            let Some(heap) = self.vm_allocator.allocate(None, Self::HEAP_SIZE) else {
-                panic!("Failed to allocate heap space");
-            };
-            HeapAllocator::new(heap.base, heap.size.get())
-        })
+    pub fn create_heap(&mut self, size: GuestUSize) -> HeapAllocator {
+        HeapAllocator::new(&mut self.vm_allocator, size)
+    }
+
+    pub fn destroy_heap(&mut self, heap: HeapAllocator) {
+        for chunk in heap.into_vm_chunks() {
+            self.vm_free(Ptr::from_bits(chunk.base), chunk.size.get());
+        }
     }
 
     fn bytes(&self) -> &Bytes {
@@ -279,34 +275,77 @@ impl Memory {
     }
 
     pub fn alloc(&mut self, size: GuestUSize) -> MutVoidPtr {
-        let ptr = if size > Self::MAX_HEAP_ALLOCATION_SIZE {
-            let ptr = self.vm_alloc(size);
+        self.alloc_in_heap(None, size)
+    }
 
-            self.heap_allocator()
-                .add_external_allocation(Chunk::new(ptr.to_bits(), size));
-
-            ptr
-        } else {
-            match self.heap_allocator().alloc(size) {
-                None => {
-                    panic!("Could not find large enough chunk to allocate {size:#x} bytes")
-                }
-                Some(address) => Ptr::from_bits(address),
+    /// Allocate `size` bytes in `heap`.
+    pub fn alloc_in_heap(
+        &mut self,
+        heap: Option<&mut HeapAllocator>,
+        size: GuestUSize,
+    ) -> MutVoidPtr {
+        let (vm, heap) = self.allocators_mut(heap);
+        let alloc = match heap.alloc(vm, size) {
+            None => {
+                panic!("Could not find large enough chunk to allocate {size:#x} bytes")
             }
+            Some(alloc) => alloc,
         };
+        let ptr = Ptr::from_bits(alloc.base);
         log_dbg!("Allocated {:?} ({:#x} bytes)", ptr, size);
         ptr
     }
 
+    /// Get size of allocation at `ptr` in the default heap.
+    pub fn malloc_size(&mut self, ptr: ConstVoidPtr) -> GuestUSize {
+        self.malloc_size_in_heap(None, ptr)
+    }
+
+    /// Get size of allocation at `ptr` in `heap`.
+    pub fn malloc_size_in_heap(
+        &mut self,
+        heap: Option<&mut HeapAllocator>,
+        ptr: ConstVoidPtr,
+    ) -> GuestUSize {
+        let (_, heap) = self.allocators_mut(heap);
+        heap.find_allocated_size(ptr.to_bits())
+    }
+
+    /// Resize allocation at `old_ptr` to `size` bytes in the default heap.
+    pub fn realloc(&mut self, old_ptr: MutVoidPtr, size: GuestUSize) -> MutVoidPtr {
+        self.realloc_in_heap(None, old_ptr, size)
+    }
+
+    /// Resize allocation at `old_ptr` to `size` bytes in `heap`.
+    pub fn realloc_in_heap(
+        &mut self,
+        mut heap: Option<&mut HeapAllocator>,
+        old_ptr: MutVoidPtr,
+        size: GuestUSize,
+    ) -> MutVoidPtr {
+        if old_ptr.is_null() {
+            return self.alloc_in_heap(heap, size);
+        }
+        // TODO: for a moment we always assume that we do not have enough size
+        //       to realloc inplace
+        let old_size = self.malloc_size_in_heap(heap.as_deref_mut(), old_ptr.cast_const());
+        if old_size >= size {
+            return old_ptr;
+        }
+        let new_ptr = self.alloc_in_heap(heap.as_deref_mut(), size);
+        self.memmove(new_ptr, old_ptr.cast_const(), old_size);
+        self.free_in_heap(heap, old_ptr);
+        new_ptr
+    }
+
     /// Allocate `size` bytes using the virtual memory allocator.
     /// All allocations are page aligned, page sized and zeroed.
-    pub fn vm_alloc(&mut self, size: GuestUSize) -> MutVoidPtr {
-        let allocation = match self.vm_allocator.allocate(None, size) {
-            None => {
-                panic!("Could not find large enough chunk to allocate {size:#x} bytes")
-            }
-            Some(chunk) => chunk,
-        };
+    pub fn vm_alloc(
+        &mut self,
+        address: Option<VAddr>,
+        size: GuestUSize,
+    ) -> Result<MutVoidPtr, VMAllocError> {
+        let allocation = self.vm_allocator.allocate(address, size)?;
 
         let ptr = Ptr::from_bits(allocation.base);
 
@@ -314,22 +353,37 @@ impl Memory {
         // TODO: Can this be done with vm_advise/equivalents
         self.bytes_at_mut(ptr.cast(), allocation.size.get()).fill(0);
 
-        ptr
+        Ok(ptr)
     }
 
+    /// Free allocations made with non vm prefixed `alloc` methods on
+    /// this type in the default heap.
     pub fn free(&mut self, ptr: MutVoidPtr) {
-        let size = self.heap_allocator().free(ptr.to_bits());
-        if size > Self::MAX_HEAP_ALLOCATION_SIZE {
-            self.vm_free(ptr, size);
+        self.free_in_heap(None, ptr);
+    }
+
+    /// Free an allocation made with one of the `alloc` methods in `heap`.
+    pub fn free_in_heap(&mut self, heap: Option<&mut HeapAllocator>, ptr: MutVoidPtr) {
+        let (vm, heap) = self.allocators_mut(heap);
+        let size = heap.free(vm, ptr.to_bits());
+
+        if size > HeapAllocator::HEAP_ALLOCATION_THRESHOLD {
+            // VM allocations are always 0 initialized.
+            // TODO: Can this be done with vm_advise/equivalents
+            self.bytes_at_mut(ptr.cast(), size).fill(0);
         }
-        self.bytes_at_mut(ptr.cast(), size).fill(0);
-        log_dbg!("Mem: freed {:?} ({:#x} bytes)", ptr, size);
+
+        log_dbg!("Freed {:?} ({:#x} bytes)", ptr, size);
     }
 
     /// Free an allocation made with `vm_alloc` or `reserve`. All allocations
     /// within the provided range are freed.
     pub fn vm_free(&mut self, ptr: MutVoidPtr, size: GuestUSize) {
-        self.vm_allocator.deallocate(ptr.to_bits(), size);
+        let freed = self.vm_allocator.deallocate(ptr.to_bits(), size);
+        // VM allocations are always 0 initialized.
+        // TODO: Can this be done with vm_advise/equivalents
+        self.bytes_at_mut(Ptr::from_bits(freed.base), freed.size.get())
+            .fill(0);
     }
 
     pub fn calloc(&mut self, size: GuestUSize) -> MutVoidPtr {
@@ -414,6 +468,21 @@ impl Memory {
     }
 
     pub fn reserve(&mut self, base: VAddr, size: GuestUSize) {
-        self.vm_allocator.allocate(Some(base), size);
+        self.vm_allocator.allocate(Some(base), size).unwrap();
+    }
+
+    /// Returns a mutable references to the vm allocator and either the
+    /// provided heap or the default heap if no heap is provided.
+    fn allocators_mut<'a>(
+        &'a mut self,
+        heap: Option<&'a mut HeapAllocator>,
+    ) -> (&'a mut VMAllocator, &'a mut HeapAllocator) {
+        let vm = &mut self.vm_allocator;
+        let heap = heap.unwrap_or_else(|| {
+            self.heap_allocator
+                .get_or_insert_with(|| HeapAllocator::new(vm, HeapAllocator::HEAP_CHUNK_SIZE))
+        });
+
+        (vm, heap)
     }
 }
