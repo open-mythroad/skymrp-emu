@@ -208,7 +208,8 @@ impl<T, const MUT: bool> SafeRead for Ptr<T, MUT> {}
 pub trait SafeWrite: Sized {}
 impl<T: SafeRead> SafeWrite for T {}
 
-type Bytes = [u8; 1 << 32];
+pub const LINEAR_MEMORY_SIZE: GuestUSize = 8 * 1024 * 1024;
+type Bytes = [u8; LINEAR_MEMORY_SIZE as usize];
 pub const PAGE_SIZE: GuestUSize = 4096;
 
 pub struct Memory {
@@ -229,7 +230,8 @@ impl Drop for Memory {
 impl Memory {
     pub const NULL_PAGE_SIZE: VAddr = 0x1000;
     pub const STACK_SIZE: GuestUSize = 1024 * 1024;
-    pub const STACK_LOW_END: VAddr = 0u32.wrapping_sub(Self::STACK_SIZE);
+    pub const STACK_HIGH_END: VAddr = LINEAR_MEMORY_SIZE;
+    pub const STACK_LOW_END: VAddr = Self::STACK_HIGH_END - Self::STACK_SIZE;
 
     pub fn new() -> Memory {
         let layout = std::alloc::Layout::new::<Bytes>();
@@ -260,18 +262,24 @@ impl Memory {
     }
 
     #[cold]
-    fn null_check_fail(at: u32, size: u32) {
+    fn bounds_check_fail(at: u32, size: u32) -> ! {
         panic!(
-            "Attempted null-page access at {:#x} ({:#x} bytes)",
+            "Guest memory access out of bounds at {:#x} ({:#x} bytes)",
             at, size
         )
     }
 
     pub fn bytes_at<const MUT: bool>(&self, ptr: Ptr<u8, MUT>, count: GuestUSize) -> &[u8] {
-        &self.bytes()[ptr.to_bits() as usize..][..count as usize]
+        self.bytes()
+            .get(ptr.to_bits() as usize..)
+            .and_then(|bytes| bytes.get(..count as usize))
+            .unwrap_or_else(|| Self::bounds_check_fail(ptr.to_bits(), count))
     }
     pub fn bytes_at_mut(&mut self, ptr: MutPtr<u8>, count: GuestUSize) -> &mut [u8] {
-        &mut self.bytes_mut()[ptr.to_bits() as usize..][..count as usize]
+        self.bytes_mut()
+            .get_mut(ptr.to_bits() as usize..)
+            .and_then(|bytes| bytes.get_mut(..count as usize))
+            .unwrap_or_else(|| Self::bounds_check_fail(ptr.to_bits(), count))
     }
 
     pub fn alloc(&mut self, size: GuestUSize) -> MutVoidPtr {
