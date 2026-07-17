@@ -9,8 +9,8 @@ use crate::haptics;
 use crate::libc;
 use crate::md5::{self, Md5State};
 use crate::mem::{
-    guest_size_of, ConstPtr, ConstVoidPtr, GuestUSize, GuestVar, Memory, MutPtr, MutVoidPtr, Ptr,
-    SafeRead,
+    guest_size_of, ConstPtr, ConstVoidPtr, GuestUSize, GuestVar, HeapAllocator, Memory, MutPtr,
+    MutVoidPtr, Ptr, SafeRead,
 };
 use crate::syscall::{export_c_data, export_c_func, Export, FunctionExports};
 use crate::Environment;
@@ -165,56 +165,362 @@ impl MrEvent {
 
 impl SafeRead for MrEvent {}
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LgMemFreeBlock {
+    pub next: u32,
+    pub len: u32,
+}
+
+impl SafeRead for LgMemFreeBlock {}
+
 pub struct MrHeap {
-    pub mem_base: GuestVar<u8>,
+    pub mem_base: GuestVar<MutPtr<u8>>,
     pub mem_len: GuestVar<i32>,
-    pub mem_end: GuestVar<u8>,
+    pub mem_end: GuestVar<MutPtr<u8>>,
     pub mem_left: GuestVar<i32>,
     pub mem_min: GuestVar<u32>,
     pub mem_top: GuestVar<u32>,
-    pub mem_free: MutPtr<u32>,
+    // Sentinel outside the heap; next is an offset from LG_mem_base.
+    pub mem_free: MutPtr<LgMemFreeBlock>,
+    allocator: Option<HeapAllocator>,
 }
 
 impl MrHeap {
-    const MR_HEAP_BASE: GuestUSize = Memory::NULL_PAGE_SIZE;
-    const MR_HEAP_LEN: GuestUSize = 32 * 1024 * 1024;
-    const MR_HEAP_END: GuestUSize = Self::MR_HEAP_BASE + Self::MR_HEAP_LEN;
+    const MR_HEAP_LEN: GuestUSize = 4 * 1024 * 1024;
+    const FREE_BLOCK_SIZE: GuestUSize = guest_size_of::<LgMemFreeBlock>();
+
     pub fn new(mem: &mut Memory) -> Self {
         Self {
-            mem_base: GuestVar::new(mem, Self::MR_HEAP_BASE as u8),
-            mem_len: GuestVar::new(mem, Self::MR_HEAP_LEN as i32),
-            mem_end: GuestVar::new(mem, Self::MR_HEAP_END as u8),
-            mem_left: GuestVar::new(mem, Self::MR_HEAP_LEN as i32),
-            mem_min: GuestVar::new(mem, Self::MR_HEAP_LEN),
+            mem_base: GuestVar::new(mem, MutPtr::<u8>::null()),
+            mem_len: GuestVar::new(mem, 0i32),
+            mem_end: GuestVar::new(mem, MutPtr::<u8>::null()),
+            mem_left: GuestVar::new(mem, 0i32),
+            mem_min: GuestVar::new(mem, 0u32),
             mem_top: GuestVar::new(mem, 0u32),
-            mem_free: write_u32_table(mem, &[0, 0]),
+            mem_free: mem.alloc_and_write(LgMemFreeBlock::default()),
+            allocator: None,
         }
     }
 
+    pub fn create(&mut self, mem: &mut Memory) -> Option<(GuestUSize, GuestUSize)> {
+        if self.allocator.is_some() {
+            let base = self.mem_base.get(mem).to_bits();
+            let len = self.mem_len.get(mem).try_into().ok()?;
+            return Some((base, len));
+        }
+
+        let heap = mem.create_heap(Self::MR_HEAP_LEN);
+        let (base, size) = heap.base_chunk()?;
+
+        self.mem_base.set(mem, MutPtr::from_bits(base));
+        self.mem_len.set(mem, size as i32);
+        self.mem_end.set(mem, MutPtr::from_bits(base + size));
+        self.mem_left.set(mem, size as i32);
+        self.mem_min.set(mem, size);
+        self.mem_top.set(mem, 0);
+        mem.write(self.mem_free, LgMemFreeBlock::default());
+        mem.write(
+            MutPtr::from_bits(base),
+            LgMemFreeBlock {
+                next: size,
+                len: size,
+            },
+        );
+        self.allocator = Some(heap);
+
+        Some((base, size))
+    }
+
+    pub fn destroy(&mut self, mem: &mut Memory) {
+        if let Some(heap) = self.allocator.take() {
+            mem.destroy_heap(heap);
+        }
+
+        self.mem_base.set(mem, MutPtr::<u8>::null());
+        self.mem_len.set(mem, 0);
+        self.mem_end.set(mem, MutPtr::<u8>::null());
+        self.mem_left.set(mem, 0);
+        self.mem_min.set(mem, 0);
+        self.mem_top.set(mem, 0);
+        mem.write(self.mem_free, LgMemFreeBlock::default());
+    }
+
     pub fn malloc(&mut self, mem: &mut Memory, len: u32) -> MutVoidPtr {
+        let Some(len) = Self::aligned_size(len) else {
+            log!("Mythroad: mr_malloc size overflow");
+            return MutVoidPtr::null();
+        };
         if len == 0 {
             return MutVoidPtr::null();
         }
 
-        let ptr = mem.alloc(len);
-        let left = self.mem_left.get(mem).saturating_sub(len as i32);
-        self.mem_left.set(mem, left);
-        self.mem_min.update(mem, |min| min.min(left as u32));
-        ptr
+        if self.allocator.is_none() && self.create(mem).is_none() {
+            log!("Mythroad: mr_malloc failed to initialize heap");
+            return MutVoidPtr::null();
+        }
+
+        let Ok(mem_left) = self.mem_left.get(mem).try_into() else {
+            log!("Mythroad: mr_malloc found invalid LG_mem_left");
+            return MutVoidPtr::null();
+        };
+        if len >= mem_left {
+            log!("Mythroad: mr_malloc cannot allocate {len:#x} bytes with {mem_left:#x} left");
+            return MutVoidPtr::null();
+        }
+
+        let base = self.mem_base.get(mem).to_bits();
+        let heap_len = self.mem_len.get(mem) as GuestUSize;
+        let mut previous_ptr = self.mem_free;
+        let mut previous = mem.read(previous_ptr);
+        let mut current_offset = previous.next;
+
+        // Free-list links are offsets relative to LG_mem_base.
+        while current_offset < heap_len {
+            let Some((current_ptr, current)) =
+                Self::read_free_block(mem, base, heap_len, current_offset)
+            else {
+                log!("Mythroad: mr_malloc found a corrupted free list");
+                return MutVoidPtr::null();
+            };
+
+            if current.len >= len {
+                if current.len == len {
+                    previous.next = current.next;
+                } else {
+                    let remainder_offset = current_offset + len;
+                    let remainder_ptr = MutPtr::from_bits(base + remainder_offset);
+                    mem.write(
+                        remainder_ptr,
+                        LgMemFreeBlock {
+                            next: current.next,
+                            len: current.len - len,
+                        },
+                    );
+                    previous.next = remainder_offset;
+                }
+                mem.write(previous_ptr, previous);
+
+                let left = mem_left - len;
+                self.mem_left.set(mem, left as i32);
+                self.mem_min.update(mem, |min| min.min(left));
+                self.mem_top
+                    .update(mem, |top| top.max(current_offset + len));
+                return MutPtr::<u8>::from_bits(current_ptr.to_bits()).cast_void();
+            }
+
+            previous_ptr = current_ptr;
+            previous = current;
+            current_offset = current.next;
+        }
+
+        if current_offset != heap_len {
+            log!("Mythroad: mr_malloc found a corrupted free-list terminator");
+        } else {
+            log!("Mythroad: mr_malloc could not find a contiguous {len:#x}-byte block");
+        }
+        MutVoidPtr::null()
     }
 
     pub fn free(&mut self, mem: &mut Memory, ptr: MutVoidPtr, len: u32) {
-        if ptr.is_null() || len == 0 {
+        let Some(len) = Self::aligned_size(len) else {
+            log!("Mythroad: mr_free size overflow");
+            return;
+        };
+        if ptr.is_null() || len == 0 || self.allocator.is_none() {
             return;
         }
 
-        mem.free(ptr);
+        let base = self.mem_base.get(mem).to_bits();
+        let heap_len = self.mem_len.get(mem) as GuestUSize;
+        let ptr_bits = ptr.to_bits();
+        let Some(offset) = ptr_bits.checked_sub(base) else {
+            log!("Mythroad: mr_free address is below LG_mem_base");
+            return;
+        };
+        let Some(block_end) = offset.checked_add(len) else {
+            log!("Mythroad: mr_free range overflow");
+            return;
+        };
+        if offset >= heap_len || block_end > heap_len {
+            log!("Mythroad: mr_free range is outside the heap");
+            return;
+        }
+
+        let mut previous_ptr = self.mem_free;
+        let mut previous = mem.read(previous_ptr);
+        let mut previous_offset = None;
+        let mut next_offset = previous.next;
+
+        // Keep the list address-ordered so adjacent blocks can be coalesced.
+        while next_offset < heap_len && next_offset < offset {
+            let Some((next_ptr, next)) = Self::read_free_block(mem, base, heap_len, next_offset)
+            else {
+                log!("Mythroad: mr_free found a corrupted free list");
+                return;
+            };
+            previous_ptr = next_ptr;
+            previous = next;
+            previous_offset = Some(next_offset);
+            next_offset = next.next;
+        }
+
+        if next_offset > heap_len
+            || previous_offset == Some(offset)
+            || (next_offset < heap_len && next_offset == offset)
+        {
+            log!("Mythroad: mr_free found an invalid or already free block");
+            return;
+        }
+
+        let next_block = if next_offset < heap_len {
+            let Some((_, next)) = Self::read_free_block(mem, base, heap_len, next_offset) else {
+                log!("Mythroad: mr_free found a corrupted next block");
+                return;
+            };
+            Some(next)
+        } else {
+            None
+        };
+
+        if let Some(previous_offset) = previous_offset {
+            let Some(previous_end) = previous_offset.checked_add(previous.len) else {
+                log!("Mythroad: mr_free found a corrupted previous block");
+                return;
+            };
+            if previous_end > offset {
+                log!("Mythroad: mr_free overlaps the previous free block");
+                return;
+            }
+        }
+        if next_offset < heap_len && block_end > next_offset {
+            log!("Mythroad: mr_free overlaps the next free block");
+            return;
+        }
+
+        let (free_ptr, mut free_block) = if previous_offset
+            .is_some_and(|previous_offset| previous_offset + previous.len == offset)
+        {
+            previous.len += len;
+            (previous_ptr, previous)
+        } else {
+            previous.next = offset;
+            mem.write(previous_ptr, previous);
+            (
+                MutPtr::from_bits(ptr_bits),
+                LgMemFreeBlock {
+                    next: next_offset,
+                    len,
+                },
+            )
+        };
+
+        if next_offset < heap_len && block_end == next_offset {
+            let next = next_block.unwrap();
+            free_block.next = next.next;
+            free_block.len += next.len;
+        }
+        mem.write(free_ptr, free_block);
+
         let left = self
             .mem_left
             .get(mem)
             .saturating_add(len as i32)
-            .min(Self::MR_HEAP_LEN as i32);
+            .min(self.mem_len.get(mem));
         self.mem_left.set(mem, left);
+    }
+
+    fn aligned_size(len: GuestUSize) -> Option<GuestUSize> {
+        len.checked_add(Self::FREE_BLOCK_SIZE - 1)
+            .map(|len| len & !(Self::FREE_BLOCK_SIZE - 1))
+    }
+
+    fn read_free_block(
+        mem: &Memory,
+        base: GuestUSize,
+        heap_len: GuestUSize,
+        offset: GuestUSize,
+    ) -> Option<(MutPtr<LgMemFreeBlock>, LgMemFreeBlock)> {
+        let header_end = offset.checked_add(Self::FREE_BLOCK_SIZE)?;
+        if header_end > heap_len {
+            return None;
+        }
+
+        let ptr = MutPtr::from_bits(base.checked_add(offset)?);
+        let block: LgMemFreeBlock = mem.read(ptr);
+        let block_end = offset.checked_add(block.len)?;
+        if block.len < Self::FREE_BLOCK_SIZE || block_end > heap_len || block.next > heap_len {
+            return None;
+        }
+
+        Some((ptr, block))
+    }
+}
+
+#[cfg(test)]
+mod mr_heap_tests {
+    use super::*;
+
+    #[test]
+    fn allocates_and_coalesces_guest_free_blocks() {
+        let mut mem = Memory::new();
+        let mut heap = MrHeap::new(&mut mem);
+        let (base, size) = heap.create(&mut mem).unwrap();
+
+        assert_eq!(mem.read(heap.mem_free), LgMemFreeBlock { next: 0, len: 0 });
+        assert_eq!(
+            mem.read(MutPtr::<LgMemFreeBlock>::from_bits(base)),
+            LgMemFreeBlock {
+                next: size,
+                len: size,
+            }
+        );
+
+        let first = heap.malloc(&mut mem, 1);
+        let second = heap.malloc(&mut mem, 16);
+        assert_eq!(first.to_bits(), base);
+        assert_eq!(second.to_bits(), base + 8);
+
+        heap.free(&mut mem, first, 1);
+        let reused = heap.malloc(&mut mem, 8);
+        assert_eq!(reused, first);
+
+        heap.free(&mut mem, reused, 8);
+        heap.free(&mut mem, second, 16);
+        assert_eq!(heap.mem_left.get(&mem), size as i32);
+        assert_eq!(
+            mem.read(MutPtr::<LgMemFreeBlock>::from_bits(base)),
+            LgMemFreeBlock {
+                next: size,
+                len: size,
+            }
+        );
+    }
+
+    #[test]
+    fn allocation_observes_guest_free_list_changes() {
+        let mut mem = Memory::new();
+        let mut heap = MrHeap::new(&mut mem);
+        let (base, size) = heap.create(&mut mem).unwrap();
+        let offset = 0x1000;
+
+        mem.write(
+            heap.mem_free,
+            LgMemFreeBlock {
+                next: offset,
+                len: 0,
+            },
+        );
+        mem.write(
+            MutPtr::from_bits(base + offset),
+            LgMemFreeBlock {
+                next: size,
+                len: size - offset,
+            },
+        );
+        heap.mem_left.set(&mut mem, (size - offset) as i32);
+
+        assert_eq!(heap.malloc(&mut mem, 16).to_bits(), base + offset);
     }
 }
 
@@ -864,18 +1170,40 @@ fn mr_printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i3
     libc::stdio::printf::printf(env, format, args)
 }
 
-fn mr_mem_get(env: &mut Environment, mem_base: u32, mem_len: u32) {
+fn mr_mem_get(env: &mut Environment, mem_base: MutPtr<MutPtr<u8>>, mem_len: MutPtr<u32>) -> i32 {
     log_dbg!(
-        "Mythroad: mr_mem_get(mem_base={mem_base:#x}, mem_len={mem_len:#x}) called from {:#x}",
+        "Mythroad: mr_mem_get(mem_base={:#x}, mem_len={:#x}) called from {:#x}",
+        mem_base.to_bits(),
+        mem_len.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    if mem_base.is_null() || mem_len.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    let Some((base, len)) = env.mythroad.state.heap.create(&mut env.mem) else {
+        env.mem.write(mem_base, MutPtr::<u8>::null());
+        env.mem.write(mem_len, 0);
+        return MrResult::Failed as i32;
+    };
+
+    env.mem.write(mem_base, MutPtr::from_bits(base));
+    env.mem.write(mem_len, len);
+
+    MrResult::Success as i32
 }
 
-fn mr_mem_free(env: &mut Environment, mem: u32, len: u32) {
+fn mr_mem_free(env: &mut Environment, mem: MutPtr<u8>, len: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_mem_free(mem={mem:#x}, len={len:#x}) called from {:#x}",
+        "Mythroad: mr_mem_free(mem={:#x}, len={len:#x}) called from {:#x}",
+        mem.to_bits(),
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    env.mythroad.state.heap.destroy(&mut env.mem);
+
+    MrResult::Success as i32
 }
 
 fn mr_timer_start(env: &mut Environment, interval: u16) -> i32 {

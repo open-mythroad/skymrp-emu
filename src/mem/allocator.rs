@@ -510,6 +510,12 @@ impl HeapAllocator {
         self.external_chunks.into_iter().chain(self.backing_chunks)
     }
 
+    pub fn base_chunk(&self) -> Option<(GuestUSize, GuestUSize)> {
+        self.backing_chunks
+            .first()
+            .map(|chunk| (chunk.base, chunk.size.get()))
+    }
+
     fn grow(&mut self, vm: &mut VMAllocator) {
         log!("Attempting to grow heap.");
         let chunk = vm

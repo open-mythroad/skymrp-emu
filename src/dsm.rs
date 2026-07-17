@@ -1044,6 +1044,14 @@ pub(crate) fn mr_sleep(ms: u32) {
 }
 
 fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>) -> i32 {
+    if env.mythroad.state.heap.create(&mut env.mem).is_none() {
+        env.mythroad
+            .state
+            .mr_state
+            .set(&mut env.mem, MrRunState::Error as u32);
+        return MrResult::Failed as i32;
+    }
+
     let null_function = GuestFunction::from_addr_with_thumb_bit(0);
 
     env.mythroad.state.mr_event_function = null_function;
