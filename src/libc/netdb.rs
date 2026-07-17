@@ -29,7 +29,7 @@ pub struct addrinfo {
     ai_addr: MutPtr<sockaddr>,
     ai_next: MutPtr<addrinfo>,
 }
-impl SafeRead for addrinfo {}
+unsafe impl SafeRead for addrinfo {}
 
 fn getaddrinfo(
     env: &mut Environment,

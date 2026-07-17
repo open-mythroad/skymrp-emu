@@ -9,7 +9,7 @@ pub struct Md5State {
     buf: [u8; 64],
 }
 
-impl SafeRead for Md5State {}
+unsafe impl SafeRead for Md5State {}
 
 const INITIAL_ABCD: [u32; 4] = [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476];
 const PAD: [u8; 64] = {

@@ -15,4 +15,4 @@ pub(super) struct timeval {
     pub(super) tv_usec: suseconds_t,
 }
 
-impl SafeRead for timeval {}
+unsafe impl SafeRead for timeval {}

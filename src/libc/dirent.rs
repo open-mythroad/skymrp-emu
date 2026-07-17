@@ -7,7 +7,7 @@ use std::collections::HashMap;
 pub(crate) struct DIR {
     idx: usize,
 }
-impl SafeRead for DIR {}
+unsafe impl SafeRead for DIR {}
 
 pub const MAXPATHLEN: usize = 1024;
 
@@ -26,7 +26,7 @@ pub struct dirent {
     pub d_type: u8,
     pub d_name: [u8; MAXPATHLEN],
 }
-impl SafeRead for dirent {}
+unsafe impl SafeRead for dirent {}
 
 #[derive(Default)]
 pub struct State {

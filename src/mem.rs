@@ -192,18 +192,18 @@ impl<T, const MUT: bool> std::ops::AddAssign<GuestUSize> for Ptr<T, MUT> {
     }
 }
 
-pub trait SafeRead: Sized {}
-impl SafeRead for i8 {}
-impl SafeRead for u8 {}
-impl SafeRead for i16 {}
-impl SafeRead for u16 {}
-impl SafeRead for i32 {}
-impl SafeRead for u32 {}
-impl SafeRead for i64 {}
-impl SafeRead for u64 {}
-impl SafeRead for f32 {}
-impl SafeRead for f64 {}
-impl<T, const MUT: bool> SafeRead for Ptr<T, MUT> {}
+pub unsafe trait SafeRead: Sized {}
+unsafe impl SafeRead for i8 {}
+unsafe impl SafeRead for u8 {}
+unsafe impl SafeRead for i16 {}
+unsafe impl SafeRead for u16 {}
+unsafe impl SafeRead for i32 {}
+unsafe impl SafeRead for u32 {}
+unsafe impl SafeRead for i64 {}
+unsafe impl SafeRead for u64 {}
+unsafe impl SafeRead for f32 {}
+unsafe impl SafeRead for f64 {}
+unsafe impl<T, const MUT: bool> SafeRead for Ptr<T, MUT> {}
 
 pub trait SafeWrite: Sized {}
 impl<T: SafeRead> SafeWrite for T {}

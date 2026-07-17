@@ -113,7 +113,7 @@ pub struct MrSound {
     pub type_: i32,
 }
 
-impl SafeRead for MrSound {}
+unsafe impl SafeRead for MrSound {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -126,7 +126,7 @@ pub struct MrDatetime {
     pub second: u8,
 }
 
-impl SafeRead for MrDatetime {}
+unsafe impl SafeRead for MrDatetime {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -139,7 +139,7 @@ pub struct MrUserInfo {
     pub spare: [u8; 12],
 }
 
-impl SafeRead for MrUserInfo {}
+unsafe impl SafeRead for MrUserInfo {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -163,7 +163,7 @@ impl MrEvent {
     }
 }
 
-impl SafeRead for MrEvent {}
+unsafe impl SafeRead for MrEvent {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -172,7 +172,7 @@ pub struct LgMemFreeBlock {
     pub len: u32,
 }
 
-impl SafeRead for LgMemFreeBlock {}
+unsafe impl SafeRead for LgMemFreeBlock {}
 
 pub struct MrHeap {
     pub mem_base: GuestVar<MutPtr<u8>>,

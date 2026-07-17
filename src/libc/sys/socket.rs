@@ -39,7 +39,7 @@ pub struct sockaddr {
     sa_family: sa_family_t,
     sa_data: [u8; 14],
 }
-impl SafeRead for sockaddr {}
+unsafe impl SafeRead for sockaddr {}
 impl sockaddr {
     /// Makes an IPv4 sockaddr from 4 bytes for ip and a port.
     ///
@@ -91,7 +91,7 @@ pub struct fd_set {
     // 32 4-byte ints should be enough for 1024 file descriptors
     fds_bits: [i32; 32],
 }
-impl SafeRead for fd_set {}
+unsafe impl SafeRead for fd_set {}
 
 struct SocketHostObject {
     /// Type of the socket, [SOCK_STREAM] for TCP or [SOCK_DGRAM] for UDP

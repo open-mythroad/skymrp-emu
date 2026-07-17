@@ -17,7 +17,7 @@ pub struct MrBitmap {
     pub p: MutPtr<u16>,
 }
 
-impl SafeRead for MrBitmap {}
+unsafe impl SafeRead for MrBitmap {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -29,7 +29,7 @@ pub struct MrBitmapDraw {
     pub y: u16,
 }
 
-impl SafeRead for MrBitmapDraw {}
+unsafe impl SafeRead for MrBitmapDraw {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -41,7 +41,7 @@ pub struct MrTransMatrix {
     pub rop: u16,
 }
 
-impl SafeRead for MrTransMatrix {}
+unsafe impl SafeRead for MrTransMatrix {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -56,7 +56,7 @@ pub struct MrTransBitmap {
     pub p_zion: MutPtr<u8>,
 }
 
-impl SafeRead for MrTransBitmap {}
+unsafe impl SafeRead for MrTransBitmap {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -127,7 +127,7 @@ pub struct MrJGraphicsMutableValues {
     pub color_565: u16,
 }
 
-impl SafeRead for MrJGraphicsMutableValues {}
+unsafe impl SafeRead for MrJGraphicsMutableValues {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -142,7 +142,7 @@ pub struct MrJGraphicsContext {
     pub real_screen_height: i32,
 }
 
-impl SafeRead for MrJGraphicsContext {}
+unsafe impl SafeRead for MrJGraphicsContext {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -154,7 +154,7 @@ pub struct MrJImage {
     pub transcolor: u16,
 }
 
-impl SafeRead for MrJImage {}
+unsafe impl SafeRead for MrJImage {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -171,7 +171,7 @@ pub struct MrTile {
     pub tileh: u16,
 }
 
-impl SafeRead for MrTile {}
+unsafe impl SafeRead for MrTile {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -179,7 +179,7 @@ pub struct MrSprite {
     pub h: u16,
 }
 
-impl SafeRead for MrSprite {}
+unsafe impl SafeRead for MrSprite {}
 
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
