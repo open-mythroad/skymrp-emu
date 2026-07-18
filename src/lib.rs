@@ -45,15 +45,16 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
     let mut options = options::Options::default();
     for arg in args {
         if arg == "--help" {
-            log_dbg!("{}", USAGE);
+            echo!("{}", USAGE);
+            echo!("{}", options::OPTIONS_HELP);
             return Ok(());
         } else if options.parse_argument(&arg)? {
             option_args.push(arg);
         } else if mrp_path.is_none() {
             mrp_path = Some(PathBuf::from(arg));
         } else {
-            log!("{}", USAGE);
-            log!("{}", options::OPTIONS_HELP);
+            echo!("{}", USAGE);
+            echo!("{}", options::OPTIONS_HELP);
             return Err(format!("Unexpected arguments: {:?}", arg));
         }
     }
@@ -61,7 +62,7 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
     let mrp_path = if let Some(mrp_path) = mrp_path {
         mrp_path
     } else {
-        log!("No app specified, Use the --help flag to see command-line usage.");
+        echo!("No app specified, Use the --help flag to see command-line usage.");
         return Err("Path to mrp must be specified".to_string());
     };
 
