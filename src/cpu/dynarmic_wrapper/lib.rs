@@ -1,3 +1,8 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /// Opaque type from C
 #[allow(non_camel_case_types)]
 pub type skymrp_DynarmicWrapper = std::ffi::c_void;
