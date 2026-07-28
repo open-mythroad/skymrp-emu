@@ -13,7 +13,8 @@ use crate::libc::posix_io::{self, OpenFlag};
 use crate::mem::{guest_size_of, ConstPtr, ConstVoidPtr, MutPtr, MutVoidPtr};
 use crate::mrp;
 use crate::mythroad::{
-    mr_free, mr_malloc, mr_stop, reset_resource_tables, MrEvent, MrResult, MrRunState, MrTimerState,
+    mr_free, mr_malloc, mr_stop, reset_resource_tables, MrEvent, MrResult, MrRunState,
+    MrTimerState, MR_FILE_MAX_LEN,
 };
 use crate::Environment;
 
@@ -133,7 +134,12 @@ pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> i32 {
         _ => "*A",
     };
 
-    libc::string::memset(env, env.mythroad.state.pack_filename.cast_void(), 0, 128);
+    libc::string::memset(
+        env,
+        env.mythroad.state.pack_filename.cast_void(),
+        0,
+        MR_FILE_MAX_LEN,
+    );
 
     let pack_filename_src = env.mem.alloc_and_write_cstr(pack_filename.as_bytes());
     libc::string::strcpy(
@@ -146,19 +152,19 @@ pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> i32 {
         env,
         env.mythroad.state.old_pack_filename.cast_void(),
         0,
-        128,
+        MR_FILE_MAX_LEN,
     );
     libc::string::memset(
         env,
         env.mythroad.state.old_start_filename.cast_void(),
         0,
-        128,
+        MR_FILE_MAX_LEN,
     );
     libc::string::memset(
         env,
         env.mythroad.state.start_file_parameter.cast_void(),
         0,
-        128,
+        MR_FILE_MAX_LEN,
     );
 
     log_dbg!(
@@ -888,14 +894,14 @@ pub(crate) fn test_com1(
                 env,
                 env.mythroad.state.old_pack_filename.cast_void(),
                 0,
-                128,
+                MR_FILE_MAX_LEN,
             );
             if !input1.is_null() {
                 libc::string::strncpy(
                     env,
                     env.mythroad.state.old_pack_filename,
                     input1.cast_const(),
-                    127,
+                    MR_FILE_MAX_LEN - 1,
                 );
             }
 
@@ -903,7 +909,7 @@ pub(crate) fn test_com1(
                 env,
                 env.mythroad.state.old_start_filename.cast_void(),
                 0,
-                128,
+                MR_FILE_MAX_LEN,
             );
             let start_file_name = env
                 .mem
@@ -912,7 +918,7 @@ pub(crate) fn test_com1(
                 env,
                 env.mythroad.state.old_start_filename,
                 start_file_name.cast_const(),
-                127,
+                MR_FILE_MAX_LEN - 1,
             );
             MrResult::Success as i32
         }
@@ -921,14 +927,14 @@ pub(crate) fn test_com1(
                 env,
                 env.mythroad.state.start_file_parameter.cast_void(),
                 0,
-                128,
+                MR_FILE_MAX_LEN,
             );
             if !input1.is_null() {
                 libc::string::strncpy(
                     env,
                     env.mythroad.state.start_file_parameter,
                     input1.cast_const(),
-                    127,
+                    MR_FILE_MAX_LEN - 1,
                 );
             }
             MrResult::Success as i32
@@ -1103,10 +1109,20 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
     reset_resource_tables(env);
 
     let entry = entry.unwrap_or("_dsm");
-    libc::string::memset(env, env.mythroad.state.entry.cast_void(), 0, 128);
+    libc::string::memset(
+        env,
+        env.mythroad.state.entry.cast_void(),
+        0,
+        MR_FILE_MAX_LEN,
+    );
 
     let entry_src = env.mem.alloc_and_write_cstr(entry.as_bytes());
-    libc::string::strncpy(env, env.mythroad.state.entry, entry_src.cast_const(), 127);
+    libc::string::strncpy(
+        env,
+        env.mythroad.state.entry,
+        entry_src.cast_const(),
+        MR_FILE_MAX_LEN - 1,
+    );
 
     env.mythroad
         .state

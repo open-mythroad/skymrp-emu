@@ -581,7 +581,7 @@ pub struct State {
     pub network: network::State,
 }
 
-const MR_FILE_MAX_LEN: GuestUSize = 128;
+pub(crate) const MR_FILE_MAX_LEN: GuestUSize = 128;
 const MR_M0_FILES: GuestUSize = 8;
 const MR_SMS_CFG_BUF_LEN: GuestUSize = 120 * 36;
 
