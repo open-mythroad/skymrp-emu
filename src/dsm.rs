@@ -147,6 +147,7 @@ pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> i32 {
         env.mythroad.state.pack_filename,
         pack_filename_src.cast_const(),
     );
+    env.mem.free(pack_filename_src.cast_void());
 
     libc::string::memset(
         env,
@@ -920,6 +921,7 @@ pub(crate) fn test_com1(
                 start_file_name.cast_const(),
                 MR_FILE_MAX_LEN - 1,
             );
+            env.mem.free(start_file_name.cast_void());
             MrResult::Success as i32
         }
         4 => {
@@ -1123,6 +1125,7 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
         entry_src.cast_const(),
         MR_FILE_MAX_LEN - 1,
     );
+    env.mem.free(entry_src.cast_void());
 
     env.mythroad
         .state
