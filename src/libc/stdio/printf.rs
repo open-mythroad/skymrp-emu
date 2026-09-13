@@ -60,6 +60,19 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
             None
         };
 
+        let length_modifier = match env.mem.read(current_format) {
+            b'l' => {
+                current_format += 1;
+                if env.mem.read(current_format) == b'l' {
+                    current_format += 1;
+                    Some("ll")
+                } else {
+                    Some("l")
+                }
+            }
+            _ => None,
+        };
+
         let specifier = env.mem.read(current_format);
         current_format += 1;
 
@@ -77,16 +90,22 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
 
         match specifier {
             b'c' => {
+                // TODO: support length modifier
+                assert!(length_modifier.is_none());
                 let c: u8 = args.next(env);
                 assert!(pad_char == ' ' && pad_width == 0); // TODO
                 res.push(c);
             }
             b's' => {
+                // TODO: support length modifier
+                assert!(length_modifier.is_none());
                 let c_string: ConstPtr<u8> = args.next(env);
                 assert!(pad_char == ' ' && pad_width == 0); // TODO
                 res.extend_from_slice(env.mem.cstr_at(c_string));
             }
             b'd' | b'i' | b'u' => {
+                // Note: on 32-bit system int and long are i32,
+                // so length_modifier is ignored
                 let int: i64 = if specifier == b'u' {
                     let uint: u32 = args.next(env);
                     uint.into()
@@ -112,6 +131,8 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
                 }
             }
             b'x' => {
+                // Note: on 32-bit system unsigned int and unsigned long
+                // are u32, so length_modifier is ignored
                 let uint: u32 = args.next(env);
                 if pad_width > 0 {
                     assert!(precision.is_none()); // TODO
