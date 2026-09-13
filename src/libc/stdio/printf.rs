@@ -107,9 +107,18 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
                 // Note: on 32-bit system int and long are i32,
                 // so length_modifier is ignored
                 let int: i64 = if specifier == b'u' {
-                    let uint: u32 = args.next(env);
-                    uint.into()
+                    if length_modifier == Some("ll") {
+                        let uint: u64 = args.next(env);
+                        uint.try_into().unwrap()
+                    } else {
+                        assert!(length_modifier.is_none() || length_modifier == Some("l"));
+                        let uint: u32 = args.next(env);
+                        uint.into()
+                    }
+                } else if length_modifier == Some("ll") {
+                    args.next(env)
                 } else {
+                    assert!(length_modifier.is_none() || length_modifier == Some("l"));
                     let int: i32 = args.next(env);
                     int.into()
                 };

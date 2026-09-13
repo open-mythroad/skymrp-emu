@@ -284,7 +284,7 @@ macro_rules! impl_GuestArg_with {
             }
 
             fn to_regs(self, regs: &mut [u32]) {
-                <u32 as GuestArg>::to_regs(self as $with, regs)
+                <$with as GuestArg>::to_regs(self as $with, regs)
             }
         }
     };
@@ -354,6 +354,25 @@ impl GuestArg for VaList {
         todo!()
     }
 }
+
+// GuestArg implementations for u64-like types
+
+impl GuestArg for u64 {
+    const REG_COUNT: usize = 2;
+    fn from_regs(regs: &[u32]) -> Self {
+        let mut bytes = [0u8; 8];
+        bytes[0..4].copy_from_slice(&regs[0].to_le_bytes());
+        bytes[4..8].copy_from_slice(&regs[1].to_le_bytes());
+        u64::from_le_bytes(bytes)
+    }
+    fn to_regs(self, regs: &mut [u32]) {
+        let bytes = self.to_le_bytes();
+        regs[0] = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        regs[1] = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+    }
+}
+
+impl_GuestArg_with!(i64, u64);
 
 pub trait GuestRet: std::fmt::Debug + Sized {
     /// Read the return value from registers.
