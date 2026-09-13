@@ -17,7 +17,6 @@ pub struct Environment {
     pub window: window::Window,
     pub mem: mem::Memory,
     pub fs: fs::Fs,
-    pub executable: mrp::Mrp,
     pub syscall: syscall::Syscall,
     pub cpu: cpu::Cpu,
     pub libc_state: libc::State,
@@ -36,14 +35,14 @@ impl Environment {
         mem.reserve(0, mem::Memory::NULL_PAGE_SIZE);
 
         let (fs, guest_path) = fs::Fs::new(mrp_path.as_path());
-        let executable = mrp::Mrp::load_from_file(guest_path, &fs, &mut mem)
+        let initial_mrp_base = mrp::load_from_file(guest_path, &fs, &mut mem)
             .map_err(|e| format!("Could not load MRP file: {}", e))?;
 
         let mut syscall = syscall::Syscall::new();
 
         let mythroad = mythroad::Mythroad::new(&mut mem);
-        mythroad.register_app(&mut mem, 0, executable.guest_base);
-        syscall.setup_stubs(&executable, &mut mem, &mythroad);
+        mythroad.register_app(&mut mem, 0, initial_mrp_base);
+        syscall.setup_stubs(&mut mem, &mythroad);
         let mut cpu = cpu::Cpu::new();
         stack::prep_stack_for_start(&mut mem, &mut cpu);
         let libc_state = Default::default();
@@ -57,7 +56,6 @@ impl Environment {
             window,
             mem,
             fs,
-            executable,
             syscall,
             cpu,
             libc_state,
@@ -69,7 +67,8 @@ impl Environment {
     /// Run the emulator.
     pub fn run(&mut self) {
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            dsm::mr_start_dsm_c(self, Some("*A")) == mythroad::MrResult::Success as i32
+            dsm::mr_start_dsm_c(self, mrp::MR_START_FILE_NAME, Some("*A"))
+                == mythroad::MrResult::Success as i32
         }));
 
         match res {
@@ -181,12 +180,7 @@ impl Environment {
                             return;
                         }
 
-                        let f = self.syscall.get_svc_handler(
-                            &self.executable,
-                            &mut self.mem,
-                            svc_pc,
-                            svc,
-                        );
+                        let f = self.syscall.get_svc_handler(&mut self.mem, svc_pc, svc);
                         f.call_from_guest(self);
                     }
                 }

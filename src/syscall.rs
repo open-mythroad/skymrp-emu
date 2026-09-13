@@ -5,7 +5,6 @@
  */
 use crate::abi::{CallFromGuest, GuestFunction};
 use crate::mem::{Memory, MutPtr};
-use crate::mrp::Mrp;
 use crate::mythroad::Mythroad;
 
 type HostFunction = &'static dyn CallFromGuest;
@@ -76,7 +75,7 @@ impl Syscall {
         self.function_table.expect("Function table not initialized")
     }
 
-    pub fn setup_stubs(&mut self, _bin: &Mrp, mem: &mut Memory, mythroad: &Mythroad) {
+    pub fn setup_stubs(&mut self, mem: &mut Memory, mythroad: &Mythroad) {
         assert!(self.return_to_host_routine.is_none());
         self.return_to_host_routine = {
             let routine = [encode_a32_svc(Self::SVC_RETURN_TO_HOST), encode_a32_trap()];
@@ -126,13 +125,7 @@ impl Syscall {
 
     /// Return a host function that can be called to handle an SVC instruction
     /// encountered during CPU emulation.
-    pub fn get_svc_handler(
-        &mut self,
-        _bin: &Mrp,
-        _mem: &mut Memory,
-        svc_pc: u32,
-        svc: u32,
-    ) -> HostFunction {
+    pub fn get_svc_handler(&mut self, _mem: &mut Memory, svc_pc: u32, svc: u32) -> HostFunction {
         match svc {
             Self::SVC_RETURN_TO_HOST => unreachable!(),
             Self::SVC_HOST_FUNCTIONS_BASE.. => {

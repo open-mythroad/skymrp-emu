@@ -23,6 +23,7 @@ struct GlyphBitmap {
     bits: Vec<u8>,
 }
 
+#[repr(u16)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FontSize {
     Small,

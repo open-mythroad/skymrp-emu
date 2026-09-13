@@ -625,11 +625,7 @@ impl State {
         let mr_sms_return_flag = GuestVar::new(mem, 0u32);
         let mr_sms_return_val = GuestVar::new(mem, 0u32);
         let sysinfo = SysInfo::default();
-        let screen_buf = alloc_array(
-            mem,
-            sysinfo.screen_width as u32 * sysinfo.screen_height as u32,
-        );
-        let mr_screen_buf = GuestVar::new(mem, screen_buf);
+        let mr_screen_buf = GuestVar::new(mem, MutPtr::<u16>::null());
         let mr_screen_w = GuestVar::new(mem, sysinfo.screen_width as i32);
         let mr_screen_h = GuestVar::new(mem, sysinfo.screen_height as i32);
         let mr_screen_bit = GuestVar::new(mem, sysinfo.screen_bits as i32);
@@ -1115,6 +1111,7 @@ fn mr_stop_ex(env: &mut Environment, freemem: i16) -> i32 {
             .state
             .mr_screen_buf
             .set(&mut env.mem, MutPtr::<u16>::null());
+        env.mythroad.state.heap.destroy(&mut env.mem);
     }
 
     MrResult::Success as i32
@@ -1358,6 +1355,43 @@ fn mr_exit(env: &mut Environment) -> i32 {
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
+    let old_pack_filename = env.mythroad.state.old_pack_filename;
+    if env.mem.read(old_pack_filename) != 0 {
+        libc::string::memset(
+            env,
+            env.mythroad.state.pack_filename.cast_void(),
+            0,
+            MR_FILE_MAX_LEN,
+        );
+        libc::string::strncpy(
+            env,
+            env.mythroad.state.pack_filename,
+            old_pack_filename.cast_const(),
+            MR_FILE_MAX_LEN - 1,
+        );
+
+        libc::string::memset(
+            env,
+            env.mythroad.state.start_filename.cast_void(),
+            0,
+            MR_FILE_MAX_LEN,
+        );
+        libc::string::strncpy(
+            env,
+            env.mythroad.state.start_filename,
+            env.mythroad.state.old_start_filename.cast_const(),
+            MR_FILE_MAX_LEN - 1,
+        );
+
+        env.mythroad
+            .state
+            .mr_state
+            .set(&mut env.mem, MrRunState::Restart as u32);
+        mr_timer_start(env, 100);
+
+        return MrResult::Success as i32;
+    }
+
     env.mythroad
         .state
         .mr_state
@@ -1429,7 +1463,7 @@ fn mr_play_sound(
     }
 }
 
-fn mr_stop_sound(env: &mut Environment, type_: i32) -> i32 {
+pub(crate) fn mr_stop_sound(env: &mut Environment, type_: i32) -> i32 {
     log_dbg!(
         "Mythroad: mr_stopSound(type={type_}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]

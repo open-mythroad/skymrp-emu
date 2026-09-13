@@ -13,8 +13,8 @@ use crate::libc::posix_io::{self, OpenFlag};
 use crate::mem::{guest_size_of, ConstPtr, ConstVoidPtr, MutPtr, MutVoidPtr};
 use crate::mrp;
 use crate::mythroad::{
-    mr_free, mr_malloc, mr_stop, reset_resource_tables, MrEvent, MrResult, MrRunState,
-    MrTimerState, MR_FILE_MAX_LEN,
+    mr_free, mr_malloc, mr_stop, mr_stop_sound, reset_resource_tables, MrEvent, MrResult,
+    MrRunState, MrTimerState, MR_FILE_MAX_LEN,
 };
 use crate::Environment;
 
@@ -126,7 +126,7 @@ enum MrMsdcStatus {
     NotUseful,
 }
 
-pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> i32 {
+pub fn mr_start_dsm_c(env: &mut Environment, start_file: &str, entry: Option<&str>) -> i32 {
     let pack_filename = match entry {
         Some(entry) if entry.starts_with('*') => entry,
         Some(entry) if entry.starts_with('%') => &entry[1..],
@@ -173,7 +173,7 @@ pub fn mr_start_dsm_c(env: &mut Environment, entry: Option<&str>) -> i32 {
         pack_filename
     );
 
-    intra_start(env, mrp::START_FILE_NAME, entry)
+    intra_start(env, start_file, entry)
 }
 
 fn mr_file_handle_to_posix_fd(handle: u32) -> Option<posix_io::FileDescriptor> {
@@ -978,6 +978,7 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
             .unwrap()
             .to_owned();
         mr_stop(env);
+        mr_stop_sound(env, 0);
         intra_start(env, &start_filename, None);
         return MrResult::Success as i32;
     }
@@ -1057,6 +1058,13 @@ pub(crate) fn mr_sleep(ms: u32) {
 }
 
 fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>) -> i32 {
+    let is_mr_start = start_file_name == mrp::MR_START_FILE_NAME;
+    let start_file_name = if is_mr_start {
+        mrp::START_FILE_NAME
+    } else {
+        start_file_name
+    };
+
     if env.mythroad.state.heap.create(&mut env.mem).is_none() {
         env.mythroad
             .state
@@ -1072,12 +1080,6 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
     env.mythroad.state.mr_stop_function = null_function;
     env.mythroad.state.mr_pause_app_function = null_function;
     env.mythroad.state.mr_resume_app_function = null_function;
-
-    let previous_c_function_p = env.mythroad.state.mr_c_function_p;
-    let previous_c_function_p_len = env.mythroad.state.mr_c_function_p_len;
-    if !previous_c_function_p.is_null() {
-        mr_free(env, previous_c_function_p, previous_c_function_p_len);
-    }
 
     env.mythroad.state.mr_c_function_p = MutVoidPtr::null();
     env.mythroad.state.mr_c_function_p_len = 0;
@@ -1140,6 +1142,9 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
     }
 
     if ret != MrResult::Success as i32 {
+        if is_mr_start {
+            log!("Mythroad: Lua MRP applications are not supported");
+        }
         env.mythroad
             .state
             .mr_state
@@ -1186,10 +1191,13 @@ fn reset_screen_buffer(env: &mut Environment) -> bool {
 fn mr_do_ext(env: &mut Environment, filename: &str) -> i32 {
     log_dbg!("Mythroad: mr_doExt(filename={filename})");
 
-    match env.executable.read_file(&env.mem, filename) {
+    match read_current_package_file(env, filename) {
         Ok(ext_data) if !ext_data.is_empty() => {
             let len = ext_data.len().try_into().unwrap();
             let addr = mr_malloc(env, len);
+            if addr.is_null() {
+                return MrResult::Failed as i32;
+            }
             env.mem
                 .bytes_at_mut(addr.cast(), len)
                 .copy_from_slice(&ext_data);
@@ -1219,6 +1227,31 @@ fn mr_do_ext(env: &mut Environment, filename: &str) -> i32 {
             MrResult::Failed as i32
         }
     }
+}
+
+pub(crate) fn read_current_package_file(
+    env: &mut Environment,
+    filename: &str,
+) -> Result<Vec<u8>, String> {
+    let pack_filename = env
+        .mem
+        .cstr_at_utf8(env.mythroad.state.pack_filename.cast_const())
+        .map_err(|_| "Invalid current package filename".to_owned())?
+        .to_owned();
+
+    let pack_prefix = pack_filename.as_bytes().first().copied().unwrap_or(0);
+    if pack_prefix != b'*' && pack_prefix != b'$' {
+        let pack_data = env
+            .fs
+            .read(GuestPath::new(&pack_filename))
+            .map_err(|_| format!("Could not read current package: {pack_filename}"))?;
+        return mrp::read_file_from_bytes(&pack_data, filename);
+    }
+
+    let (pack_base, pack_len) = memory_pack_range(env, &pack_filename)
+        .ok_or_else(|| format!("Current memory package not found: {pack_filename}"))?;
+    let pack_data = env.mem.bytes_at(pack_base.cast_const(), pack_len);
+    mrp::read_file_from_bytes(pack_data, filename)
 }
 
 pub(crate) fn mr_read_file(
@@ -1287,15 +1320,10 @@ fn read_mrp_file_from_memory(
         return MutVoidPtr::null();
     };
 
-    let entry = if let Some(entry) = executable_entry_for_memory_pack(env, pack_filename, filename)
-    {
-        entry
-    } else {
-        let pack_data = env.mem.bytes_at(pack_base.cast_const(), pack_len);
-        match mrp::find_entry(pack_data, filename) {
-            Ok(Some(entry)) => entry,
-            Ok(None) | Err(_) => return MutVoidPtr::null(),
-        }
+    let pack_data = env.mem.bytes_at(pack_base.cast_const(), pack_len);
+    let entry = match mrp::find_entry(pack_data, filename) {
+        Ok(Some(entry)) => entry,
+        Ok(None) | Err(_) => return MutVoidPtr::null(),
     };
 
     if lookfor == 1 {
@@ -1331,23 +1359,6 @@ fn read_mrp_file_from_memory(
     };
 
     write_file_data_to_guest(env, &file_data, filelen)
-}
-
-fn executable_entry_for_memory_pack(
-    env: &Environment,
-    pack_filename: &str,
-    filename: &str,
-) -> Option<mrp::MrpEntry> {
-    if pack_filename.as_bytes().get(0..2) != Some(b"*A") {
-        return None;
-    }
-
-    let pack_base_bits: u32 = env.mem.read(env.mythroad.state.mr_m0_files);
-    if pack_base_bits != env.executable.guest_base.to_bits() {
-        return None;
-    }
-
-    env.executable.entry(filename).cloned()
 }
 
 fn memory_pack_range(env: &Environment, pack_filename: &str) -> Option<(MutPtr<u8>, u32)> {
@@ -1427,18 +1438,32 @@ pub(crate) fn mr_test_com_c(
         input.to_bits()
     );
 
-    if kind == 800 {
-        env.mem
-            .write(input.cast(), env.syscall.function_table_ptr());
-        env.mythroad.state.mr_c_function_load =
-            GuestFunction::from_addr_with_thumb_bit(input.to_bits() + 8);
+    match kind {
+        800 => {
+            env.mem
+                .write(input.cast(), env.syscall.function_table_ptr());
+            env.mythroad.state.mr_c_function_load =
+                GuestFunction::from_addr_with_thumb_bit(input.to_bits() + 8);
 
-        let mr_c_function_load = env.mythroad.state.mr_c_function_load;
-        return mr_c_function_load.call_from_host(env, (code,));
+            let mr_c_function_load = env.mythroad.state.mr_c_function_load;
+            mr_c_function_load.call_from_host(env, (code,))
+        }
+        801 => {
+            let mr_c_function = env.mythroad.state.mr_c_function;
+            let mr_c_function_p = env.mythroad.state.mr_c_function_p;
+
+            mr_c_function.call_from_host(
+                env,
+                (
+                    mr_c_function_p,
+                    code,
+                    input,
+                    len,
+                    MutPtr::<MutPtr<u8>>::null(),
+                    MutPtr::<i32>::null(),
+                ),
+            )
+        }
+        _ => MrResult::Ignored as i32,
     }
-
-    let mr_c_function = env.mythroad.state.mr_c_function;
-    let mr_c_function_p = env.mythroad.state.mr_c_function_p;
-
-    mr_c_function.call_from_host(env, (mr_c_function_p, code, input, len))
 }
