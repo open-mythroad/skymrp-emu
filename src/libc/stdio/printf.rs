@@ -9,6 +9,9 @@ use crate::mem::{ConstPtr, MutPtr};
 use crate::Environment;
 use std::io::Write;
 
+const INTEGER_SPECIFIERS: [u8; 6] = [b'd', b'i', b'o', b'u', b'x', b'X'];
+const FLOAT_SPECIFIERS: [u8; 1] = [b'f'];
+
 fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -> Vec<u8> {
     log_dbg!(
         "Processing format string {:?}",
@@ -46,6 +49,18 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
             pad_width
         };
 
+        let precision = if env.mem.read(current_format) == b'.' {
+            current_format += 1;
+            let mut precision: usize = 0;
+            while let c @ b'0'..=b'9' = env.mem.read(current_format) {
+                precision = precision * 10 + (c - b'0') as usize;
+                current_format += 1;
+            }
+            Some(precision)
+        } else {
+            None
+        };
+
         let specifier = env.mem.read(current_format);
         current_format += 1;
 
@@ -53,6 +68,12 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
         if specifier == b'%' {
             res.push(b'%');
             continue;
+        }
+
+        if precision.is_some() {
+            assert!(
+                INTEGER_SPECIFIERS.contains(&specifier) || FLOAT_SPECIFIERS.contains(&specifier)
+            )
         }
 
         match specifier {
@@ -74,20 +95,44 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
                     let int: i32 = args.next(env);
                     int.into()
                 };
-                // TODO: avoid copy?
+
+                let int_with_precision = if precision.is_some_and(|value| value > 0) {
+                    format!("{:01$}", int, precision.unwrap())
+                } else {
+                    format!("{}", int)
+                };
+
                 if pad_width > 0 {
-                    if pad_char == '0' {
-                        res.extend_from_slice(format!("{:01$}", int, pad_width).as_bytes());
+                    if pad_char == '0' && precision.is_none() {
+                        write!(&mut res, "{:0>1$}", int_with_precision, pad_width).unwrap();
                     } else {
-                        res.extend_from_slice(format!("{:1$}", int, pad_width).as_bytes());
+                        write!(&mut res, "{:>1$}", int_with_precision, pad_width).unwrap();
                     }
                 } else {
-                    res.extend_from_slice(format!("{}", int).as_bytes());
+                    res.extend_from_slice(int_with_precision.as_bytes());
                 }
             }
             b'x' => {
-                let int: i32 = args.next(env);
-                res.extend_from_slice(format!("{:x}", int).as_bytes());
+                let uint: u32 = args.next(env);
+                if pad_width > 0 {
+                    assert!(precision.is_none()); // TODO
+                    let pad_width = pad_width as usize;
+                    if pad_char == '0' && precision.is_none() {
+                        write!(&mut res, "{uint:0>pad_width$x}").unwrap();
+                    } else {
+                        write!(&mut res, "{uint:>pad_width$x}").unwrap();
+                    }
+                } else {
+                    let tmp = if precision.is_some_and(|value| value > 0) {
+                        format!("{:01$x}", uint, precision.unwrap())
+                    } else {
+                        if let Some(precision) = precision {
+                            assert!(precision == 0 && uint != 0); // TODO
+                        }
+                        format!("{uint:x}")
+                    };
+                    res.extend_from_slice(tmp.as_bytes());
+                }
             }
             // TODO: more specifiers
             _ => unimplemented!("Format character '{}'", specifier as char),
