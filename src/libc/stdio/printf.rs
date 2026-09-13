@@ -4,7 +4,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use crate::abi::{DotDotDot, VaList};
-use crate::libc::stdlib::str_to_int_inner_generic;
 use crate::mem::{ConstPtr, MutPtr};
 use crate::Environment;
 use std::io::Write;
