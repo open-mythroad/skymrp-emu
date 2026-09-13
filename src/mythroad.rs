@@ -1172,7 +1172,11 @@ fn mr_printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i3
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
-    libc::stdio::printf::printf(env, format, args)
+    let len = libc::stdio::printf::printf(env, format, args);
+    if std::io::Write::write_all(&mut std::io::stdout(), b"\n").is_err() {
+        return -1;
+    }
+    len
 }
 
 fn mr_mem_get(env: &mut Environment, mem_base: MutPtr<MutPtr<u8>>, mem_len: MutPtr<u32>) -> i32 {
