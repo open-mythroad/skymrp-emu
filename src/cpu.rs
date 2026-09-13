@@ -129,6 +129,20 @@ impl Cpu {
         unsafe { skymrp_DynarmicWrapper_set_cpsr(self.dynarmic_wrapper, cpsr) }
     }
 
+    pub fn clear_cache(&mut self) {
+        unsafe { skymrp_DynarmicWrapper_clear_cache(self.dynarmic_wrapper) }
+    }
+
+    pub fn invalidate_cache_range(&mut self, start_address: u32, length: usize) {
+        unsafe {
+            skymrp_DynarmicWrapper_invalidate_cache_range(
+                self.dynarmic_wrapper,
+                start_address,
+                length,
+            )
+        }
+    }
+
     /// Get PC with the Thumb bit appropriately set.
     pub fn pc_with_thumb_bit(&self) -> GuestFunction {
         let pc = self.regs()[Self::PC];

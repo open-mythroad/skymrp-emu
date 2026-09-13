@@ -941,7 +941,12 @@ pub(crate) fn test_com1(
             }
             MrResult::Success as i32
         }
-        7 | 8 | 9 => MrResult::Success as i32,
+        7 | 8 => MrResult::Success as i32,
+        9 => {
+            env.cpu
+                .invalidate_cache_range(input1.to_bits(), len as usize);
+            MrResult::Success as i32
+        }
         _ => {
             log_dbg!("Mythroad: _mr_TestCom1 got unknown param: code={input0}");
             MrResult::Ignored as i32
@@ -979,6 +984,7 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
             .to_owned();
         mr_stop(env);
         mr_stop_sound(env, 0);
+        env.cpu.clear_cache();
         intra_start(env, &start_filename, None);
         return MrResult::Success as i32;
     }
@@ -1442,6 +1448,8 @@ pub(crate) fn mr_test_com_c(
         800 => {
             env.mem
                 .write(input.cast(), env.syscall.function_table_ptr());
+            env.cpu
+                .invalidate_cache_range(input.to_bits(), len as usize);
             env.mythroad.state.mr_c_function_load =
                 GuestFunction::from_addr_with_thumb_bit(input.to_bits() + 8);
 

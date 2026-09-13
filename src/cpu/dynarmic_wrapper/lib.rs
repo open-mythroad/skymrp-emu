@@ -19,6 +19,12 @@ unsafe extern "C" {
     pub unsafe fn skymrp_DynarmicWrapper_regs_mut(cpu: *mut skymrp_DynarmicWrapper) -> *mut u32;
     pub unsafe fn skymrp_DynarmicWrapper_cpsr(cpu: *const skymrp_DynarmicWrapper) -> u32;
     pub unsafe fn skymrp_DynarmicWrapper_set_cpsr(cpu: *mut skymrp_DynarmicWrapper, cpsr: u32);
+    pub unsafe fn skymrp_DynarmicWrapper_clear_cache(cpu: *mut skymrp_DynarmicWrapper);
+    pub unsafe fn skymrp_DynarmicWrapper_invalidate_cache_range(
+        cpu: *mut skymrp_DynarmicWrapper,
+        start_address: u32,
+        length: usize,
+    );
     pub unsafe fn skymrp_DynarmicWrapper_run(
         cpu: *mut skymrp_DynarmicWrapper,
         mem: *mut skymrp_Memory,

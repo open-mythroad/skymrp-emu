@@ -179,6 +179,11 @@ namespace skymrp::cpu
 
         std::uint32_t cpsr() const { return cpu->Cpsr(); }
         void set_cpsr(std::uint32_t cpsr) { cpu->SetCpsr(cpsr); }
+        void clear_cache() { cpu->ClearCache(); }
+        void invalidate_cache_range(std::uint32_t start_address, std::size_t length)
+        {
+            cpu->InvalidateCacheRange(start_address, length);
+        }
 
         std::int32_t run(skymrp_Memory *mem, std::uint64_t *ticks)
         {
@@ -236,6 +241,15 @@ namespace skymrp::cpu
                                              std::uint32_t cpsr)
         {
             cpu->set_cpsr(cpsr);
+        }
+        void skymrp_DynarmicWrapper_clear_cache(DynarmicWrapper *cpu)
+        {
+            cpu->clear_cache();
+        }
+        void skymrp_DynarmicWrapper_invalidate_cache_range(
+            DynarmicWrapper *cpu, std::uint32_t start_address, std::size_t length)
+        {
+            cpu->invalidate_cache_range(start_address, length);
         }
 
         std::int32_t skymrp_DynarmicWrapper_run(DynarmicWrapper *cpu, skymrp_Memory *mem,
