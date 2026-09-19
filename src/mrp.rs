@@ -13,6 +13,7 @@ pub const START_FILE_NAME: &str = "cfunction.ext";
 pub const LOGO_EXT_FILE_NAME: &str = "logo.ext";
 const MRP_MAGIC: &[u8; 4] = b"MRPG";
 const MRP_HEADER_SIZE: usize = 16;
+const LEGACY_MRP_HEADER_SIZE: usize = 8;
 
 #[derive(Debug, Clone, Copy)]
 pub struct MrpHeader {
@@ -80,7 +81,7 @@ pub fn parse_entries(data: &[u8]) -> Result<HashMap<String, MrpEntry>, String> {
     let header = MrpHeader::parse(data)?;
 
     if header.info_size <= 232 {
-        return Err(format!("Invalid MRP info size: {}", header.info_size));
+        return parse_legacy_entries(data, &header);
     }
 
     let mrp_file_size = usize::try_from(header.mrp_file_size)
@@ -200,6 +201,59 @@ fn parse_entries_in_list(
         entries
             .entry(entry_name)
             .or_insert(MrpEntry { offset, size });
+    }
+
+    Ok(entries)
+}
+
+fn parse_legacy_entries(
+    data: &[u8],
+    header: &MrpHeader,
+) -> Result<HashMap<String, MrpEntry>, String> {
+    let info_size = usize::try_from(header.info_size)
+        .map_err(|_| "MRP info size does not fit in usize".to_string())?;
+    let mut pos = LEGACY_MRP_HEADER_SIZE
+        .checked_add(info_size)
+        .ok_or_else(|| "Legacy MRP entry offset overflow".to_string())?;
+    let mut entries = HashMap::new();
+
+    while pos < data.len() {
+        let name_len = read_u32_le(data, pos)? as usize;
+        pos = pos
+            .checked_add(4)
+            .ok_or_else(|| "Legacy MRP entry name offset overflow".to_string())?;
+        if name_len == 0 || name_len >= 0x80 {
+            return Err(format!("Invalid legacy MRP entry name length: {name_len}"));
+        }
+
+        let name_end = pos
+            .checked_add(name_len)
+            .ok_or_else(|| "Legacy MRP entry name range overflow".to_string())?;
+        let raw_name = data
+            .get(pos..name_end)
+            .ok_or_else(|| "Legacy MRP entry name is out of bounds".to_string())?;
+        let entry_name =
+            String::from_utf8_lossy(raw_name.split(|byte| *byte == 0).next().unwrap_or(raw_name))
+                .into_owned();
+        pos = name_end;
+
+        let size = read_u32_le(data, pos)?;
+        pos = pos
+            .checked_add(4)
+            .ok_or_else(|| "Legacy MRP entry data offset overflow".to_string())?;
+        let data_end = pos
+            .checked_add(size as usize)
+            .ok_or_else(|| "Legacy MRP entry range overflow".to_string())?;
+        if data_end > data.len() {
+            return Err("Legacy MRP entry data is out of bounds".to_string());
+        }
+
+        entries.entry(entry_name).or_insert(MrpEntry {
+            offset: u32::try_from(pos)
+                .map_err(|_| "Legacy MRP entry offset does not fit in u32".to_string())?,
+            size,
+        });
+        pos = data_end;
     }
 
     Ok(entries)

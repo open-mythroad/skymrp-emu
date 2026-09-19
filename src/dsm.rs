@@ -1327,9 +1327,8 @@ fn read_mrp_file_from_memory(
     };
 
     let pack_data = env.mem.bytes_at(pack_base.cast_const(), pack_len);
-    let entry = match mrp::find_entry(pack_data, filename) {
-        Ok(Some(entry)) => entry,
-        Ok(None) | Err(_) => return MutVoidPtr::null(),
+    let Ok(Some(entry)) = mrp::find_entry(pack_data, filename) else {
+        return MutVoidPtr::null();
     };
 
     if lookfor == 1 {
