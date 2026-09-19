@@ -134,7 +134,7 @@ pub struct MrDatetime {
 unsafe impl SafeRead for MrDatetime {}
 
 #[repr(C)]
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct MrUserInfo {
     pub imei: [u8; 16],
     pub imsi: [u8; 16],
@@ -145,6 +145,19 @@ pub struct MrUserInfo {
 }
 
 unsafe impl SafeRead for MrUserInfo {}
+
+impl Default for MrUserInfo {
+    fn default() -> Self {
+        Self {
+            imei: *b"864086040622841\0",
+            imsi: *b"460019707327302\0",
+            manufactory: *b"SkyMRP\0\0",
+            r#type: *b"SkyMRP\0\0",
+            ver: make_plat_version(1, 8, 0, 18, 0),
+            spare: [0; 12],
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -1291,17 +1304,7 @@ fn mr_get_user_info(env: &mut Environment, user_info: MutPtr<MrUserInfo>) -> i32
 
     libc::string::memset(env, user_info.cast_void(), 0, guest_size_of::<MrUserInfo>());
 
-    env.mem.write(
-        user_info,
-        MrUserInfo {
-            imei: [0; 16],
-            imsi: [0; 16],
-            manufactory: [0; 8],
-            r#type: [0; 8],
-            ver: make_plat_version(1, 8, 0, 18, 0),
-            spare: [0; 12],
-        },
-    );
+    env.mem.write(user_info, MrUserInfo::default());
 
     MrResult::Success as i32
 }
