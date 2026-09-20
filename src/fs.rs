@@ -106,6 +106,40 @@ impl FsNode {
     }
 }
 
+fn find_child<'a>(children: &'a HashMap<String, FsNode>, name: &str) -> Option<&'a FsNode> {
+    children.get(name).or_else(|| {
+        children
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, node)| node)
+    })
+}
+
+fn find_child_mut<'a>(
+    children: &'a mut HashMap<String, FsNode>,
+    name: &str,
+) -> Option<&'a mut FsNode> {
+    if children.contains_key(name) {
+        return children.get_mut(name);
+    }
+    children
+        .iter_mut()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+        .map(|(_, node)| node)
+}
+
+fn remove_child(children: &mut HashMap<String, FsNode>, name: &str) -> Option<FsNode> {
+    let key = if children.contains_key(name) {
+        name.to_owned()
+    } else {
+        children
+            .keys()
+            .find(|key| key.eq_ignore_ascii_case(name))
+            .cloned()?
+    };
+    children.remove(&key)
+}
+
 /// Path of the applications directory in the guest filesystem.
 pub const MYTHROAD: &GuestPath = GuestPath::new_const("/mythroad");
 
@@ -489,7 +523,7 @@ impl Fs {
             else {
                 return None;
             };
-            node = children.get(*component)?
+            node = find_child(children, component)?
         }
         Some(node)
     }
@@ -516,7 +550,7 @@ impl Fs {
             else {
                 return None;
             };
-            parent = children.get_mut(component)?
+            parent = find_child_mut(children, component)?
         }
 
         Some((parent, final_component.to_string()))
@@ -671,6 +705,18 @@ impl Fs {
             _ => unimplemented!(),
         };
 
+        let from_components = resolve_path(from.as_ref(), Some(&self.working_directory));
+        let to_components = resolve_path(to.as_ref(), Some(&self.working_directory));
+        // Prevent case-only renames from removing the existing VFS node.
+        if from_components.len() == to_components.len()
+            && from_components
+                .iter()
+                .zip(to_components)
+                .all(|(from, to)| from.eq_ignore_ascii_case(to))
+        {
+            return Ok(());
+        }
+
         if self.lookup_node(to.as_ref()).is_none() {
             // In case target guest node do not exist, we need to create one
             let mut options = GuestOpenOptions::new();
@@ -696,7 +742,7 @@ impl Fs {
             let FsNode::Directory { children, .. } = parent_from else {
                 panic!()
             };
-            children.remove(&component).unwrap();
+            remove_child(children, &component).unwrap();
         }
         res.map_err(|_| ())
     }
@@ -729,7 +775,7 @@ impl Fs {
 
         // Open an existing file if possible
 
-        if let Some(existing_file) = children.get(&new_filename) {
+        if let Some(existing_file) = find_child(children, &new_filename) {
             match existing_file {
                 FsNode::File {
                     ref location,
@@ -835,7 +881,7 @@ impl Fs {
             return Err(FsError::ReadonlyParentDir);
         };
 
-        let Some(node) = children.get(&node_name) else {
+        let Some(node) = find_child(children, &node_name) else {
             // There is no file/directory with this name
             return Err(FsError::DoesNotExist);
         };
@@ -885,7 +931,7 @@ impl Fs {
             }
         }
 
-        children.remove(&node_name).unwrap();
+        remove_child(children, &node_name).unwrap();
 
         Ok(())
     }
@@ -926,7 +972,7 @@ impl Fs {
         };
 
         // There's already a file/directory with this name
-        if children.contains_key(&new_dir_name) {
+        if find_child(children, &new_dir_name).is_some() {
             return Err(FsError::AlreadyExist);
         }
 
