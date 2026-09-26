@@ -13,8 +13,8 @@ use crate::libc::posix_io::{self, OpenFlag};
 use crate::mem::{guest_size_of, ConstPtr, ConstVoidPtr, MutPtr, MutVoidPtr};
 use crate::mrp;
 use crate::mythroad::{
-    mr_free, mr_malloc, mr_stop, mr_stop_sound, reset_resource_tables, MrEvent, MrResult,
-    MrRunState, MrTimerState, MR_FILE_MAX_LEN,
+    mr_free, mr_malloc, mr_stop, mr_stop_sound, reset_resource_tables, DsmDiskInfo, MrEvent,
+    MrResult, MrRunState, MrTimerState, MR_FILE_MAX_LEN,
 };
 use crate::Environment;
 
@@ -57,6 +57,7 @@ const MR_SET_KEY_END: u32 = 1214;
 const MR_MSDC_STATUS: u32 = 1218;
 const MR_GET_FILE_POS: u32 = 1231;
 const MR_SET_VOL: u32 = 1302;
+const MR_GET_FREE_SPACE: u32 = 1305;
 const MR_WIFI_AVAILABLE: u32 = 1327;
 const MR_USE_WIFI: u32 = 1328;
 const MR_BACKGROUND_SUPPORT: u32 = 1391;
@@ -271,6 +272,40 @@ pub(crate) fn mr_plat_ex(
         MR_SWITCHPATH => dsm_switch_path(env, input, input_len, output, output_len),
         MR_UCS2GB => mr_ucs2gb(env, input, input_len, output),
         MR_TURN_ON_BACKLIGHT | MR_TURN_OFF_BACKLIGHT => MrResult::Success as i32,
+        MR_GET_FREE_SPACE => {
+            if input.is_null() || input_len == 0 || output.is_null() || output_len.is_null() {
+                return MrResult::Failed as i32;
+            }
+
+            let disk_info = match env.mem.read(input).to_ascii_lowercase() {
+                b'a' => DsmDiskInfo {
+                    total: 1722,
+                    total_unit: 1024,
+                    available: 1271,
+                    available_unit: 1024,
+                },
+                b'b' => DsmDiskInfo {
+                    total: 95,
+                    total_unit: 1024,
+                    available: 77,
+                    available_unit: 1024,
+                },
+                b'c' => DsmDiskInfo {
+                    total: 1874,
+                    total_unit: 1024 * 1024,
+                    available: 1873,
+                    available_unit: 1024 * 1024,
+                },
+                _ => return MrResult::Ignored as i32,
+            };
+
+            let disk_info_ptr = env.mythroad.state.dsm_disk_info.ptr();
+            env.mem.write(disk_info_ptr, disk_info);
+            env.mem.write(output, disk_info_ptr.cast());
+            env.mem
+                .write(output_len, guest_size_of::<DsmDiskInfo>() as i32);
+            MrResult::Success as i32
+        }
         _ => {
             log_dbg!("Mythroad: mr_platEx(code={code}, input={input:?}, input_len={input_len}) not implemented");
             MrResult::Ignored as i32

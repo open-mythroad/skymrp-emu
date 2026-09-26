@@ -161,6 +161,17 @@ impl Default for MrUserInfo {
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
+pub(crate) struct DsmDiskInfo {
+    pub total: u32,
+    pub total_unit: u32,
+    pub available: u32,
+    pub available_unit: u32,
+}
+
+unsafe impl SafeRead for DsmDiskInfo {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct MrEvent {
     pub code: i32,
     pub param0: i32,
@@ -580,6 +591,7 @@ pub struct State {
     pub mr_screen_w: GuestVar<i32>,
     pub mr_screen_h: GuestVar<i32>,
     pub mr_screen_bit: GuestVar<i32>,
+    pub dsm_disk_info: GuestVar<DsmDiskInfo>,
     pub mr_bitmap: MutPtr<MrBitmap>,
     pub mr_tile: MutPtr<MrTile>,
     pub mr_map: MutPtr<MutPtr<i16>>,
@@ -642,6 +654,7 @@ impl State {
         let mr_screen_w = GuestVar::new(mem, sysinfo.screen_width as i32);
         let mr_screen_h = GuestVar::new(mem, sysinfo.screen_height as i32);
         let mr_screen_bit = GuestVar::new(mem, sysinfo.screen_bits as i32);
+        let dsm_disk_info = GuestVar::new(mem, DsmDiskInfo::default());
         let mr_bitmap = alloc_array(mem, BITMAPMAX + 1);
         let mr_tile = alloc_array(mem, TILEMAX);
         let mr_map = alloc_array(mem, TILEMAX);
@@ -718,6 +731,7 @@ impl State {
             mr_screen_w,
             mr_screen_h,
             mr_screen_bit,
+            dsm_disk_info,
             mr_bitmap,
             mr_tile,
             mr_map,
