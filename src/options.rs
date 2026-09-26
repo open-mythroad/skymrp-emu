@@ -21,7 +21,7 @@ impl Default for Options {
         Options {
             scale: NonZeroU32::new(1).unwrap(),
             fullscreen: false,
-            font_size_override: None,
+            font_size_override: Some(FontSize::Medium),
         }
     }
 }
