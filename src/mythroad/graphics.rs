@@ -328,14 +328,15 @@ pub(super) fn draw_point(env: &mut Environment, x: i16, y: i16, native_color: u1
     let state = &env.mythroad.state;
 
     let screen_buf = state.mr_screen_buf.get(&env.mem);
-    let screen_w = state.mr_screen_w.get(&env.mem) as i16;
-    let screen_h = state.mr_screen_h.get(&env.mem) as i16;
+    let screen_w = state.mr_screen_w.get(&env.mem);
+    let screen_h = state.mr_screen_h.get(&env.mem);
+    let (x, y) = (i32::from(x), i32::from(y));
 
     if x < 0 || y < 0 || x >= screen_w || y >= screen_h {
         return;
     }
 
-    let offset = screen_w.saturating_mul(y).saturating_add(x) as u32;
+    let offset = (screen_w * y + x) as u32;
 
     env.mem.write(screen_buf + offset, native_color);
 }
