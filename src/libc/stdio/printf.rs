@@ -9,7 +9,7 @@ use crate::Environment;
 use std::io::Write;
 
 const INTEGER_SPECIFIERS: [u8; 6] = [b'd', b'i', b'o', b'u', b'x', b'X'];
-const FLOAT_SPECIFIERS: [u8; 1] = [b'f'];
+const FLOAT_SPECIFIERS: [u8; 3] = [b'f', b'e', b'g'];
 
 fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -> Vec<u8> {
     log_dbg!(
@@ -175,6 +175,80 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
                     res.extend_from_slice(tmp.as_bytes());
                 }
             }
+            // Float specifiers
+            b'f' => {
+                let float: f64 = args.next(env);
+                let pad_width = pad_width as usize;
+                let precision = precision.unwrap_or(6);
+
+                let formatted = f_format(float, pad_width, pad_char, precision);
+                res.extend_from_slice(formatted.as_bytes());
+            }
+            b'e' => {
+                let float: f64 = args.next(env);
+                let pad_width = pad_width as usize;
+                let precision = precision.unwrap_or(6);
+
+                let formatted = e_format(float, pad_width, pad_char, precision);
+                res.extend_from_slice(formatted.as_bytes());
+            }
+            b'g' => {
+                let float: f64 = args.next(env);
+                let pad_width = pad_width as usize;
+
+                // Reference https://en.cppreference.com/w/c/io/vfprintf
+                let P: i32 = if let Some(precision) = precision {
+                    if precision == 0 {
+                        1
+                    } else {
+                        precision.try_into().unwrap()
+                    }
+                } else {
+                    6
+                };
+                let X: i32 = if float == 0.0 {
+                    0
+                } else {
+                    float.abs().log10().floor() as i32
+                };
+                log_dbg!(
+                    "float {}, pad_width {}, pad_char '{}', P {}, X {}",
+                    float,
+                    pad_width,
+                    pad_char,
+                    P,
+                    X
+                );
+                if P > X && X >= -4 {
+                    let precision: usize = (P - X - 1).try_into().unwrap();
+
+                    let result = f_format(float, pad_width, pad_char, precision);
+
+                    // TODO: skip if alternative representation is requested
+                    let trimmed_result = if result.contains('.') {
+                        result.trim_end_matches('0').trim_end_matches('.')
+                    } else {
+                        &result
+                    };
+
+                    let trimmed_result = if pad_width > 0 && trimmed_result.len() < pad_width {
+                        if pad_char == '0' {
+                            format!("{trimmed_result:0>pad_width$}")
+                        } else {
+                            format!("{trimmed_result:>pad_width$}")
+                        }
+                    } else {
+                        trimmed_result.to_string()
+                    };
+
+                    res.extend_from_slice(trimmed_result.as_bytes());
+                } else {
+                    let precision: usize = (P - 1).try_into().unwrap();
+
+                    let formatted = e_format(float, pad_width, pad_char, precision);
+                    res.extend_from_slice(formatted.as_bytes());
+                }
+            }
             // TODO: more specifiers
             _ => unimplemented!("Format character '{}'", specifier as char),
         }
@@ -183,6 +257,38 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
     log_dbg!("=> {:?}", std::str::from_utf8(&res));
 
     res
+}
+
+fn f_format(float: f64, pad_width: usize, pad_char: char, precision: usize) -> String {
+    if pad_char == '0' {
+        format!("{float:0pad_width$.precision$}")
+    } else {
+        assert!(pad_char == ' '); // TODO
+        format!("{float:pad_width$.precision$}")
+    }
+}
+
+fn e_format(float: f64, pad_width: usize, pad_char: char, precision: usize) -> String {
+    let exponent = if float == 0.0 {
+        0.0
+    } else {
+        float.abs().log10().floor()
+    };
+    let mantissa = float.abs() / 10f64.powf(exponent);
+    let sign = if float.is_sign_negative() { "-" } else { "" };
+    if pad_char == '0' {
+        let float_exp_notation = format!("{mantissa:.precision$}e{exponent:+03}");
+        format!(
+            "{0}{1:0>2$}",
+            sign,
+            float_exp_notation,
+            pad_width.saturating_sub(sign.len())
+        )
+    } else {
+        assert!(pad_char == ' '); // TODO
+        let float_exp_notation = format!("{sign}{mantissa:.precision$}e{exponent:+03}");
+        format!("{float_exp_notation:>pad_width$}")
+    }
 }
 
 pub(crate) fn sprintf(
