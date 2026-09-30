@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use crate::abi::{DotDotDot, VaList};
-use crate::mem::{ConstPtr, MutPtr};
+use crate::mem::{ConstPtr, MutPtr, MutVoidPtr};
 use crate::Environment;
 use std::io::Write;
 
@@ -160,6 +160,18 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
                         }
                         format!("{uint:x}")
                     };
+                    res.extend_from_slice(tmp.as_bytes());
+                }
+            }
+            b'p' => {
+                assert!(length_modifier.is_none());
+                let ptr: MutVoidPtr = args.next(env);
+                let tmp = format!("{:#x}", ptr.to_bits());
+                if pad_width > 0 {
+                    let pad_width = pad_width as usize;
+                    assert!(pad_char == ' '); // TODO
+                    write!(&mut res, "{tmp:>pad_width$}").unwrap();
+                } else {
                     res.extend_from_slice(tmp.as_bytes());
                 }
             }
