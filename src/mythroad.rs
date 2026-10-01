@@ -879,7 +879,9 @@ fn mr_memcpy(env: &mut Environment, dst: MutVoidPtr, src: ConstVoidPtr, n: u32) 
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
-    libc::string::memcpy(env, dst, src, n)
+    let result = libc::string::memcpy(env, dst, src, n);
+    env.cpu.notify_memory_write(dst.to_bits(), n);
+    result
 }
 
 fn mr_memmove(env: &mut Environment, dst: MutVoidPtr, src: ConstVoidPtr, n: u32) -> MutVoidPtr {
@@ -890,7 +892,9 @@ fn mr_memmove(env: &mut Environment, dst: MutVoidPtr, src: ConstVoidPtr, n: u32)
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
-    libc::string::memmove(env, dst, src, n)
+    let result = libc::string::memmove(env, dst, src, n);
+    env.cpu.notify_memory_write(dst.to_bits(), n);
+    result
 }
 
 fn mr_strcpy(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>) -> MutPtr<u8> {

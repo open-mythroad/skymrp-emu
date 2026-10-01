@@ -4,7 +4,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use crate::abi::GuestFunction;
-use crate::mem::{ConstPtr, Memory, MutPtr, Ptr, SafeRead, SafeWrite};
+use crate::mem::{
+    ConstPtr, GuestUSize, Memory, MutPtr, Ptr, SafeRead, SafeWrite, LINEAR_MEMORY_SIZE, PAGE_SIZE,
+};
 
 // Import functions from C++
 use skymrp_dynarmic_wrapper::*;
@@ -73,6 +75,7 @@ extern "C" fn skymrp_cpu_write_u64(mem: *mut skymrp_Memory, addr: VAddr, value: 
 
 pub struct Cpu {
     dynarmic_wrapper: *mut skymrp_DynarmicWrapper,
+    executable_pages: Vec<bool>,
 }
 
 impl Drop for Cpu {
@@ -106,7 +109,10 @@ impl Cpu {
 
     pub fn new() -> Cpu {
         let dynarmic_wrapper = unsafe { skymrp_DynarmicWrapper_new() };
-        Cpu { dynarmic_wrapper }
+        Cpu {
+            dynarmic_wrapper,
+            executable_pages: vec![false; (LINEAR_MEMORY_SIZE / PAGE_SIZE) as usize],
+        }
     }
 
     pub fn regs(&self) -> &[u32; 16] {
@@ -133,13 +139,45 @@ impl Cpu {
         unsafe { skymrp_DynarmicWrapper_clear_cache(self.dynarmic_wrapper) }
     }
 
-    pub fn invalidate_cache_range(&mut self, start_address: u32, length: usize) {
+    fn invalidate_cache_range_inner(&mut self, start_address: u32, length: usize) {
         unsafe {
             skymrp_DynarmicWrapper_invalidate_cache_range(
                 self.dynarmic_wrapper,
                 start_address,
                 length,
             )
+        }
+    }
+
+    pub fn invalidate_cache_range(&mut self, start_address: VAddr, length: usize) {
+        if length != 0 && start_address < LINEAR_MEMORY_SIZE {
+            let size = length.min(u32::MAX as usize) as u32;
+            let end = start_address.saturating_add(size).min(LINEAR_MEMORY_SIZE);
+            let first_page = (start_address / PAGE_SIZE) as usize;
+            let last_page = ((end - 1) / PAGE_SIZE) as usize;
+            self.executable_pages[first_page..=last_page].fill(true);
+        }
+
+        self.invalidate_cache_range_inner(start_address, length);
+    }
+
+    /// Notify the CPU backend after host code writes guest memory.
+    /// JIT backends invalidate translated code; interpreter backends may ignore this.
+    pub fn notify_memory_write(&mut self, start: VAddr, size: GuestUSize) {
+        if size == 0 || start >= LINEAR_MEMORY_SIZE {
+            return;
+        }
+
+        let end = start.saturating_add(size).min(LINEAR_MEMORY_SIZE);
+        let first_page = (start / PAGE_SIZE) as usize;
+        let last_page = ((end - 1) / PAGE_SIZE) as usize;
+        if self.executable_pages[first_page..=last_page]
+            .iter()
+            .any(|executable| *executable)
+        {
+            let page_start = first_page as VAddr * PAGE_SIZE;
+            let page_end = (last_page as VAddr + 1) * PAGE_SIZE;
+            self.invalidate_cache_range_inner(page_start, (page_end - page_start) as usize);
         }
     }
 

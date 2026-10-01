@@ -539,6 +539,8 @@ pub(crate) fn mr_read(env: &mut Environment, handle: u32, buffer: MutVoidPtr, le
     if read_len < 0 {
         MrResult::Failed as i32
     } else {
+        env.cpu
+            .notify_memory_write(buffer.to_bits(), read_len as u32);
         read_len
     }
 }
