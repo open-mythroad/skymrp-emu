@@ -1,0 +1,136 @@
+name: Build skymrp
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+  BOOST_URL: https://archives.boost.io/release/1.81.0/source/boost_1_81_0.7z
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Boost
+        run: brew install boost
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Prepare release files
+        run: scripts/prepare-release.sh --prepare-files
+
+      - name: Create release zip
+        run: |
+          output="skymrp_${GITHUB_REF_NAME}_macOS_aarch64.zip"
+          scripts/prepare-release.sh --create-zip target/release/skymrp -o "$output"
+          echo "ASSET_NAME=$output" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-macos
+          path: ${{ env.ASSET_NAME }}
+
+  build-windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install zip
+        run: choco install zip -y
+
+      - name: Download Boost
+        run: curl -L -o boost_1_81_0.7z "$BOOST_URL"
+
+      - name: Extract Boost
+        run: |
+          7z -ovendor x boost_1_81_0.7z
+          mv vendor/boost_1_81_0 vendor/boost
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Prepare release files
+        run: scripts/prepare-release.sh --prepare-files
+
+      - name: Create release zip
+        run: |
+          output="skymrp_${GITHUB_REF_NAME}_Windows_x86_64.zip"
+          scripts/prepare-release.sh --create-zip target/release/skymrp.exe -o "$output"
+          echo "ASSET_NAME=$output" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-windows
+          path: ${{ env.ASSET_NAME }}
+
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Boost
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libboost-all-dev
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Prepare release files
+        run: scripts/prepare-release.sh --prepare-files
+
+      - name: Create release zip
+        run: |
+          output="skymrp_${GITHUB_REF_NAME}_Linux_x86_64.zip"
+          scripts/prepare-release.sh --create-zip target/release/skymrp -o "$output"
+          echo "ASSET_NAME=$output" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-linux
+          path: ${{ env.ASSET_NAME }}
+
+  release:
+    runs-on: ubuntu-latest
+    needs:
+      - build-macos
+      - build-windows
+      - build-linux
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: artifact-*
+          merge-multiple: true
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          draft: true
+          artifacts: "artifacts/*.zip"

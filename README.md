@@ -122,6 +122,9 @@ skymrp © 2026 arctan95 and other contributors.
 The source code of skymrp itself is licensed under the Mozilla Public License,
 version 2.0.
 
+Due to license compatibility concerns, binaries are under the GNU General
+Public License version 3 or later.
+
 ## Thanks
 
 This project builds on work from many projects and communities. Thank you to:
