@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use encoding_rs::GBK;
+use std::borrow::Cow;
 
 use crate::mem::{ConstPtr, MutPtr};
 use crate::mythroad::{mr_free, mr_malloc};
@@ -100,11 +101,20 @@ pub(crate) fn utf8_to_gb_string(env: &mut Environment, utf8: &[u8], buffer: MutP
     }
 
     let utf8 = std::str::from_utf8(utf8).unwrap_or("");
-    let (gb, _, _) = GBK.encode(utf8);
+    let gb = utf8_to_gb_bytes(utf8);
     let copy_len = gb.len().min(len.saturating_sub(1) as usize);
     env.mem
         .bytes_at_mut(buffer, copy_len.try_into().unwrap())
         .copy_from_slice(&gb[..copy_len]);
+    env.mem.write(buffer + copy_len as u32, b'\0');
+}
+
+pub(crate) fn gb_to_utf8_string(gb: &[u8]) -> Cow<'_, str> {
+    GBK.decode_without_bom_handling(gb).0
+}
+
+pub(crate) fn utf8_to_gb_bytes(utf8: &str) -> Cow<'_, [u8]> {
+    GBK.encode(utf8).0
 }
 
 fn gb_code_to_unicode(env: &Environment, cp: ConstPtr<u8>) -> Option<u16> {

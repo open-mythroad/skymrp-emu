@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use crate::encoding;
 use crate::fs::{Fs, GuestPath};
 use crate::gzip;
 use crate::mem::{Memory, MutPtr};
@@ -169,9 +170,8 @@ fn parse_entries_in_list(
 
         let raw_name = &data[pos..name_end];
 
-        let entry_name = std::ffi::CStr::from_bytes_until_nul(raw_name)
-            .map(|cstr| cstr.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| String::from_utf8_lossy(raw_name).into_owned());
+        let raw_name = raw_name.split(|byte| *byte == 0).next().unwrap_or(raw_name);
+        let entry_name = encoding::gb_to_utf8_string(raw_name).into_owned();
         pos = name_end;
 
         let meta_end = pos
@@ -232,9 +232,8 @@ fn parse_legacy_entries(
         let raw_name = data
             .get(pos..name_end)
             .ok_or_else(|| "Legacy MRP entry name is out of bounds".to_string())?;
-        let entry_name =
-            String::from_utf8_lossy(raw_name.split(|byte| *byte == 0).next().unwrap_or(raw_name))
-                .into_owned();
+        let raw_name = raw_name.split(|byte| *byte == 0).next().unwrap_or(raw_name);
+        let entry_name = encoding::gb_to_utf8_string(raw_name).into_owned();
         pos = name_end;
 
         let size = read_u32_le(data, pos)?;

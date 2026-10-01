@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use crate::abi::{DotDotDot, VaList};
+use crate::encoding;
 use crate::mem::{ConstPtr, MutPtr, MutVoidPtr};
 use crate::Environment;
 use std::io::Write;
@@ -14,7 +15,7 @@ const FLOAT_SPECIFIERS: [u8; 3] = [b'f', b'e', b'g'];
 fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -> Vec<u8> {
     log_dbg!(
         "Processing format string {:?}",
-        env.mem.cstr_at_utf8(format)
+        encoding::gb_to_utf8_string(env.mem.cstr_at(format))
     );
 
     let mut res = Vec::<u8>::new();
@@ -254,7 +255,7 @@ fn printf_inner(env: &mut Environment, format: ConstPtr<u8>, mut args: VaList) -
         }
     }
 
-    log_dbg!("=> {:?}", std::str::from_utf8(&res));
+    log_dbg!("=> {:?}", encoding::gb_to_utf8_string(&res));
 
     res
 }
@@ -314,6 +315,7 @@ pub(crate) fn sprintf(
 pub(crate) fn printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
     let res = printf_inner(env, format, args.start());
     // TODO: I/O error handling
-    let _ = std::io::stdout().write_all(&res);
+    let text = encoding::gb_to_utf8_string(&res);
+    let _ = std::io::stdout().write_all(text.as_bytes());
     res.len().try_into().unwrap()
 }

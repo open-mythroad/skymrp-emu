@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use crate::encoding;
 use crate::fs::GuestPath;
 use crate::mem::ConstPtr;
 use crate::Environment;
@@ -11,7 +12,7 @@ use crate::Environment;
 pub type mode_t = u16;
 
 pub(crate) fn mkdir(env: &mut Environment, path: ConstPtr<u8>, mode: mode_t) -> i32 {
-    let path_str = env.mem.cstr_at_utf8(path).unwrap();
+    let path_str = encoding::gb_to_utf8_string(env.mem.cstr_at(path));
 
     // TODO: respect the mode
     match env.fs.create_dir(GuestPath::new(&path_str)) {
@@ -33,7 +34,7 @@ pub(crate) fn mkdir(env: &mut Environment, path: ConstPtr<u8>, mode: mode_t) -> 
 }
 
 pub(crate) fn rmdir(env: &mut Environment, path: ConstPtr<u8>) -> i32 {
-    let path_str = env.mem.cstr_at_utf8(path).unwrap();
+    let path_str = encoding::gb_to_utf8_string(env.mem.cstr_at(path));
 
     // TODO: respect the mode
     match env.fs.remove(GuestPath::new(&path_str)) {

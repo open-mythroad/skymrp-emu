@@ -202,7 +202,7 @@ pub(crate) fn mr_open(env: &mut Environment, filename: ConstPtr<u8>, mode: u32) 
         open_flag = posix_io::O_RDWR;
     }
 
-    let filename_str = env.mem.cstr_at_utf8(filename).unwrap().to_owned();
+    let filename_str = encoding::gb_to_utf8_string(env.mem.cstr_at(filename)).into_owned();
     if mode & MR_FILE_CREATE != 0 && !env.fs.exists(GuestPath::new(&filename_str)) {
         open_flag |= posix_io::O_CREAT;
     }
@@ -343,7 +343,8 @@ fn dsm_switch_path(
             }
 
             let drive_path = dsm_drive_path_from_guest_path(env.fs.working_directory());
-            let output_buf = env.mem.alloc_and_write_cstr(drive_path.as_bytes());
+            let drive_path = encoding::utf8_to_gb_bytes(&drive_path);
+            let output_buf = env.mem.alloc_and_write_cstr(&drive_path);
             env.mem.write(output, output_buf);
             env.mem.write(output_len, drive_path.len() as i32);
         }
@@ -358,7 +359,7 @@ fn dsm_switch_path(
             set_dsm_work_path(env, &path);
         }
         _ => {
-            let input_path = String::from_utf8_lossy(input_bytes);
+            let input_path = encoding::gb_to_utf8_string(input_bytes);
             let path = dsm_guest_path_from_drive_path(&input_path);
             set_dsm_work_path(env, &path);
         }
@@ -578,7 +579,7 @@ pub(crate) fn mr_info(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {
         return MR_IS_INVALID;
     }
 
-    let filename = env.mem.cstr_at_utf8(filename).unwrap();
+    let filename = encoding::gb_to_utf8_string(env.mem.cstr_at(filename));
     let path = GuestPath::new(&filename);
 
     if env.fs.is_dir(path) {
@@ -710,7 +711,7 @@ pub(crate) fn mr_get_len(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {
         return MrResult::Failed as i32;
     }
 
-    let filename = env.mem.cstr_at_utf8(filename).unwrap();
+    let filename = encoding::gb_to_utf8_string(env.mem.cstr_at(filename));
     let len = match env.fs.size(GuestPath::new(&filename)) {
         Ok(len) => len as i32,
         Err(_) => return MrResult::Failed as i32,
@@ -1012,11 +1013,11 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
     let timer_runs_while_paused = env.mythroad.state.mr_timer_run_without_pause.get(&env.mem) != 0;
 
     if mr_state == MrRunState::Restart as u32 {
-        let start_filename = env
-            .mem
-            .cstr_at_utf8(env.mythroad.state.start_filename.cast_const())
-            .unwrap()
-            .to_owned();
+        let start_filename = encoding::gb_to_utf8_string(
+            env.mem
+                .cstr_at(env.mythroad.state.start_filename.cast_const()),
+        )
+        .into_owned();
         mr_stop(env);
         mr_stop_sound(env, 0);
         env.cpu.clear_cache();
@@ -1274,11 +1275,11 @@ pub(crate) fn read_current_package_file(
     env: &mut Environment,
     filename: &str,
 ) -> Result<Vec<u8>, String> {
-    let pack_filename = env
-        .mem
-        .cstr_at_utf8(env.mythroad.state.pack_filename.cast_const())
-        .map_err(|_| "Invalid current package filename".to_owned())?
-        .to_owned();
+    let pack_filename = encoding::gb_to_utf8_string(
+        env.mem
+            .cstr_at(env.mythroad.state.pack_filename.cast_const()),
+    )
+    .into_owned();
 
     let pack_prefix = pack_filename.as_bytes().first().copied().unwrap_or(0);
     if pack_prefix != b'*' && pack_prefix != b'$' {
@@ -1301,18 +1302,13 @@ pub(crate) fn mr_read_file(
     filelen: MutPtr<i32>,
     lookfor: i32,
 ) -> MutVoidPtr {
-    let filename = match env.mem.cstr_at_utf8(filename) {
-        Ok(filename) => filename.to_owned(),
-        Err(_) => return MutVoidPtr::null(),
-    };
+    let filename = encoding::gb_to_utf8_string(env.mem.cstr_at(filename)).into_owned();
 
-    let pack_filename = match env
-        .mem
-        .cstr_at_utf8(env.mythroad.state.pack_filename.cast_const())
-    {
-        Ok(pack_filename) => pack_filename.to_owned(),
-        Err(_) => return MutVoidPtr::null(),
-    };
+    let pack_filename = encoding::gb_to_utf8_string(
+        env.mem
+            .cstr_at(env.mythroad.state.pack_filename.cast_const()),
+    )
+    .into_owned();
 
     let pack_prefix = pack_filename.as_bytes().first().copied().unwrap_or(0);
     if pack_prefix != b'*' && pack_prefix != b'$' {

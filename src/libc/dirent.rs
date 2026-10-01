@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use crate::encoding;
 use crate::fs::{FsNodeType, GuestPath};
 use crate::mem::{ConstPtr, MutPtr, Ptr, SafeRead};
 use crate::Environment;
@@ -46,7 +47,7 @@ impl State {
 
 pub(crate) fn opendir(env: &mut Environment, filename: ConstPtr<u8>) -> MutPtr<DIR> {
     // TODO: set errno
-    let path_string = env.mem.cstr_at_utf8(filename).unwrap().to_owned();
+    let path_string = encoding::gb_to_utf8_string(env.mem.cstr_at(filename)).into_owned();
     log_dbg!("opendir: filename {}", path_string);
     let guest_path = GuestPath::new(&path_string);
     let is_dir = env.fs.is_dir(guest_path);

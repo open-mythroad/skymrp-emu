@@ -6,6 +6,7 @@
 pub mod stat;
 
 use crate::abi::DotDotDot;
+use crate::encoding;
 use crate::fs::{GuestFile, GuestOpenOptions, GuestPath};
 use crate::libc::sys::socket::close_socket;
 use crate::mem::{ConstPtr, ConstVoidPtr, GuestISize, GuestUSize, MutVoidPtr};
@@ -119,10 +120,8 @@ pub(crate) fn open_direct(env: &mut Environment, path: ConstPtr<u8>, flags: i32)
         options.truncate();
     }
 
-    match env.fs.open_with_options(
-        GuestPath::new(&env.mem.cstr_at_utf8(path).unwrap()),
-        options,
-    ) {
+    let path = encoding::gb_to_utf8_string(env.mem.cstr_at(path)).into_owned();
+    match env.fs.open_with_options(GuestPath::new(&path), options) {
         Ok(file) => {
             let host_object = PosixFileHostObject {
                 file,
@@ -316,8 +315,8 @@ pub(crate) fn close(env: &mut Environment, fd: FileDescriptor) -> i32 {
 
 pub(crate) fn rename(env: &mut Environment, old: ConstPtr<u8>, new: ConstPtr<u8>) -> i32 {
     // TODO: set errno
-    let old = env.mem.cstr_at_utf8(old).unwrap();
-    let new = env.mem.cstr_at_utf8(new).unwrap();
+    let old = encoding::gb_to_utf8_string(env.mem.cstr_at(old)).into_owned();
+    let new = encoding::gb_to_utf8_string(env.mem.cstr_at(new)).into_owned();
     let res = match env.fs.rename(GuestPath::new(&old), GuestPath::new(&new)) {
         Ok(_) => 0,
         Err(_) => -1,
