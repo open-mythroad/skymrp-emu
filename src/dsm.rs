@@ -926,6 +926,7 @@ pub(crate) fn test_com1(
                 .state
                 .mr_ram_file_len
                 .set(&mut env.mem, len as i32);
+            env.package_cache = None;
             MrResult::Success as i32
         }
         3 => {
@@ -1022,6 +1023,7 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
         .into_owned();
         mr_stop(env);
         mr_stop_sound(env, 0);
+        env.package_cache = None;
         env.cpu.clear_cache();
         intra_start(env, &start_filename, None);
         return MrResult::Success as i32;
@@ -1285,11 +1287,7 @@ pub(crate) fn read_current_package_file(
 
     let pack_prefix = pack_filename.as_bytes().first().copied().unwrap_or(0);
     if pack_prefix != b'*' && pack_prefix != b'$' {
-        let pack_data = env
-            .fs
-            .read(GuestPath::new(&pack_filename))
-            .map_err(|_| format!("Could not read current package: {pack_filename}"))?;
-        return mrp::read_file_from_bytes(&pack_data, filename);
+        return current_disk_package(env, &pack_filename)?.read_file(filename);
     }
 
     let (pack_base, pack_len) = memory_pack_range(env, &pack_filename)
@@ -1327,25 +1325,47 @@ fn read_mrp_file_from_disk(
     filelen: MutPtr<i32>,
     lookfor: i32,
 ) -> MutVoidPtr {
-    let pack_data = match env.fs.read(GuestPath::new(pack_filename)) {
-        Ok(data) => data,
+    let package = match current_disk_package(env, pack_filename) {
+        Ok(package) => package,
         Err(_) => return MutVoidPtr::null(),
     };
 
     if lookfor == 1 {
-        return match mrp::find_entry(&pack_data, filename) {
-            Ok(Some(_)) => MutVoidPtr::from_bits(1),
-            Err(_) => MutVoidPtr::null(),
-            Ok(None) => MutVoidPtr::null(),
+        return if package.contains(filename) {
+            MutVoidPtr::from_bits(1)
+        } else {
+            MutVoidPtr::null()
         };
     }
 
-    let file_data = match mrp::read_file_from_bytes(&pack_data, filename) {
+    let file_data = match package.read_file(filename) {
         Ok(file_data) => file_data,
         Err(_) => return MutVoidPtr::null(),
     };
 
     write_file_data_to_guest(env, &file_data, filelen)
+}
+
+fn current_disk_package<'a>(
+    env: &'a mut Environment,
+    pack_filename: &str,
+) -> Result<&'a mrp::PackageCache, String> {
+    let cache_matches = env
+        .package_cache
+        .as_ref()
+        .is_some_and(|cache| cache.filename() == pack_filename);
+
+    if !cache_matches {
+        let data = env
+            .fs
+            .read(GuestPath::new(pack_filename))
+            .map_err(|_| format!("Could not read current package: {pack_filename}"))?;
+        env.package_cache = Some(mrp::PackageCache::new(pack_filename.to_owned(), data)?);
+    }
+
+    env.package_cache
+        .as_ref()
+        .ok_or_else(|| "Current package cache is unavailable".to_owned())
 }
 
 fn read_mrp_file_from_memory(

@@ -16,6 +16,13 @@ const MRP_MAGIC: &[u8; 4] = b"MRPG";
 const MRP_HEADER_SIZE: usize = 16;
 const LEGACY_MRP_HEADER_SIZE: usize = 8;
 
+#[derive(Debug)]
+pub struct PackageCache {
+    filename: String,
+    data: Vec<u8>,
+    entries: HashMap<String, MrpEntry>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct MrpHeader {
     pub info_size: u32,
@@ -27,6 +34,33 @@ pub struct MrpHeader {
 pub struct MrpEntry {
     pub offset: u32,
     pub size: u32,
+}
+
+impl PackageCache {
+    pub fn new(filename: String, data: Vec<u8>) -> Result<Self, String> {
+        let entries = parse_entries(&data)?;
+        Ok(Self {
+            filename,
+            data,
+            entries,
+        })
+    }
+
+    pub fn filename(&self) -> &str {
+        &self.filename
+    }
+
+    pub fn contains(&self, name: &str) -> bool {
+        self.entries.contains_key(name)
+    }
+
+    pub fn read_file(&self, name: &str) -> Result<Vec<u8>, String> {
+        let entry = self
+            .entries
+            .get(name)
+            .ok_or_else(|| format!("MRP entry not found: {name}"))?;
+        read_entry_from_bytes(&self.data, name, *entry)
+    }
 }
 
 impl MrpHeader {
@@ -100,7 +134,10 @@ pub fn parse_entries(data: &[u8]) -> Result<HashMap<String, MrpEntry>, String> {
 
 pub fn read_file_from_bytes(data: &[u8], name: &str) -> Result<Vec<u8>, String> {
     let entry = find_entry(data, name)?.ok_or_else(|| format!("MRP entry not found: {name}"))?;
+    read_entry_from_bytes(data, name, entry)
+}
 
+fn read_entry_from_bytes(data: &[u8], name: &str, entry: MrpEntry) -> Result<Vec<u8>, String> {
     let start = usize::try_from(entry.offset)
         .map_err(|_| format!("MRP entry offset does not fit in usize: {name}"))?;
 
