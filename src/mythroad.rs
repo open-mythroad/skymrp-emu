@@ -1370,7 +1370,7 @@ fn mr_ferrno(env: &mut Environment) -> i32 {
     MrResult::Failed as i32
 }
 
-fn mr_exit(env: &mut Environment) -> i32 {
+pub(crate) fn mr_exit(env: &mut Environment) -> i32 {
     log_dbg!(
         "Mythroad: mr_exit() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]

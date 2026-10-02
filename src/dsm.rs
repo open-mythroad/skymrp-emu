@@ -13,8 +13,8 @@ use crate::libc::posix_io::{self, OpenFlag};
 use crate::mem::{guest_size_of, ConstPtr, ConstVoidPtr, MutPtr, MutVoidPtr};
 use crate::mrp;
 use crate::mythroad::{
-    mr_free, mr_malloc, mr_stop, mr_stop_sound, reset_resource_tables, DsmDiskInfo, MrEvent,
-    MrResult, MrRunState, MrTimerState, MR_FILE_MAX_LEN,
+    mr_exit, mr_free, mr_malloc, mr_stop, mr_stop_sound, reset_resource_tables, DsmDiskInfo,
+    MrEvent, MrResult, MrRunState, MrTimerState, MR_FILE_MAX_LEN,
 };
 use crate::Environment;
 
@@ -1193,7 +1193,7 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
             .state
             .mr_state
             .set(&mut env.mem, MrRunState::Error as u32);
-        mr_stop(env);
+        mr_exit(env);
         return MrResult::Failed as i32;
     }
 
