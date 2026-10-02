@@ -10,6 +10,8 @@ use sdl2::render::{Canvas, Texture};
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
 
+const SDL_TOUCH_MOUSE_ID: u32 = u32::MAX;
+
 pub type Coords = (f32, f32);
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -187,17 +189,23 @@ impl Window {
                         self.event_queue.push_back(Event::KeyUp(key));
                     }
                 }
-                E::MouseButtonDown { x, y, .. } => {
+                E::MouseButtonDown { which, x, y, .. } if which != SDL_TOUCH_MOUSE_ID => {
                     let coords = transform_input_coords(self, (x as f32, y as f32), false);
                     self.event_queue.push_back(Event::MouseDown(coords));
                 }
-                E::MouseButtonUp { x, y, .. } => {
+                E::MouseButtonUp { which, x, y, .. } if which != SDL_TOUCH_MOUSE_ID => {
                     let coords = transform_input_coords(self, (x as f32, y as f32), false);
                     self.event_queue.push_back(Event::MouseUp(coords));
                 }
                 E::MouseMotion {
-                    x, y, mousestate, ..
-                } if mousestate.left() || mousestate.right() || mousestate.middle() => {
+                    which,
+                    x,
+                    y,
+                    mousestate,
+                    ..
+                } if which != SDL_TOUCH_MOUSE_ID
+                    && (mousestate.left() || mousestate.right() || mousestate.middle()) =>
+                {
                     let coords = transform_input_coords(self, (x as f32, y as f32), false);
                     self.event_queue.push_back(Event::MouseMove(coords));
                 }
@@ -240,7 +248,7 @@ impl Window {
 
     pub fn viewport(&self) -> (u32, u32, u32, u32) {
         let (app_width, app_height) = size_for_orientation(self.device_orientation, self.scale);
-        if !self.fullscreen {
+        if !cfg!(target_os = "android") && !self.fullscreen {
             return (0, 0, app_width, app_height);
         }
 

@@ -21,12 +21,28 @@ mod mem;
 mod mrp;
 mod mythroad;
 mod options;
+mod paths;
 mod stack;
 mod syscall;
 mod window;
 
 use environment::Environment;
 use std::path::PathBuf;
+
+/// This is the true entry point on Android (SDLActivity calls it after
+/// initialization). On other platforms the true entry point is in src/bin.rs.
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "C" fn SDL_main(
+    _argc: std::ffi::c_int,
+    _argv: *const *const std::ffi::c_char,
+) -> std::ffi::c_int {
+    match main([String::new()].into_iter()) {
+        Ok(_) => echo!("skymrp finished"),
+        Err(e) => echo!("skymrp error: {e:?}"),
+    }
+    return 0;
+}
 
 const USAGE: &str = "\
 Usage:
@@ -62,8 +78,50 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
     let mrp_path = if let Some(mrp_path) = mrp_path {
         mrp_path
     } else {
-        echo!("No app specified, Use the --help flag to see command-line usage.");
-        return Err("Path to mrp must be specified".to_string());
+        paths::ensure_mythroad_dir()?;
+        let cookie_path = paths::cookie_mrp_path()?;
+        if cookie_path.is_file() {
+            cookie_path
+        } else {
+            echo!("MRP file not found: {}", cookie_path.display());
+
+            let buttons = [
+                sdl2::messagebox::ButtonData {
+                    flags: sdl2::messagebox::MessageBoxButtonFlag::RETURNKEY_DEFAULT,
+                    button_id: 0,
+                    text: "Open Folder",
+                },
+                sdl2::messagebox::ButtonData {
+                    flags: sdl2::messagebox::MessageBoxButtonFlag::ESCAPEKEY_DEFAULT,
+                    button_id: 1,
+                    text: "Close",
+                },
+            ];
+            let clicked_button = sdl2::messagebox::show_message_box(
+                sdl2::messagebox::MessageBoxFlag::WARNING,
+                &buttons,
+                "MRP File Not Found",
+                "Place cookie.mrp in the mythroad folder.\n",
+                None,
+                None,
+            )
+            .map_err(|e| {
+                format!(
+                    "Message box for {} could not be shown: {e}",
+                    cookie_path.display()
+                )
+            })?;
+
+            if matches!(
+                clicked_button,
+                sdl2::messagebox::ClickedButton::CustomButton(button) if button.button_id == 0
+            ) {
+                let url = paths::url_for_opening_user_data_dir()?;
+                sdl2::url::open_url(&url)
+                    .map_err(|e| format!("Could not open SkyMRP folder: {e}"))?;
+            }
+            return Ok(());
+        }
     };
 
     for option_arg in option_args {

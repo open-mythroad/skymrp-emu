@@ -43,11 +43,20 @@ fn main() {
 
     let os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS was not set");
     let boost_path = workspace_root.join("vendor/boost");
-    if (os.eq_ignore_ascii_case("windows")) && !boost_path.is_dir() {
+    if (os.eq_ignore_ascii_case("windows") || os.eq_ignore_ascii_case("android"))
+        && !boost_path.is_dir()
+    {
         panic!("Could not find Boost. Download it from https://www.boost.org/users/download/ and put it at vendor/boost");
     }
     if boost_path.is_dir() {
         build.define("Boost_INCLUDE_DIR", boost_path);
+    }
+    // Prevent CMake from using macOS-only linker commands when cross-compiling
+    // for Android.
+    if os.eq_ignore_ascii_case("android") {
+        build.define("CMAKE_SYSTEM_NAME", "Android");
+        build.define("CMAKE_SYSTEM_VERSION", "21");
+        build.define("ANDROID", "ON");
     }
     let dynarmic_out = build.build();
 

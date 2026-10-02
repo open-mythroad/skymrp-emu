@@ -1,2 +1,16 @@
 /target
+/vendor/boost
 .DS_Store
+
+# Android
+*.iml
+.gradle
+/local.properties
+.idea/
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+android/app/src/main/jniLibs
+android/build
+android/app/build
