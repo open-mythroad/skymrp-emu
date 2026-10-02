@@ -4,11 +4,21 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use crate::options::Options;
+use sdl2::keyboard::{Keycode, Mod};
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::rect::Rect;
 use sdl2::render::{Canvas, Texture};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::num::NonZeroU32;
+
+const SDL_TOUCH_MOUSE_ID: u32 = u32::MAX;
+#[cfg(target_os = "android")]
+const ANDROID_COMMAND_SET_VIRTUAL_KEYPAD_VISIBLE: u32 = 0x8000;
+
+#[cfg(target_os = "android")]
+extern "C" {
+    fn SDL_AndroidSendMessage(command: u32, param: std::ffi::c_int) -> std::ffi::c_int;
+}
 
 pub type Coords = (f32, f32);
 
@@ -35,6 +45,17 @@ pub enum Event {
     Quit,
     KeyDown(MrKey),
     KeyUp(MrKey),
+    TextKeyDown {
+        keycode: Keycode,
+        shift: bool,
+        ctrl: bool,
+    },
+    TextInput(String),
+    TextEditing {
+        text: String,
+        start: i32,
+        length: i32,
+    },
     MouseDown(Coords),
     MouseUp(Coords),
     MouseMove(Coords),
@@ -74,6 +95,7 @@ pub struct Window {
     canvas: Canvas<sdl2::video::Window>,
     event_pump: sdl2::EventPump,
     event_queue: VecDeque<Event>,
+    text_input_keys: HashSet<Keycode>,
     fullscreen: bool,
     scale: NonZeroU32,
     device_orientation: DeviceOrientation,
@@ -118,9 +140,10 @@ impl Window {
             canvas,
             event_pump,
             event_queue: VecDeque::new(),
+            text_input_keys: HashSet::new(),
             fullscreen,
             scale,
-            device_orientation: device_orientation,
+            device_orientation,
         }
     }
 
@@ -162,7 +185,7 @@ impl Window {
         self.canvas.present();
     }
 
-    pub fn poll_for_events(&mut self) {
+    pub fn poll_for_events(&mut self, editbox_active: bool) {
         let events: Vec<_> = self.event_pump.poll_iter().collect();
         for event in events {
             use sdl2::event::Event as E;
@@ -170,10 +193,20 @@ impl Window {
                 E::Quit { .. } => self.event_queue.push_back(Event::Quit),
                 E::KeyDown {
                     keycode: Some(keycode),
+                    keymod,
                     repeat,
                     ..
                 } => {
-                    if !repeat {
+                    self.event_queue.push_back(Event::TextKeyDown {
+                        keycode,
+                        shift: keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD),
+                        ctrl: keymod.intersects(
+                            Mod::LCTRLMOD | Mod::RCTRLMOD | Mod::LGUIMOD | Mod::RGUIMOD,
+                        ),
+                    });
+                    if editbox_active {
+                        self.text_input_keys.insert(keycode);
+                    } else if !repeat {
                         if let Some(key) = keycode_to_mr_key(keycode) {
                             self.event_queue.push_back(Event::KeyDown(key));
                         }
@@ -183,21 +216,44 @@ impl Window {
                     keycode: Some(keycode),
                     ..
                 } => {
-                    if let Some(key) = keycode_to_mr_key(keycode) {
-                        self.event_queue.push_back(Event::KeyUp(key));
+                    if !self.text_input_keys.remove(&keycode) {
+                        if let Some(key) = keycode_to_mr_key(keycode) {
+                            self.event_queue.push_back(Event::KeyUp(key));
+                        }
                     }
                 }
-                E::MouseButtonDown { x, y, .. } => {
+                E::TextInput { text, .. } => {
+                    self.event_queue.push_back(Event::TextInput(text));
+                }
+                E::TextEditing {
+                    text,
+                    start,
+                    length,
+                    ..
+                } => {
+                    self.event_queue.push_back(Event::TextEditing {
+                        text,
+                        start,
+                        length,
+                    });
+                }
+                E::MouseButtonDown { which, x, y, .. } if which != SDL_TOUCH_MOUSE_ID => {
                     let coords = transform_input_coords(self, (x as f32, y as f32), false);
                     self.event_queue.push_back(Event::MouseDown(coords));
                 }
-                E::MouseButtonUp { x, y, .. } => {
+                E::MouseButtonUp { which, x, y, .. } if which != SDL_TOUCH_MOUSE_ID => {
                     let coords = transform_input_coords(self, (x as f32, y as f32), false);
                     self.event_queue.push_back(Event::MouseUp(coords));
                 }
                 E::MouseMotion {
-                    x, y, mousestate, ..
-                } if mousestate.left() || mousestate.right() || mousestate.middle() => {
+                    which,
+                    x,
+                    y,
+                    mousestate,
+                    ..
+                } if which != SDL_TOUCH_MOUSE_ID
+                    && (mousestate.left() || mousestate.right() || mousestate.middle()) =>
+                {
                     let coords = transform_input_coords(self, (x as f32, y as f32), false);
                     self.event_queue.push_back(Event::MouseMove(coords));
                 }
@@ -225,6 +281,52 @@ impl Window {
         self.event_queue.pop_front()
     }
 
+    pub fn start_text_input(&self) {
+        self._video_ctx.text_input().start();
+    }
+
+    pub fn stop_text_input(&self) {
+        self._video_ctx.text_input().stop();
+    }
+
+    pub fn set_text_input_rect(&self, x: i32, y: i32, width: u32, height: u32) {
+        let (vx, vy, vw, vh) = self.viewport();
+        let (guest_w, guest_h) = self.size_unrotated_unscaled();
+        let rect = Rect::new(
+            vx as i32 + x * vw as i32 / guest_w as i32,
+            vy as i32 + y * vh as i32 / guest_h as i32,
+            (width * vw / guest_w).max(1),
+            (height * vh / guest_h).max(1),
+        );
+        self._video_ctx.text_input().set_rect(rect);
+    }
+
+    pub fn clipboard_text(&self) -> Option<String> {
+        self._video_ctx.clipboard().clipboard_text().ok()
+    }
+
+    pub fn set_clipboard_text(&self, text: &str) {
+        if let Err(error) = self._video_ctx.clipboard().set_clipboard_text(text) {
+            log_dbg!("Window: could not set clipboard text: {error}");
+        }
+    }
+
+    pub fn set_virtual_keypad_visible(&self, visible: bool) {
+        #[cfg(target_os = "android")]
+        unsafe {
+            if SDL_AndroidSendMessage(
+                ANDROID_COMMAND_SET_VIRTUAL_KEYPAD_VISIBLE,
+                i32::from(visible),
+            ) != 0
+            {
+                log_dbg!("Window: could not change Android virtual keypad visibility");
+            }
+        }
+
+        #[cfg(not(target_os = "android"))]
+        let _ = visible;
+    }
+
     /// Returns the current device orientation
     pub fn current_rotation(&self) -> DeviceOrientation {
         self.device_orientation
@@ -240,7 +342,7 @@ impl Window {
 
     pub fn viewport(&self) -> (u32, u32, u32, u32) {
         let (app_width, app_height) = size_for_orientation(self.device_orientation, self.scale);
-        if !self.fullscreen {
+        if !cfg!(target_os = "android") && !self.fullscreen {
             return (0, 0, app_width, app_height);
         }
 

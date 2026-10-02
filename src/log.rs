@@ -9,10 +9,23 @@
 ///
 /// Prefer use [log] or [log_dbg] for errors and warnings during emulation.
 macro_rules! echo {
-     ($($arg:tt)*) => {
-         eprintln!($($arg)*);
-     }
- }
+    ($($arg:tt)+) => {
+        {
+            #[cfg(target_os = "android")]
+            sdl2::log::log(&format!($($arg)+));
+            #[cfg(not(target_os = "android"))]
+            eprintln!($($arg)+);
+        }
+    };
+    () => {
+        {
+            #[cfg(target_os = "android")]
+            sdl2::log::log("");
+            #[cfg(not(target_os = "android"))]
+            eprintln!("");
+        }
+    }
+}
 
 /// Prints a log message unconditionally. Use this for errors or warnings.
 ///

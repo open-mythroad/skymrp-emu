@@ -65,7 +65,10 @@ pub(crate) const MR_KEY_PRESS: i32 = 0;
 pub(crate) const MR_KEY_RELEASE: i32 = 1;
 pub(crate) const MR_MOUSE_DOWN: i32 = 2;
 pub(crate) const MR_MOUSE_UP: i32 = 3;
+pub(crate) const MR_DIALOG_EVENT: i32 = 6;
 pub(crate) const MR_MOUSE_MOVE: i32 = 12;
+pub(crate) const MR_DIALOG_KEY_OK: i32 = 0;
+pub(crate) const MR_DIALOG_KEY_CANCEL: i32 = 1;
 
 #[allow(dead_code)]
 #[repr(i32)]

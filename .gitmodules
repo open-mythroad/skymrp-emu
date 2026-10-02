@@ -4,3 +4,6 @@
 [submodule "vendor/sonivox"]
 	path = vendor/sonivox
 	url = https://github.com/open-mythroad/sonivox.git
+[submodule "vendor/SDL"]
+	path = vendor/SDL
+	url = https://github.com/libsdl-org/SDL.git

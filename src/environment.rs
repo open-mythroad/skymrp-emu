@@ -5,7 +5,8 @@
  */
 use crate::window::Event;
 use crate::{
-    audio, cpu, dsm, fs, haptics, libc, mem, mrp, mythroad, options, stack, syscall, window,
+    audio, cpu, dsm, editbox, fs, haptics, libc, mem, mrp, mythroad, options, stack, syscall,
+    window,
 };
 use std::time::{Duration, Instant};
 
@@ -97,11 +98,30 @@ impl Environment {
 
     fn run_event_loop(&mut self) {
         loop {
-            self.window.poll_for_events();
+            self.window.poll_for_events(self.mythroad.editbox.is_some());
 
             while let Some(event) = self.window.pop_event() {
+                if matches!(event, Event::Quit) {
+                    panic!("User requested quit, exiting...");
+                }
+                if self.mythroad.editbox.is_some() {
+                    let result = self.handle_editbox_event(&event);
+                    match result {
+                        editbox::EditResult::Ok => {
+                            self.window.stop_text_input();
+                            dsm::mr_event(self, dsm::MR_DIALOG_EVENT, dsm::MR_DIALOG_KEY_OK, 0);
+                        }
+                        editbox::EditResult::Cancel => {
+                            self.window.stop_text_input();
+                            dsm::mr_event(self, dsm::MR_DIALOG_EVENT, dsm::MR_DIALOG_KEY_CANCEL, 0);
+                        }
+                        editbox::EditResult::None => {}
+                    }
+                    continue;
+                }
+
                 match event {
-                    Event::Quit => panic!("User requested quit, exiting..."),
+                    Event::Quit => unreachable!(),
                     Event::KeyDown(key) => {
                         dsm::mr_event(self, dsm::MR_KEY_PRESS, key as i32, 0);
                     }
@@ -117,7 +137,13 @@ impl Environment {
                     Event::MouseMove((x, y)) => {
                         dsm::mr_event(self, dsm::MR_MOUSE_MOVE, x as i32, y as i32);
                     }
+                    Event::TextKeyDown { .. } | Event::TextInput(_) | Event::TextEditing { .. } => {
+                    }
                 }
+            }
+
+            if self.mythroad.editbox.is_some() {
+                self.refresh_editbox();
             }
 
             dsm::mr_timer(self);
@@ -132,6 +158,30 @@ impl Environment {
                 std::thread::sleep(sleep_duration);
             }
         }
+    }
+
+    fn handle_editbox_event(&mut self, event: &Event) -> editbox::EditResult {
+        let mut editbox = self.mythroad.editbox.take().unwrap();
+        let result = editbox.handle_event(event, &self.window);
+        mythroad::write_edit_text(self, editbox.text());
+        self.render_editbox(&mut editbox);
+        self.mythroad.editbox = Some(editbox);
+        result
+    }
+
+    fn refresh_editbox(&mut self) {
+        let mut editbox = self.mythroad.editbox.take().unwrap();
+        self.render_editbox(&mut editbox);
+        self.mythroad.editbox = Some(editbox);
+    }
+
+    fn render_editbox(&mut self, editbox: &mut editbox::EditBox) {
+        editbox.render(&mut self.mythroad.font, &self.fs);
+        let (width, height) = editbox.size();
+        self.window.refresh(editbox.frame(), width, height);
+        let (x, y, cursor_width, cursor_height) = editbox.cursor_rect();
+        self.window
+            .set_text_input_rect(x, y, cursor_width, cursor_height);
     }
 
     fn event_loop_sleep_duration(&self) -> Duration {
@@ -159,7 +209,7 @@ impl Environment {
 
     fn run_inner(&mut self, root: bool) {
         loop {
-            self.window.poll_for_events();
+            self.window.poll_for_events(self.mythroad.editbox.is_some());
             let mut ticks = 1_000;
 
             while ticks > 0 {

@@ -17,10 +17,10 @@ struct BitmapFont {
     variable_width_row_stride: u32,
 }
 
-struct GlyphBitmap {
-    width: u32,
-    height: u32,
-    bits: Vec<u8>,
+pub(crate) struct GlyphBitmap {
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) bits: Vec<u8>,
 }
 
 #[repr(u16)]
@@ -232,6 +232,20 @@ impl Font {
             return false;
         };
         byte & (0x80 >> (bit_index % 8)) != 0
+    }
+
+    pub(crate) fn edit_glyph(&mut self, fs: &Fs, ch: u16) -> Option<GlyphBitmap> {
+        let pixel_size = FontSize::Medium.pixel_size();
+        self.ensure_font_loaded(fs, pixel_size);
+        self.rasterize_glyph(pixel_size, ch)
+    }
+
+    pub(crate) fn edit_glyph_width(ch: u16) -> u32 {
+        Self::glyph_width(FontSize::Medium.pixel_size(), ch) as u32
+    }
+
+    pub(crate) fn edit_glyph_bit(glyph: &GlyphBitmap, x: u32, y: u32) -> bool {
+        Self::glyph_bit(&glyph.bits, glyph.width, x, y)
     }
 
     fn set_glyph_bit(bitmap: &mut [u8], bit_stride: u32, x: u32, y: u32) {

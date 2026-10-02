@@ -7,6 +7,7 @@ use crate::abi::{CallFromHost, DotDotDot, GuestFunction};
 use crate::audio;
 use crate::cpu::Cpu;
 use crate::dsm;
+use crate::editbox::{EditBox, EDIT_HANDLE};
 use crate::encoding;
 use crate::font;
 use crate::gzip;
@@ -47,6 +48,9 @@ const MR_EXIT_EVENT: i32 = 8;
 pub struct Mythroad {
     pub state: State,
     pub font: font::Font,
+    pub(crate) editbox: Option<EditBox>,
+    pub(crate) edit_text: MutPtr<u8>,
+    pub(crate) edit_text_len: u32,
 }
 
 impl Mythroad {
@@ -54,6 +58,9 @@ impl Mythroad {
         Self {
             state: State::new(mem),
             font: font::Font::new(mem),
+            editbox: None,
+            edit_text: MutPtr::null(),
+            edit_text_len: 0,
         }
     }
 
@@ -1094,6 +1101,8 @@ fn mr_stop_ex(env: &mut Environment, freemem: i16) -> i32 {
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
+    clear_editbox(env);
+
     let mr_state = env.mythroad.state.mr_state.get(&env.mem);
     if mr_state == MrRunState::Idle as u32 {
         return MrResult::Ignored as i32;
@@ -1375,6 +1384,8 @@ pub(crate) fn mr_exit(env: &mut Environment) -> i32 {
         "Mythroad: mr_exit() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
+
+    clear_editbox(env);
 
     let old_pack_filename = env.mythroad.state.old_pack_filename;
     if env.mem.read(old_pack_filename) != 0 {
@@ -1698,7 +1709,59 @@ fn mr_edit_create(
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
-    MrResult::Ignored as i32
+    clear_editbox(env);
+
+    let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
+    let screen_h = env.mythroad.state.mr_screen_h.get(&env.mem);
+    if screen_w <= 0 || screen_h <= 0 {
+        return MrResult::Failed as i32;
+    }
+    let screen_len = (screen_w as u32)
+        .checked_mul(screen_h as u32)
+        .and_then(|pixels| pixels.checked_mul(guest_size_of::<u16>()))
+        .unwrap_or(0);
+    let screen_buf = env.mythroad.state.mr_screen_buf.get(&env.mem);
+    if screen_buf.is_null() || screen_len == 0 {
+        return MrResult::Failed as i32;
+    }
+
+    let max_units = if max_size <= 0 {
+        256
+    } else {
+        max_size.clamp(1, 65_535)
+    };
+    let edit_text_len = (max_units as u32 + 1) * guest_size_of::<u16>();
+    let edit_text: MutPtr<u8> = mr_malloc(env, edit_text_len).cast();
+    if edit_text.is_null() {
+        return MrResult::Failed as i32;
+    }
+
+    let title = read_guest_wstr(env, title);
+    let text = read_guest_wstr(env, text);
+    let background = env
+        .mem
+        .bytes_at(screen_buf.cast::<u8>().cast_const(), screen_len)
+        .to_vec();
+    let mut editbox = EditBox::new(
+        title,
+        text,
+        max_units,
+        screen_w as u32,
+        screen_h as u32,
+        background,
+    );
+    env.mythroad.edit_text = edit_text;
+    env.mythroad.edit_text_len = edit_text_len;
+    write_edit_text(env, editbox.text());
+    editbox.render(&mut env.mythroad.font, &env.fs);
+    env.window
+        .refresh(editbox.frame(), screen_w as u32, screen_h as u32);
+    let (x, y, width, height) = editbox.cursor_rect();
+    env.window.set_text_input_rect(x, y, width, height);
+    env.window.set_virtual_keypad_visible(false);
+    env.window.start_text_input();
+    env.mythroad.editbox = Some(editbox);
+    EDIT_HANDLE
 }
 
 fn mr_edit_release(env: &mut Environment, edit: i32) -> i32 {
@@ -1707,7 +1770,12 @@ fn mr_edit_release(env: &mut Environment, edit: i32) -> i32 {
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
-    MrResult::Ignored as i32
+    if edit != EDIT_HANDLE || env.mythroad.editbox.is_none() {
+        return MrResult::Failed as i32;
+    }
+
+    clear_editbox(env);
+    MrResult::Success as i32
 }
 
 fn mr_edit_get_text(env: &mut Environment, edit: i32) -> ConstPtr<u8> {
@@ -1716,7 +1784,54 @@ fn mr_edit_get_text(env: &mut Environment, edit: i32) -> ConstPtr<u8> {
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
-    Ptr::from_bits(MrResult::Ignored as u32)
+    if edit != EDIT_HANDLE || env.mythroad.editbox.is_none() {
+        Ptr::null()
+    } else {
+        env.mythroad.edit_text.cast_const()
+    }
+}
+
+fn read_guest_wstr(env: &Environment, ptr: ConstPtr<u8>) -> Vec<u16> {
+    if ptr.is_null() {
+        return Vec::new();
+    }
+    let len = env.mem.wstr_len_bytes_at(ptr);
+    env.mem
+        .bytes_at(ptr, len)
+        .chunks_exact(2)
+        .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]))
+        .collect()
+}
+
+pub(crate) fn write_edit_text(env: &mut Environment, text: &[u16]) {
+    if env.mythroad.edit_text.is_null() || env.mythroad.edit_text_len < 2 {
+        return;
+    }
+    let capacity = (env.mythroad.edit_text_len / 2 - 1) as usize;
+    let units = &text[..text.len().min(capacity)];
+    let buffer = env
+        .mem
+        .bytes_at_mut(env.mythroad.edit_text, env.mythroad.edit_text_len);
+    buffer.fill(0);
+    for (output, unit) in buffer.chunks_exact_mut(2).zip(units.iter()) {
+        output.copy_from_slice(&unit.to_be_bytes());
+    }
+}
+
+fn clear_editbox(env: &mut Environment) {
+    env.window.stop_text_input();
+    if let Some(editbox) = env.mythroad.editbox.take() {
+        env.window.set_virtual_keypad_visible(true);
+        let (width, height) = editbox.size();
+        env.window.refresh(editbox.background(), width, height);
+    }
+    let edit_text = env.mythroad.edit_text;
+    let edit_text_len = env.mythroad.edit_text_len;
+    env.mythroad.edit_text = MutPtr::null();
+    env.mythroad.edit_text_len = 0;
+    if !edit_text.is_null() {
+        mr_free(env, edit_text.cast_void(), edit_text_len);
+    }
 }
 
 fn mr_win_create(env: &mut Environment) -> i32 {
