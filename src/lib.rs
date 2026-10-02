@@ -9,6 +9,7 @@ mod abi;
 mod audio;
 mod cpu;
 mod dsm;
+mod editbox;
 mod encoding;
 mod environment;
 mod font;

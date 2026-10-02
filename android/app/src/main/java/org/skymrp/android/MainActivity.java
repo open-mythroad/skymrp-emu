@@ -24,6 +24,7 @@ import org.libsdl.app.SDLActivity;
 public class MainActivity extends SDLActivity {
     private static final int MRP_SCREEN_WIDTH = 240;
     private static final int MRP_SCREEN_HEIGHT = 320;
+    private static final int COMMAND_SET_VIRTUAL_KEYPAD_VISIBLE = COMMAND_USER;
 
     private VirtualKeypadView virtualKeypad;
 
@@ -105,6 +106,23 @@ public class MainActivity extends SDLActivity {
         } else {
             releaseVirtualKeys();
         }
+    }
+
+    @Override
+    protected boolean onUnhandledMessage(int command, Object param) {
+        if (command != COMMAND_SET_VIRTUAL_KEYPAD_VISIBLE) {
+            return false;
+        }
+        if (virtualKeypad == null || !(param instanceof Integer)) {
+            return true;
+        }
+
+        boolean visible = ((Integer) param) != 0;
+        if (!visible) {
+            releaseVirtualKeys();
+        }
+        virtualKeypad.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
+        return true;
     }
 
     private void hideSystemBars() {
