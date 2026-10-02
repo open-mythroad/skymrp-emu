@@ -11,6 +11,7 @@ package org.skymrp.android;
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.os.CancellationSignal
+import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.DocumentsProvider
@@ -44,8 +45,9 @@ class DocumentsProvider : DocumentsProvider() {
         const val ROOT_ID : String = "root"
     }
 
+    @Suppress("DEPRECATION")
     private fun getBaseDirectory() : File {
-        return context!!.getExternalFilesDir(null)!!
+        return Environment.getExternalStorageDirectory().resolve("mythroad")
     }
 
     override fun onCreate() : Boolean {

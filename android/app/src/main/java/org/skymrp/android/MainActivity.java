@@ -9,6 +9,7 @@
 package org.skymrp.android;
 
 import android.os.Bundle;
+import android.os.Environment;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -37,6 +38,8 @@ public class MainActivity extends SDLActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        setUserDataPath();
 
         if (mLayout == null || mSurface == null) {
             return;
@@ -78,6 +81,14 @@ public class MainActivity extends SDLActivity {
             }
         });
         hideSystemBars();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void setUserDataPath() {
+        nativeSetenv(
+            "SKYMRP_USER_DATA_PATH",
+            Environment.getExternalStorageDirectory().getAbsolutePath()
+        );
     }
 
     @Override

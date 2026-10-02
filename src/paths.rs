@@ -8,24 +8,17 @@ use std::path::PathBuf;
 const COOKIE_MRP_PATH: &str = "mythroad/cookie.mrp";
 
 #[cfg(target_os = "android")]
+const USER_DATA_PATH_ENV: &str = "SKYMRP_USER_DATA_PATH";
+
+#[cfg(target_os = "android")]
 const USER_DATA_URI: &str = "content://org.skymrp.android.provider/root/root";
 
 fn user_data_base_path() -> Result<PathBuf, String> {
     #[cfg(target_os = "android")]
     {
-        unsafe extern "C" {
-            fn SDL_AndroidGetExternalStoragePath() -> *const std::ffi::c_char;
-        }
-
-        let path = unsafe { SDL_AndroidGetExternalStoragePath() };
-        if path.is_null() {
-            return Err("Could not get Android external storage path".to_owned());
-        }
-
-        let path = unsafe { std::ffi::CStr::from_ptr(path) }
-            .to_str()
-            .map_err(|_| "Android external storage path is not UTF-8")?;
-        Ok(PathBuf::from(path))
+        std::env::var_os(USER_DATA_PATH_ENV)
+            .map(PathBuf::from)
+            .ok_or_else(|| format!("{USER_DATA_PATH_ENV} is not set"))
     }
 
     #[cfg(not(target_os = "android"))]
