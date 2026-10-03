@@ -99,10 +99,10 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Boost
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libboost-all-dev
+          sudo apt-get install -y libasound2-dev libboost-all-dev
 
       - name: Build
         run: cargo build --release

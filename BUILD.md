@@ -32,7 +32,7 @@ Then install the platform-specific dependencies below.
 ```bash
 # Debian/Ubuntu
 sudo apt-get update
-sudo apt-get install -y build-essential cmake libboost-all-dev
+sudo apt-get install -y build-essential cmake libasound2-dev libboost-all-dev
 ```
 
 ### macOS
