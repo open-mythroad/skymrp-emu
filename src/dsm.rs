@@ -15,7 +15,7 @@ use crate::mrp;
 use crate::mythroad::{
     mr_exit, mr_free, mr_malloc, mr_stop, mr_stop_sound, mr_timer_start, mr_timer_stop,
     reset_resource_tables, DsmDiskInfo, MrAppInfo, MrEvent, MrResult, MrRunState, MrTimerState,
-    MR_FILE_MAX_LEN,
+    BITMAPMAX, MR_FILE_MAX_LEN,
 };
 use crate::Environment;
 
@@ -883,9 +883,31 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
             MrResult::Success as i32
         }
         0x198 => {
-            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
-            // TODO: implement this branch.
-            MrResult::Success as i32
+            let screen_bitmap_ptr = env.mythroad.state.mr_bitmap + BITMAPMAX;
+            let mut screen_bitmap = env.mem.read(screen_bitmap_ptr);
+
+            match screen_bitmap.type_ {
+                0 => {
+                    let new_screen_buf = mr_malloc(env, input1).cast::<u16>();
+                    if new_screen_buf.is_null() {
+                        MrResult::Failed as i32
+                    } else {
+                        let old_screen_buf = env.mythroad.state.mr_screen_buf.get(&env.mem);
+                        mr_free(env, old_screen_buf.cast_void(), screen_bitmap.buflen);
+
+                        env.mythroad
+                            .state
+                            .mr_screen_buf
+                            .set(&mut env.mem, new_screen_buf);
+                        screen_bitmap.p = new_screen_buf;
+                        screen_bitmap.buflen = input1;
+                        env.mem.write(screen_bitmap_ptr, screen_bitmap);
+                        MrResult::Success as i32
+                    }
+                }
+                1 if screen_bitmap.buflen < input1 => MrResult::Failed as i32,
+                _ => MrResult::Success as i32,
+            }
         }
         0x1f4 => {
             log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");

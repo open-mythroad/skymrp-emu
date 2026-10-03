@@ -39,7 +39,7 @@ use network::{
     mr_recvfrom, mr_send, mr_sendto, mr_socket,
 };
 
-const BITMAPMAX: GuestUSize = 30;
+pub(crate) const BITMAPMAX: GuestUSize = 30;
 const SPRITEMAX: GuestUSize = 10;
 const TILEMAX: GuestUSize = 3;
 const SOUNDMAX: GuestUSize = 5;
