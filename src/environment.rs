@@ -101,9 +101,19 @@ impl Environment {
             self.window.poll_for_events(self.mythroad.editbox.is_some());
 
             while let Some(event) = self.window.pop_event() {
-                if matches!(event, Event::Quit) {
-                    panic!("User requested quit, exiting...");
+                match event {
+                    Event::Quit => panic!("User requested quit, exiting..."),
+                    Event::AppWillEnterBackground => {
+                        dsm::mr_pause_app(self);
+                        continue;
+                    }
+                    Event::AppDidEnterForeground => {
+                        dsm::mr_resume_app(self);
+                        continue;
+                    }
+                    _ => {}
                 }
+
                 if self.mythroad.editbox.is_some() {
                     let result = self.handle_editbox_event(&event);
                     match result {
@@ -121,7 +131,9 @@ impl Environment {
                 }
 
                 match event {
-                    Event::Quit => unreachable!(),
+                    Event::Quit | Event::AppWillEnterBackground | Event::AppDidEnterForeground => {
+                        unreachable!()
+                    }
                     Event::KeyDown(key) => {
                         dsm::mr_event(self, dsm::MR_KEY_PRESS, key as i32, 0);
                     }

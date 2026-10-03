@@ -43,6 +43,8 @@ fn size_for_orientation(orientation: DeviceOrientation, scale: NonZeroU32) -> (u
 
 pub enum Event {
     Quit,
+    AppWillEnterBackground,
+    AppDidEnterForeground,
     KeyDown(MrKey),
     KeyUp(MrKey),
     TextKeyDown {
@@ -191,6 +193,12 @@ impl Window {
             use sdl2::event::Event as E;
             match event {
                 E::Quit { .. } => self.event_queue.push_back(Event::Quit),
+                E::AppWillEnterBackground { .. } => {
+                    self.event_queue.push_back(Event::AppWillEnterBackground);
+                }
+                E::AppDidEnterForeground { .. } => {
+                    self.event_queue.push_back(Event::AppDidEnterForeground);
+                }
                 E::KeyDown {
                     keycode: Some(keycode),
                     keymod,

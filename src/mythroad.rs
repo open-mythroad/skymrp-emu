@@ -48,6 +48,7 @@ const MR_EXIT_EVENT: i32 = 8;
 pub struct Mythroad {
     pub state: State,
     pub font: font::Font,
+    pub(crate) restart_timer_name: ConstPtr<u8>,
     pub(crate) editbox: Option<EditBox>,
     pub(crate) edit_text: MutPtr<u8>,
     pub(crate) edit_text_len: u32,
@@ -55,9 +56,13 @@ pub struct Mythroad {
 
 impl Mythroad {
     pub fn new(mem: &mut Memory) -> Mythroad {
+        let state = State::new(mem);
+        let restart_timer_name = mem.alloc_and_write_cstr(b"restart").cast_const();
+
         Self {
-            state: State::new(mem),
+            state,
             font: font::Font::new(mem),
+            restart_timer_name,
             editbox: None,
             edit_text: MutPtr::null(),
             edit_text_len: 0,
@@ -601,7 +606,7 @@ pub struct State {
     pub heap: MrHeap,
     pub mr_m0_files: MutPtr<u32>,
     pub vm_state: GuestVar<u32>,
-    pub mr_timer_p: GuestVar<u32>,
+    pub mr_timer_p: GuestVar<ConstPtr<u8>>,
     pub mr_timer_run_without_pause: GuestVar<u32>,
     pub mr_c_internal_table: MutPtr<u32>,
     pub mr_c_port_table: MutPtr<u32>,
@@ -658,7 +663,7 @@ impl State {
         let vm_state = GuestVar::new(mem, 0u32);
         let mr_state = GuestVar::new(mem, MrRunState::Idle as u32);
         let bi = GuestVar::new(mem, 0u32);
-        let mr_timer_p = GuestVar::new(mem, 0u32);
+        let mr_timer_p = GuestVar::new(mem, ConstPtr::<u8>::null());
         let mr_timer_state = GuestVar::new(mem, MrTimerState::Idle as u32);
         let mr_timer_start_time = 0;
         let mr_timer_interval = 0;
@@ -1263,7 +1268,7 @@ fn mr_mem_free(env: &mut Environment, mem: MutPtr<u8>, len: u32) -> i32 {
     MrResult::Success as i32
 }
 
-fn mr_timer_start(env: &mut Environment, interval: u16) -> i32 {
+pub(crate) fn mr_timer_start(env: &mut Environment, interval: u16) -> i32 {
     log_dbg!(
         "Mythroad: mr_timerStart(t={interval}) called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]
@@ -1279,7 +1284,7 @@ fn mr_timer_start(env: &mut Environment, interval: u16) -> i32 {
     MrResult::Success as i32
 }
 
-fn mr_timer_stop(env: &mut Environment) -> i32 {
+pub(crate) fn mr_timer_stop(env: &mut Environment) -> i32 {
     log_dbg!(
         "Mythroad: mr_timerStop() called from {:#x}",
         env.cpu.regs()[crate::cpu::Cpu::PC]

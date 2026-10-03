@@ -13,8 +13,9 @@ use crate::libc::posix_io::{self, OpenFlag};
 use crate::mem::{guest_size_of, ConstPtr, ConstVoidPtr, MutPtr, MutVoidPtr};
 use crate::mrp;
 use crate::mythroad::{
-    mr_exit, mr_free, mr_malloc, mr_stop, mr_stop_sound, reset_resource_tables, DsmDiskInfo,
-    MrAppInfo, MrEvent, MrResult, MrRunState, MrTimerState, MR_FILE_MAX_LEN,
+    mr_exit, mr_free, mr_malloc, mr_stop, mr_stop_sound, mr_timer_start, mr_timer_stop,
+    reset_resource_tables, DsmDiskInfo, MrAppInfo, MrEvent, MrResult, MrRunState, MrTimerState,
+    MR_FILE_MAX_LEN,
 };
 use crate::Environment;
 
@@ -1060,6 +1061,88 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
     }
 
     mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 2);
+    MrResult::Success as i32
+}
+
+pub(crate) fn mr_pause_app(env: &mut Environment) -> i32 {
+    let mr_state = env.mythroad.state.mr_state.get(&env.mem);
+    log_dbg!("Mythroad: mr_pauseApp(mr_state={mr_state})");
+
+    if mr_state == MrRunState::Run as u32 {
+        env.mythroad
+            .state
+            .mr_state
+            .set(&mut env.mem, MrRunState::Pause as u32);
+    } else if mr_state == MrRunState::Restart as u32 {
+        mr_timer_stop(env);
+        return MrResult::Success as i32;
+    } else {
+        return MrResult::Ignored as i32;
+    }
+
+    let pause_function = env.mythroad.state.mr_pause_app_function;
+    if pause_function.addr_without_thumb_bit() != 0 {
+        let status: i32 = pause_function.call_from_host(env, ());
+        if status != MrResult::Ignored as i32 {
+            return status;
+        }
+    }
+
+    if env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0 {
+        mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 4);
+    }
+
+    let timer_runs_while_paused = env.mythroad.state.mr_timer_run_without_pause.get(&env.mem) != 0;
+    if !timer_runs_while_paused
+        && env.mythroad.state.mr_timer_state.get(&env.mem) == MrTimerState::Running as u32
+    {
+        mr_timer_stop(env);
+        env.mythroad
+            .state
+            .mr_timer_state
+            .set(&mut env.mem, MrTimerState::Suspended as u32);
+    }
+
+    MrResult::Success as i32
+}
+
+pub(crate) fn mr_resume_app(env: &mut Environment) -> i32 {
+    let mr_state = env.mythroad.state.mr_state.get(&env.mem);
+    log_dbg!("Mythroad: mr_resumeApp(mr_state={mr_state})");
+
+    if mr_state == MrRunState::Pause as u32 {
+        env.mythroad
+            .state
+            .mr_state
+            .set(&mut env.mem, MrRunState::Run as u32);
+    } else if mr_state == MrRunState::Restart as u32 {
+        let restart_timer_name = env.mythroad.restart_timer_name;
+        env.mythroad
+            .state
+            .mr_timer_p
+            .set(&mut env.mem, restart_timer_name);
+        mr_timer_start(env, 100);
+        return MrResult::Success as i32;
+    } else {
+        return MrResult::Ignored as i32;
+    }
+
+    let resume_function = env.mythroad.state.mr_resume_app_function;
+    if resume_function.addr_without_thumb_bit() != 0 {
+        let status: i32 = resume_function.call_from_host(env, ());
+        if status != MrResult::Ignored as i32 {
+            return status;
+        }
+    }
+
+    if env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0 {
+        mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 5);
+    }
+
+    if env.mythroad.state.mr_timer_state.get(&env.mem) == MrTimerState::Suspended as u32 {
+        mr_timer_start(env, 300);
+    }
+
     MrResult::Success as i32
 }
 
