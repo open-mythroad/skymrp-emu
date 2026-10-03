@@ -8,7 +8,7 @@
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     android:installLocation="auto"
-    android:versionCode="2">
+    android:versionCode="3">
 
     <!-- Touchscreen support -->
     <uses-feature
