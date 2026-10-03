@@ -46,7 +46,7 @@ rendering, audio, timers, input, libc, and networking.
 ## Usage
 
 First obtain skymrp, either a
-[binary release](https://github.com/open-mythroad/skymrp/releases) or by building
+[binary release](https://github.com/open-mythroad/skymrp-emu/releases) or by building
 it yourself (see the next section).
 
 You'll then need an MRP app that you can run. Pass the MRP file on the command
@@ -70,30 +70,7 @@ skymrp --help
 
 ## Building
 
-Install a recent stable Rust toolchain, Git, CMake, and a working C/C++ build
-toolchain for your platform.
-
-Clone the repository with submodules, or initialize them after cloning:
-
-```sh
-git submodule update --init --recursive
-```
-
-Build the emulator:
-
-```sh
-cargo build --release
-```
-
-Run the release binary:
-
-```sh
-target/release/skymrp path/to/app.mrp
-```
-
-The project vendors native dependencies as submodules. If a build fails inside
-Dynarmic or Sonivox, first make sure the submodules are initialized and your
-platform has the required native build tools installed.
+See [BUILD.md](./BUILD.md) for build instructions.
 
 ## Contributing
 

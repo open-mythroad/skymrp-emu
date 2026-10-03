@@ -34,7 +34,7 @@ skymrp 并不模拟完整的早期功能机平台，而是实现 MRP 应用运�
 ## 使用方式
 
 首先获取 skymrp。你可以从
-[发布页面](https://github.com/open-mythroad/skymrp/releases) 下载二进制文件，也可以按照下一节从源码构建。
+[发布页面](https://github.com/open-mythroad/skymrp-emu/releases) 下载二进制文件，也可以按照下一节从源码构建。
 
 然后准备一个可运行的 MRP 应用或游戏，并在命令行中传入对应的 `.mrp` 文件：
 
@@ -56,28 +56,7 @@ skymrp --help
 
 ## 构建
 
-请先安装较新的稳定版 Rust 工具链、Git、CMake，以及当前平台可用的 C/C++ 构建工具链。
-
-克隆仓库时需要拉取子模块；如果已经克隆，也可以之后再初始化：
-
-```sh
-git submodule update --init --recursive
-```
-
-构建 release 版本：
-
-```sh
-cargo build --release
-```
-
-运行构建出的 release 二进制：
-
-```sh
-target/release/skymrp path/to/app.mrp
-```
-
-本项目通过子模块引入原生依赖。如果构建在 Dynarmic 或 Sonivox 内部失败，
-请先确认子模块已经正确初始化，并且当前平台已经安装所需的原生构建工具。
+请参阅 [BUILD.md](./BUILD.md) 了解如何构建项目。
 
 ## 贡献
 
