@@ -811,7 +811,6 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
                 .state
                 .mr_shake_on
                 .set(&mut env.mem, input1 as i8);
-            env.mythroad.state.bi.update(&mut env.mem, |bi| bi | 0x4);
             MrResult::Success as i32
         }
         0x12e => {
@@ -856,14 +855,10 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
             old
         }
         0x194 => {
-            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             // TODO: _mr_newSIMInd((int16)input1, NULL);
             MrResult::Success as i32
         }
-        0x195 => {
-            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
-            crate::mythroad::network::mr_close_network(env)
-        }
+        0x195 => crate::mythroad::network::mr_close_network(env),
         0x196 => {
             let old = env.mythroad.state.sysinfo.screen_height;
             env.mythroad.state.sysinfo.screen_height = input1 as i32;
@@ -874,7 +869,6 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
             old
         }
         0x197 => {
-            log_dbg!("Mythroad: _mr_TestCom got unknown param: code={input0}");
             env.mythroad
                 .state
                 .mr_timer_run_without_pause
