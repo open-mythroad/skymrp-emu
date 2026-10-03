@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use crate::options::Options;
+use sdl2::controller::{Button as ControllerButton, GameController};
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::rect::Rect;
@@ -87,11 +88,20 @@ pub enum MrKey {
     SoftRight = 18,
     Send = 19,
     Select = 20,
+    VolumeUp = 21,
+    VolumeDown = 22,
+    Clear = 23,
+    A = 24,
+    B = 25,
+    Capture = 26,
+    #[allow(dead_code)]
+    None = 27,
 }
 
 pub struct Window {
     _sdl_ctx: sdl2::Sdl,
     _video_ctx: sdl2::VideoSubsystem,
+    _game_controllers: Vec<GameController>,
     texture: Option<Texture>,
     texture_size: Option<(u32, u32)>,
     canvas: Canvas<sdl2::video::Window>,
@@ -133,10 +143,36 @@ impl Window {
         let canvas = window.into_canvas().present_vsync().build().unwrap();
 
         let event_pump = sdl_ctx.event_pump().unwrap();
+        let mut game_controllers = Vec::new();
+        match sdl_ctx.game_controller() {
+            Ok(controller_subsystem) => match controller_subsystem.num_joysticks() {
+                Ok(count) => {
+                    for device_index in 0..count {
+                        if !controller_subsystem.is_game_controller(device_index) {
+                            continue;
+                        }
+                        match controller_subsystem.open(device_index) {
+                            Ok(controller) => {
+                                log_dbg!("Window: opened game controller {}", controller.name());
+                                game_controllers.push(controller);
+                            }
+                            Err(error) => {
+                                log_dbg!(
+                                    "Window: could not open game controller {device_index}: {error}"
+                                );
+                            }
+                        }
+                    }
+                }
+                Err(error) => log_dbg!("Window: could not scan game controllers: {error}"),
+            },
+            Err(error) => log_dbg!("Window: could not initialize game controllers: {error}"),
+        }
 
         Window {
             _sdl_ctx: sdl_ctx,
             _video_ctx: video_ctx,
+            _game_controllers: game_controllers,
             texture: None,
             texture_size: None,
             canvas,
@@ -228,6 +264,16 @@ impl Window {
                         if let Some(key) = keycode_to_mr_key(keycode) {
                             self.event_queue.push_back(Event::KeyUp(key));
                         }
+                    }
+                }
+                E::ControllerButtonDown { button, .. } => {
+                    if let Some(key) = controller_button_to_mr_key(button) {
+                        self.event_queue.push_back(Event::KeyDown(key));
+                    }
+                }
+                E::ControllerButtonUp { button, .. } => {
+                    if let Some(key) = controller_button_to_mr_key(button) {
+                        self.event_queue.push_back(Event::KeyUp(key));
                     }
                 }
                 E::TextInput { text, .. } => {
@@ -428,6 +474,33 @@ fn keycode_to_mr_key(keycode: sdl2::keyboard::Keycode) -> Option<MrKey> {
         Keycode::E | Keycode::RightBracket => Some(MrKey::SoftRight),
         Keycode::Tab => Some(MrKey::Send),
         Keycode::Escape => Some(MrKey::Power),
+        Keycode::VolumeUp => Some(MrKey::VolumeUp),
+        Keycode::VolumeDown => Some(MrKey::VolumeDown),
+        Keycode::Backspace | Keycode::KpBackspace | Keycode::Delete => Some(MrKey::Clear),
+        Keycode::Z => Some(MrKey::A),
+        Keycode::X => Some(MrKey::B),
+        Keycode::PrintScreen => Some(MrKey::Capture),
+        Keycode::AcBack => Some(MrKey::SoftRight),
+        _ => None,
+    }
+}
+
+fn controller_button_to_mr_key(button: ControllerButton) -> Option<MrKey> {
+    match button {
+        ControllerButton::DPadUp => Some(MrKey::Up),
+        ControllerButton::DPadDown => Some(MrKey::Down),
+        ControllerButton::DPadLeft => Some(MrKey::Left),
+        ControllerButton::DPadRight => Some(MrKey::Right),
+        ControllerButton::A => Some(MrKey::A),
+        ControllerButton::B => Some(MrKey::B),
+        ControllerButton::X => Some(MrKey::SoftLeft),
+        ControllerButton::Y => Some(MrKey::SoftRight),
+        ControllerButton::Start => Some(MrKey::Select),
+        ControllerButton::Back => Some(MrKey::SoftRight),
+        ControllerButton::Guide => Some(MrKey::Power),
+        ControllerButton::LeftShoulder => Some(MrKey::Star),
+        ControllerButton::RightShoulder => Some(MrKey::Pound),
+        ControllerButton::Misc1 => Some(MrKey::Capture),
         _ => None,
     }
 }
