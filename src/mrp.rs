@@ -4,7 +4,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use crate::encoding;
-use crate::fs::{Fs, GuestPath};
 use crate::gzip;
 use crate::mem::{Memory, MutPtr};
 use std::collections::HashMap;
@@ -98,29 +97,6 @@ impl MrpHeader {
             list_offset,
         })
     }
-}
-
-pub fn load_from_file<P: AsRef<GuestPath>>(
-    path: P,
-    fs: &Fs,
-    into_mem: &mut Memory,
-) -> Result<MutPtr<u8>, String> {
-    load_from_bytes(
-        &fs.read(path.as_ref())
-            .map_err(|_| "Could not read MRP file")?,
-        into_mem,
-    )
-}
-
-pub fn load_from_bytes(bytes: &[u8], into_mem: &mut Memory) -> Result<MutPtr<u8>, String> {
-    parse_entries(bytes)?;
-
-    let guest_len = u32::try_from(bytes.len())
-        .map_err(|_| "MRP file size does not fit in guest memory size".to_string())?;
-    let guest_base: MutPtr<u8> = into_mem.alloc(guest_len).cast();
-    copy_bytes_to_guest(into_mem, guest_base, bytes)?;
-
-    Ok(guest_base)
 }
 
 pub fn find_entry(data: &[u8], name: &str) -> Result<Option<MrpEntry>, String> {

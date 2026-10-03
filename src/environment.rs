@@ -18,6 +18,7 @@ pub struct Environment {
     pub window: window::Window,
     pub mem: mem::Memory,
     pub fs: fs::Fs,
+    pub initial_mrp_path: fs::GuestPathBuf,
     pub package_cache: Option<mrp::PackageCache>,
     pub syscall: syscall::Syscall,
     pub cpu: cpu::Cpu,
@@ -37,13 +38,16 @@ impl Environment {
         mem.reserve(0, mem::Memory::NULL_PAGE_SIZE);
 
         let (fs, guest_path) = fs::Fs::new(mrp_path.as_path());
-        let initial_mrp_base = mrp::load_from_file(guest_path, &fs, &mut mem)
-            .map_err(|e| format!("Could not load MRP file: {}", e))?;
+        let initial_mrp_data = fs
+            .read(&guest_path)
+            .map_err(|_| "Could not load MRP file".to_owned())?;
+        let package_cache =
+            mrp::PackageCache::new(guest_path.as_str().to_owned(), initial_mrp_data)
+                .map_err(|e| format!("Could not load MRP file: {}", e))?;
 
         let mut syscall = syscall::Syscall::new();
 
         let mythroad = mythroad::Mythroad::new(&mut mem);
-        mythroad.register_app(&mut mem, 0, initial_mrp_base);
         syscall.setup_stubs(&mut mem, &mythroad);
         let mut cpu = cpu::Cpu::new();
         stack::prep_stack_for_start(&mut mem, &mut cpu);
@@ -58,7 +62,8 @@ impl Environment {
             window,
             mem,
             fs,
-            package_cache: None,
+            initial_mrp_path: guest_path,
+            package_cache: Some(package_cache),
             syscall,
             cpu,
             libc_state,
@@ -69,8 +74,9 @@ impl Environment {
 
     /// Run the emulator.
     pub fn run(&mut self) {
+        let entry = format!("%{}", self.initial_mrp_path.as_str());
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            dsm::mr_start_dsm_c(self, mrp::MR_START_FILE_NAME, Some("*A"))
+            dsm::mr_start_dsm_c(self, mrp::MR_START_FILE_NAME, Some(&entry))
                 == mythroad::MrResult::Success as i32
         }));
 
