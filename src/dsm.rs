@@ -22,7 +22,7 @@ use crate::Environment;
 use encoding_rs::GBK;
 use std::time::Duration;
 
-const DSM_MAX_FILE_LEN: usize = 256;
+pub(crate) const DSM_MAX_FILE_LEN: usize = 256;
 const DSM_HIDE_DRIVE: &str = ".disk";
 const DSM_DRIVE_A: &str = "a";
 const DSM_DRIVE_B: &str = "b";
@@ -268,8 +268,8 @@ pub(crate) fn mr_plat_ex(
                 return MrResult::Failed as i32;
             }
 
-            let word_info = env.mem.alloc_and_write(0x1008_1010i32);
-            env.mem.write(output, word_info.cast());
+            env.mem
+                .write(output, env.mythroad.state.dsm_word_info.ptr().cast::<u8>());
             env.mem.write(output_len, guest_size_of::<i32>() as i32);
             MrResult::Success as i32
         }
@@ -348,7 +348,16 @@ fn dsm_switch_path(
 
             let drive_path = dsm_drive_path_from_guest_path(env.fs.working_directory());
             let drive_path = encoding::utf8_to_gb_bytes(&drive_path);
-            let output_buf = env.mem.alloc_and_write_cstr(&drive_path);
+            if drive_path.len() >= DSM_MAX_FILE_LEN + 10 {
+                return MrResult::Failed as i32;
+            }
+
+            let output_buf = env.mythroad.state.dsm_switch_path_buf;
+            let output_bytes = env
+                .mem
+                .bytes_at_mut(output_buf, (DSM_MAX_FILE_LEN + 10) as u32);
+            output_bytes.fill(0);
+            output_bytes[..drive_path.len()].copy_from_slice(&drive_path);
             env.mem.write(output, output_buf);
             env.mem.write(output_len, drive_path.len() as i32);
         }

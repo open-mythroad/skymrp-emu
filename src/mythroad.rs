@@ -614,6 +614,8 @@ pub struct State {
     pub mr_screen_w: GuestVar<i32>,
     pub mr_screen_h: GuestVar<i32>,
     pub mr_screen_bit: GuestVar<i32>,
+    pub dsm_word_info: GuestVar<i32>,
+    pub dsm_switch_path_buf: MutPtr<u8>,
     pub dsm_disk_info: GuestVar<DsmDiskInfo>,
     pub mr_bitmap: MutPtr<MrBitmap>,
     pub mr_tile: MutPtr<MrTile>,
@@ -677,6 +679,9 @@ impl State {
         let mr_screen_w = GuestVar::new(mem, sysinfo.screen_width as i32);
         let mr_screen_h = GuestVar::new(mem, sysinfo.screen_height as i32);
         let mr_screen_bit = GuestVar::new(mem, sysinfo.screen_bits as i32);
+        let dsm_word_info = GuestVar::new(mem, 0x1008_1010i32);
+        let dsm_switch_path_buf =
+            alloc_array(mem, (dsm::DSM_MAX_FILE_LEN + 10).try_into().unwrap());
         let dsm_disk_info = GuestVar::new(mem, DsmDiskInfo::default());
         let mr_bitmap = alloc_array(mem, BITMAPMAX + 1);
         let mr_tile = alloc_array(mem, TILEMAX);
@@ -754,6 +759,8 @@ impl State {
             mr_screen_w,
             mr_screen_h,
             mr_screen_bit,
+            dsm_word_info,
+            dsm_switch_path_buf,
             dsm_disk_info,
             mr_bitmap,
             mr_tile,
