@@ -129,6 +129,17 @@ unsafe impl SafeRead for MrSound {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
+pub(crate) struct MrAppInfo {
+    pub id: i32,
+    pub ver: i32,
+    pub sid_name: MutPtr<u8>,
+    pub ram: i32,
+}
+
+unsafe impl SafeRead for MrAppInfo {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
 pub struct MrDatetime {
     pub year: u16,
     pub month: u8,
@@ -586,7 +597,7 @@ pub struct State {
     pub old_start_filename: MutPtr<u8>,
     pub start_file_parameter: MutPtr<u8>,
     pub entry: MutPtr<u8>,
-    pub app_info: MutVoidPtr,
+    pub app_info: GuestVar<MrAppInfo>,
     pub heap: MrHeap,
     pub mr_m0_files: MutPtr<u32>,
     pub vm_state: GuestVar<u32>,
@@ -684,7 +695,7 @@ impl State {
         let mr_stop_function = GuestFunction::from_addr_with_thumb_bit(0);
         let mr_pause_app_function = GuestFunction::from_addr_with_thumb_bit(0);
         let mr_resume_app_function = GuestFunction::from_addr_with_thumb_bit(0);
-        let app_info = MutVoidPtr::null();
+        let app_info = GuestVar::new(mem, MrAppInfo::default());
 
         let mr_c_internal_table = write_u32_table(
             mem,

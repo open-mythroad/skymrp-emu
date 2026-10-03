@@ -15,6 +15,10 @@ pub const LOGO_EXT_FILE_NAME: &str = "logo.ext";
 const MRP_MAGIC: &[u8; 4] = b"MRPG";
 const MRP_HEADER_SIZE: usize = 16;
 const LEGACY_MRP_HEADER_SIZE: usize = 8;
+const MRP_APP_ID_OFFSET: usize = 192;
+const MRP_APP_VERSION_OFFSET: usize = 196;
+const MRP_RAM_OFFSET: usize = 228;
+const MRP_RAM_CHECK_OFFSET: usize = 230;
 
 #[derive(Debug)]
 pub struct PackageCache {
@@ -34,6 +38,13 @@ pub struct MrpHeader {
 pub struct MrpEntry {
     pub offset: u32,
     pub size: u32,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MrpAppInfo {
+    pub id: u32,
+    pub version: u32,
+    pub ram: u32,
 }
 
 impl PackageCache {
@@ -60,6 +71,10 @@ impl PackageCache {
             .get(name)
             .ok_or_else(|| format!("MRP entry not found: {name}"))?;
         read_entry_from_bytes(&self.data, name, *entry)
+    }
+
+    pub fn app_info(&self) -> Result<MrpAppInfo, String> {
+        read_app_info(&self.data)
     }
 }
 
@@ -110,6 +125,33 @@ pub fn load_from_bytes(bytes: &[u8], into_mem: &mut Memory) -> Result<MutPtr<u8>
 
 pub fn find_entry(data: &[u8], name: &str) -> Result<Option<MrpEntry>, String> {
     Ok(parse_entries(data)?.get(name).copied())
+}
+
+pub fn read_app_info(data: &[u8]) -> Result<MrpAppInfo, String> {
+    MrpHeader::parse(data)?;
+
+    let id = read_u32_be(data, MRP_APP_ID_OFFSET).unwrap_or_default();
+    let version = read_u32_be(data, MRP_APP_VERSION_OFFSET).unwrap_or_default();
+    let ram = match (
+        data.get(MRP_RAM_OFFSET..MRP_RAM_OFFSET + 2),
+        data.get(MRP_RAM_CHECK_OFFSET..MRP_RAM_CHECK_OFFSET + 2),
+    ) {
+        (Some(ram_bytes), Some(ram_check_bytes)) => {
+            let ram = u16::from_be_bytes([ram_bytes[0], ram_bytes[1]]);
+            let ram_check = u16::from_be_bytes([ram_check_bytes[0], ram_check_bytes[1]]);
+            let mut hasher = crc32fast::Hasher::new();
+            hasher.update(&ram.to_le_bytes());
+            hasher.update(&ram.to_le_bytes());
+            if ram_check == (hasher.finalize() & 0xff) as u16 {
+                u32::from(ram)
+            } else {
+                0
+            }
+        }
+        _ => 0,
+    };
+
+    Ok(MrpAppInfo { id, version, ram })
 }
 
 pub fn parse_entries(data: &[u8]) -> Result<HashMap<String, MrpEntry>, String> {
@@ -305,6 +347,20 @@ fn read_u32_le(data: &[u8], offset: usize) -> Result<u32, String> {
         .ok_or_else(|| format!("Unexpected end of MRP data at offset {offset}"))?;
 
     Ok(u32::from_le_bytes(bytes.try_into().expect(
+        "slice length was checked before converting to u32",
+    )))
+}
+
+fn read_u32_be(data: &[u8], offset: usize) -> Result<u32, String> {
+    let end = offset
+        .checked_add(4)
+        .ok_or_else(|| format!("MRP u32 read offset overflow: {offset}"))?;
+
+    let bytes = data
+        .get(offset..end)
+        .ok_or_else(|| format!("Unexpected end of MRP data at offset {offset}"))?;
+
+    Ok(u32::from_be_bytes(bytes.try_into().expect(
         "slice length was checked before converting to u32",
     )))
 }

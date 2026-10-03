@@ -14,7 +14,7 @@ use crate::mem::{guest_size_of, ConstPtr, ConstVoidPtr, MutPtr, MutVoidPtr};
 use crate::mrp;
 use crate::mythroad::{
     mr_exit, mr_free, mr_malloc, mr_stop, mr_stop_sound, reset_resource_tables, DsmDiskInfo,
-    MrEvent, MrResult, MrRunState, MrTimerState, MR_FILE_MAX_LEN,
+    MrAppInfo, MrEvent, MrResult, MrRunState, MrTimerState, MR_FILE_MAX_LEN,
 };
 use crate::Environment;
 
@@ -767,6 +767,16 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
             MrResult::Success as i32
         }
         0x07 => input1 as i32,
+        0x09 => {
+            env.mythroad
+                .state
+                .app_info
+                .update(&mut env.mem, |mut app_info| {
+                    app_info.ram = input1 as i32;
+                    app_info
+                });
+            MrResult::Success as i32
+        }
         0x64 => env.mythroad.state.heap.mem_min.get(&env.mem) as i32,
         0x65 => env.mythroad.state.heap.mem_top.get(&env.mem) as i32,
         0x66 => env.mythroad.state.heap.mem_left.get(&env.mem),
@@ -1151,6 +1161,8 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
     env.mythroad.state.mr_timer_start_time = mr_get_time(env);
     env.mythroad.state.mr_timer_interval = 0;
     env.mythroad.state.bi.update(&mut env.mem, |bi| bi & 2);
+    let app_info = read_current_package_app_info(env).unwrap_or_default();
+    env.mythroad.state.app_info.set(&mut env.mem, app_info);
 
     if !reset_screen_buffer(env) {
         env.mythroad
@@ -1260,8 +1272,8 @@ fn mr_do_ext(env: &mut Environment, filename: &str) -> i32 {
 
             mr_test_com_c(env, 801, addr, 0x7cd, 6);
 
-            let app_info = env.mythroad.state.app_info;
-            mr_test_com_c(env, 801, app_info, 16, 8);
+            let app_info = env.mythroad.state.app_info.ptr().cast_void();
+            mr_test_com_c(env, 801, app_info, guest_size_of::<MrAppInfo>(), 8);
 
             mr_test_com_c(env, 801, addr, 0x7cd, 0);
 
@@ -1297,6 +1309,30 @@ pub(crate) fn read_current_package_file(
         .ok_or_else(|| format!("Current memory package not found: {pack_filename}"))?;
     let pack_data = env.mem.bytes_at(pack_base.cast_const(), pack_len);
     mrp::read_file_from_bytes(pack_data, filename)
+}
+
+fn read_current_package_app_info(env: &mut Environment) -> Result<MrAppInfo, String> {
+    let pack_filename = encoding::gb_to_utf8_string(
+        env.mem
+            .cstr_at(env.mythroad.state.pack_filename.cast_const()),
+    )
+    .into_owned();
+
+    let info = match pack_filename.as_bytes().first().copied() {
+        Some(b'*' | b'$') => {
+            let (pack_base, pack_len) = memory_pack_range(env, &pack_filename)
+                .ok_or_else(|| format!("Current memory package not found: {pack_filename}"))?;
+            mrp::read_app_info(env.mem.bytes_at(pack_base.cast_const(), pack_len))?
+        }
+        _ => current_disk_package(env, &pack_filename)?.app_info()?,
+    };
+
+    Ok(MrAppInfo {
+        id: info.id as i32,
+        ver: info.version as i32,
+        sid_name: MutPtr::null(),
+        ram: info.ram as i32,
+    })
 }
 
 pub(crate) fn mr_read_file(
