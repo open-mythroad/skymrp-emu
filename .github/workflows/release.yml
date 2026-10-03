@@ -1,6 +1,7 @@
 name: Build skymrp
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -83,7 +84,15 @@ jobs:
           path: ${{ env.ASSET_NAME }}
 
   build-linux:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - uses: actions/checkout@v4
@@ -103,14 +112,14 @@ jobs:
 
       - name: Create release zip
         run: |
-          output="skymrp_${GITHUB_REF_NAME}_Linux_x86_64.zip"
+          output="skymrp_${GITHUB_REF_NAME}_Linux_${{ matrix.arch }}.zip"
           scripts/prepare-release.sh --create-zip target/release/skymrp -o "$output"
           echo "ASSET_NAME=$output" >> "$GITHUB_ENV"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: artifact-linux
+          name: artifact-linux-${{ matrix.arch }}
           path: ${{ env.ASSET_NAME }}
 
   build-android:
