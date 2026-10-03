@@ -221,6 +221,37 @@ impl TryFrom<u16> for BitmapRasterOp {
     }
 }
 
+const MR_SPRITE_INDEX_MASK: u16 = 0x03ff;
+const MR_SPRITE_TRANSPARENT: u16 = 0x0400;
+const MR_TILE_SHIFT: u16 = 11;
+
+fn transformed_bitmap_source_offset(
+    mode: u16,
+    flip: bool,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+) -> Option<u32> {
+    let (source_x, source_y) = match (mode, flip) {
+        (0, false) => (x, y),
+        (0, true) => (x, h - 1 - y),
+        (1, false) => (w - 1 - y, x),
+        (1, true) => (w - 1 - y, h - 1 - x),
+        (2, false) => (w - 1 - x, h - 1 - y),
+        (2, true) => (w - 1 - x, y),
+        (3, false) => (y, h - 1 - x),
+        (3, true) => (y, x),
+        _ => return None,
+    };
+
+    if source_x < 0 || source_x >= w || source_y < 0 || source_y >= h {
+        return None;
+    }
+
+    Some((source_y * w + source_x) as u32)
+}
+
 pub(super) fn mr_draw_bitmap(
     env: &mut Environment,
     bmp: MutPtr<u16>,
@@ -377,19 +408,58 @@ pub(super) fn draw_bitmap(
     let mut sy = i32::from(sy);
     let mw = i32::from(mw);
 
-    if p.is_null()
-        || screen_buf.is_null()
-        || screen_w <= 0
-        || screen_h <= 0
-        || w == 0
-        || h == 0
-        || mw <= 0
-        || sx > mw - 1
-        || x + w <= 0
-        || x > screen_w - 1
-        || y > screen_h - 1
-        || y + h <= 0
-    {
+    if p.is_null() || screen_buf.is_null() || screen_w <= 0 || screen_h <= 0 || w == 0 || h == 0 {
+        return;
+    }
+
+    if rop > MR_SPRITE_TRANSPARENT {
+        let Ok(bitmap_rop) = BitmapRasterOp::try_from(rop & MR_SPRITE_INDEX_MASK) else {
+            return;
+        };
+        if !matches!(
+            bitmap_rop,
+            BitmapRasterOp::Copy | BitmapRasterOp::Transparent
+        ) {
+            return;
+        }
+
+        let min_x = x.max(0);
+        let min_y = y.max(0);
+        let max_x = (x + w).min(screen_w);
+        let max_y = (y + h).min(screen_h);
+        if min_x >= max_x || min_y >= max_y {
+            return;
+        }
+
+        let mode = (rop >> MR_TILE_SHIFT) & 0x3;
+        let flip = ((rop >> MR_TILE_SHIFT) & 0x4) != 0;
+        for dest_y in min_y..max_y {
+            for dest_x in min_x..max_x {
+                let local_x = dest_x - x;
+                let local_y = dest_y - y;
+                let source_offset = match bitmap_rop {
+                    BitmapRasterOp::Transparent => (local_y * w + local_x) as u32,
+                    BitmapRasterOp::Copy => {
+                        let Some(offset) =
+                            transformed_bitmap_source_offset(mode, flip, local_x, local_y, w, h)
+                        else {
+                            continue;
+                        };
+                        offset
+                    }
+                    _ => unreachable!(),
+                };
+                let src_pixel: u16 = env.mem.read(p + source_offset);
+                if bitmap_rop == BitmapRasterOp::Copy || src_pixel != transcolor {
+                    let dest_offset = (dest_y * screen_w + dest_x) as u32;
+                    env.mem.write(screen_buf + dest_offset, src_pixel);
+                }
+            }
+        }
+        return;
+    }
+
+    if mw <= 0 || sx > mw - 1 || x + w <= 0 || x > screen_w - 1 || y > screen_h - 1 || y + h <= 0 {
         return;
     }
 
