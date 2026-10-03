@@ -117,6 +117,8 @@ pub(crate) fn mr_init_network(
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
+    mr_close_network(env);
+
     let network = &mut env.mythroad.state.network;
     network.reset_sockets();
     network.init_callback = callback;
