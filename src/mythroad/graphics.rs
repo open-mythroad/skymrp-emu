@@ -10,7 +10,7 @@ use crate::libc;
 use crate::mem::{guest_size_of, ConstPtr, MutPtr, MutVoidPtr, Ptr, SafeRead};
 use crate::Environment;
 
-use super::{mr_free, MrResult};
+use super::{mr_free, MrResult, MrRunState};
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -311,7 +311,7 @@ pub(super) fn disp_up_ex(env: &mut Environment, x: i16, y: i16, w: u16, h: u16) 
         env.cpu.regs()[crate::cpu::Cpu::PC]
     );
 
-    if env.mythroad.state.vm_state.get(&env.mem) == 1 {
+    if env.mythroad.state.mr_state.get(&env.mem) == MrRunState::Run as u32 {
         let screen_buf = env.mythroad.state.mr_screen_buf.get(&env.mem);
         mr_draw_bitmap(env, screen_buf, x, y, w, h);
     }
