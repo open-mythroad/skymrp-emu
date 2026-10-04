@@ -103,11 +103,20 @@ pub(crate) fn open_direct(env: &mut Environment, path: ConstPtr<u8>, flags: i32)
 
     // TODO: respect the mode (in the variadic arguments) when creating a file
     // Note: NONBLOCK flag is ignored, assumption is all file I/O is fast
+    let mut needs_flush = false;
     let mut options = GuestOpenOptions::new();
     match flags & O_ACCMODE {
-        O_RDONLY => options.read(),
-        O_WRONLY => options.write(),
-        O_RDWR => options.read().write(),
+        O_RDONLY => {
+            options.read();
+        }
+        O_WRONLY => {
+            options.write();
+            needs_flush = true;
+        }
+        O_RDWR => {
+            options.read().write();
+            needs_flush = true;
+        }
         _ => panic!(),
     };
     if (flags & O_APPEND) != 0 {
@@ -125,7 +134,7 @@ pub(crate) fn open_direct(env: &mut Environment, path: ConstPtr<u8>, flags: i32)
         Ok(file) => {
             let host_object = PosixFileHostObject {
                 file,
-                needs_flush: false,
+                needs_flush,
                 reached_eof: false,
                 flags: flags & (O_ACCMODE | O_NONBLOCK | O_APPEND),
             };
@@ -298,15 +307,19 @@ pub(crate) fn close(env: &mut Environment, fd: FileDescriptor) -> i32 {
             0
         }
         _ => {
-            match file.file.sync_all() {
-                Ok(()) => {
-                    log_dbg!("close({:?}) => 0", fd);
-                    0
-                }
-                Err(_) => {
-                    // TODO: set errno
-                    log!("Warning: close({:?}) failed, returning -1", fd);
-                    -1
+            if !file.needs_flush {
+                0
+            } else {
+                match file.file.sync_all() {
+                    Ok(()) => {
+                        log_dbg!("close({:?}) => 0", fd);
+                        0
+                    }
+                    Err(_) => {
+                        // TODO: set errno
+                        log!("Warning: close({:?}) failed, returning -1", fd);
+                        -1
+                    }
                 }
             }
         }
