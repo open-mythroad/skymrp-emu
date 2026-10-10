@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use crate::encoding;
+use crate::fs::{GuestPath, GuestPathBuf};
 use crate::gzip;
 use crate::mem::{Memory, MutPtr};
 use std::collections::HashMap;
@@ -21,7 +22,7 @@ const MRP_RAM_CHECK_OFFSET: usize = 230;
 
 #[derive(Debug)]
 pub struct PackageCache {
-    filename: String,
+    path: GuestPathBuf,
     data: Vec<u8>,
     entries: HashMap<String, MrpEntry>,
 }
@@ -47,17 +48,17 @@ pub struct MrpAppInfo {
 }
 
 impl PackageCache {
-    pub fn new(filename: String, data: Vec<u8>) -> Result<Self, String> {
+    pub fn new(path: GuestPathBuf, data: Vec<u8>) -> Result<Self, String> {
         let entries = parse_entries(&data)?;
         Ok(Self {
-            filename,
+            path,
             data,
             entries,
         })
     }
 
-    pub fn filename(&self) -> &str {
-        &self.filename
+    pub fn path(&self) -> &GuestPath {
+        &self.path
     }
 
     pub fn contains(&self, name: &str) -> bool {

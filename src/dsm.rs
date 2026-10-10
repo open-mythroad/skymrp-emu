@@ -190,10 +190,21 @@ fn posix_fd_to_mr_file_handle(fd: posix_io::FileDescriptor) -> i32 {
     fd + MR_FILE_HANDLE_OFFSET
 }
 
+fn strip_mr_path_leading_separators(env: &Environment, path: ConstPtr<u8>) -> ConstPtr<u8> {
+    let leading_separators = env
+        .mem
+        .cstr_at(path)
+        .iter()
+        .take_while(|&&byte| byte == b'/' || byte == b'\\')
+        .count();
+    path + leading_separators as u32
+}
+
 pub(crate) fn mr_open(env: &mut Environment, filename: ConstPtr<u8>, mode: u32) -> i32 {
     if filename.is_null() {
         return 0;
     };
+    let filename = strip_mr_path_leading_separators(env, filename);
 
     let mut open_flag: OpenFlag = 0;
     if mode & MR_FILE_RDONLY != 0 {
@@ -593,6 +604,7 @@ pub(crate) fn mr_info(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {
     if filename.is_null() {
         return MR_IS_INVALID;
     }
+    let filename = strip_mr_path_leading_separators(env, filename);
 
     let filename = encoding::gb_to_utf8_string(env.mem.cstr_at(filename));
     let path = GuestPath::new(&filename);
@@ -611,6 +623,7 @@ pub(crate) fn mr_mkdir(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
         return MrResult::Failed as i32;
     }
 
+    let name = strip_mr_path_leading_separators(env, name);
     posix_io::stat::mkdir(env, name, 0o777 as mode_t)
 }
 
@@ -619,6 +632,7 @@ pub(crate) fn mr_rmdir(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
         return MrResult::Failed as i32;
     }
 
+    let name = strip_mr_path_leading_separators(env, name);
     posix_io::stat::rmdir(env, name)
 }
 
@@ -627,6 +641,7 @@ pub(crate) fn mr_remove(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {
         return MrResult::Failed as i32;
     }
 
+    let filename = strip_mr_path_leading_separators(env, filename);
     if libc::stdio::remove(env, filename) == 0 {
         MrResult::Success as i32
     } else {
@@ -643,6 +658,8 @@ pub(crate) fn mr_rename(
         return MrResult::Failed as i32;
     }
 
+    let oldname = strip_mr_path_leading_separators(env, oldname);
+    let newname = strip_mr_path_leading_separators(env, newname);
     if posix_io::rename(env, oldname, newname) == 0 {
         MrResult::Success as i32
     } else {
@@ -660,6 +677,7 @@ pub(crate) fn mr_find_start(
         return MrResult::Failed as i32;
     }
 
+    let name = strip_mr_path_leading_separators(env, name);
     let dir = libc::dirent::opendir(env, name);
     if dir.is_null() {
         return MrResult::Failed as i32;
@@ -725,6 +743,7 @@ pub(crate) fn mr_get_len(env: &mut Environment, filename: ConstPtr<u8>) -> i32 {
     if filename.is_null() {
         return MrResult::Failed as i32;
     }
+    let filename = strip_mr_path_leading_separators(env, filename);
 
     let filename = encoding::gb_to_utf8_string(env.mem.cstr_at(filename));
     let len = match env.fs.size(GuestPath::new(&filename)) {
@@ -1497,17 +1516,20 @@ fn current_disk_package<'a>(
     env: &'a mut Environment,
     pack_filename: &str,
 ) -> Result<&'a mrp::PackageCache, String> {
+    let package_path = env
+        .fs
+        .resolve_from_working_directory(GuestPath::new(pack_filename));
     let cache_matches = env
         .package_cache
         .as_ref()
-        .is_some_and(|cache| cache.filename() == pack_filename);
+        .is_some_and(|cache| cache.path().as_str() == package_path.as_str());
 
     if !cache_matches {
         let data = env
             .fs
-            .read(GuestPath::new(pack_filename))
-            .map_err(|_| format!("Could not read current package: {pack_filename}"))?;
-        env.package_cache = Some(mrp::PackageCache::new(pack_filename.to_owned(), data)?);
+            .read(&package_path)
+            .map_err(|_| format!("Could not read current package: {}", package_path.as_str()))?;
+        env.package_cache = Some(mrp::PackageCache::new(package_path, data)?);
     }
 
     env.package_cache

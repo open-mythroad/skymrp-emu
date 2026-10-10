@@ -18,7 +18,7 @@ pub struct Environment {
     pub window: window::Window,
     pub mem: mem::Memory,
     pub fs: fs::Fs,
-    pub initial_mrp_path: fs::GuestPathBuf,
+    pub initial_pack_filename: String,
     pub package_cache: Option<mrp::PackageCache>,
     pub syscall: syscall::Syscall,
     pub cpu: cpu::Cpu,
@@ -38,12 +38,17 @@ impl Environment {
         mem.reserve(0, mem::Memory::NULL_PAGE_SIZE);
 
         let (fs, guest_path) = fs::Fs::new(mrp_path.as_path());
+        let initial_pack_filename = guest_path
+            .as_str()
+            .strip_prefix(fs::MYTHROAD.as_str())
+            .and_then(|path| path.strip_prefix('/'))
+            .ok_or_else(|| "MRP path is outside the Mythroad directory".to_owned())?
+            .to_owned();
         let initial_mrp_data = fs
             .read(&guest_path)
             .map_err(|_| "Could not load MRP file".to_owned())?;
-        let package_cache =
-            mrp::PackageCache::new(guest_path.as_str().to_owned(), initial_mrp_data)
-                .map_err(|e| format!("Could not load MRP file: {}", e))?;
+        let package_cache = mrp::PackageCache::new(guest_path, initial_mrp_data)
+            .map_err(|e| format!("Could not load MRP file: {}", e))?;
 
         let mut syscall = syscall::Syscall::new();
 
@@ -62,7 +67,7 @@ impl Environment {
             window,
             mem,
             fs,
-            initial_mrp_path: guest_path,
+            initial_pack_filename,
             package_cache: Some(package_cache),
             syscall,
             cpu,
@@ -74,7 +79,7 @@ impl Environment {
 
     /// Run the emulator.
     pub fn run(&mut self) {
-        let entry = format!("%{}", self.initial_mrp_path.as_str());
+        let entry = format!("%{}", self.initial_pack_filename);
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             dsm::mr_start_dsm_c(self, mrp::MR_START_FILE_NAME, Some(&entry))
                 == mythroad::MrResult::Success as i32

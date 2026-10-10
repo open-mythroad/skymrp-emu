@@ -453,10 +453,7 @@ impl Fs {
     pub fn new(mrp_host_path: &Path) -> (Fs, GuestPathBuf) {
         let home_directory = GuestPathBuf::from(MYTHROAD);
         let (mythroad_host_path, mrp_guest_path) = find_mythroad_mount(mrp_host_path);
-        let working_directory = mrp_guest_path
-            .parent()
-            .map(GuestPathBuf::from)
-            .unwrap_or_else(|| home_directory.clone());
+        let working_directory = home_directory.clone();
 
         if !mythroad_host_path.is_dir() {
             panic!(
@@ -487,6 +484,15 @@ impl Fs {
 
     pub fn working_directory(&self) -> &GuestPath {
         &self.working_directory
+    }
+
+    /// Resolve a file path relative to the current working directory.
+    ///
+    /// Mythroad treat leading separators as part of a relative path.
+    pub fn resolve_from_working_directory<P: AsRef<GuestPath>>(&self, path: P) -> GuestPathBuf {
+        let relative_path = path.as_ref().as_str().trim_start_matches(['/', '\\']);
+        let components = resolve_path(GuestPath::new(relative_path), Some(&self.working_directory));
+        GuestPathBuf::from(format!("/{}", components.join("/")))
     }
 
     /// Attempts to change the working directory.
