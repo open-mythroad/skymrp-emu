@@ -25,7 +25,7 @@ android {
         buildConfigField("String", "APP_NAME", "\"SkyMRP\"")
         manifestPlaceholders["icon"] = "@drawable/icon"
         buildConfigField("int", "APP_ICON", "R.drawable.icon")
-        versionName = "0.2.1"
+        versionName = "0.3.0"
 
         minSdk = 21
         targetSdk = 31

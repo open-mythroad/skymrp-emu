@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.0
+
+- Added an ARM interpreter CPU backend with runtime selection using `--cpu`.
+- Added Linux ARMv7 release builds.
+- Added Android ARMv7 support with separate ARMv7, ARM64, and universal packages.
+- Fixed MRP file path resolution after changing the working directory.
+- Fixed direct MRP launches from paths containing non-ASCII characters.
+- Fixed creating missing files opened with DSM read and create flags.
+- Improved panic diagnostics with ARM registers and stack traces.
+
 ## v0.2.1
 
 - Linux ARM64 release builds are now available with ALSA audio support.
