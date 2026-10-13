@@ -219,6 +219,9 @@ pub(crate) fn mr_open(env: &mut Environment, filename: ConstPtr<u8>, mode: u32) 
 
     let filename_str = encoding::gb_to_utf8_string(env.mem.cstr_at(filename)).into_owned();
     if mode & MR_FILE_CREATE != 0 && !env.fs.exists(GuestPath::new(&filename_str)) {
+        if open_flag == posix_io::O_RDONLY {
+            open_flag = posix_io::O_RDWR;
+        }
         open_flag |= posix_io::O_CREAT;
     }
 
