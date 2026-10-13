@@ -18,6 +18,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arm32_cpu"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c486154d790793acc6f6e881956512bc78fadbd7a7ace8f4be41eba95f9c55a"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -386,6 +395,7 @@ checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 name = "skymrp"
 version = "0.2.1"
 dependencies = [
+ "arm32_cpu",
  "cc",
  "chrono",
  "cmake",

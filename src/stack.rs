@@ -30,5 +30,5 @@ pub fn prep_stack_for_start(_mem: &mut Memory, cpu: &mut Cpu) {
 
     assert!(stack_height < Memory::STACK_SIZE);
     assert!(stack_height % 4 == 0);
-    cpu.regs_mut()[Cpu::SP] = stack_ptr.to_bits();
+    cpu.set_reg(Cpu::SP, stack_ptr.to_bits());
 }

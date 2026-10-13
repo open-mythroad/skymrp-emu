@@ -34,6 +34,7 @@ cmake = "0.1.49"
 rusty-hook = "0.11.2"
 
 [dependencies]
+arm32_cpu = "0.1.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 crc32fast = "1.5"
 encoding_rs = "0.8"
