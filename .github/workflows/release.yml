@@ -89,8 +89,13 @@ jobs:
         include:
           - runner: ubuntu-22.04
             arch: x86_64
+            target: x86_64-unknown-linux-gnu
           - runner: ubuntu-22.04-arm
             arch: aarch64
+            target: aarch64-unknown-linux-gnu
+          - runner: ubuntu-22.04-arm
+            arch: armv7
+            target: armv7-unknown-linux-gnueabihf
 
     runs-on: ${{ matrix.runner }}
 
@@ -101,11 +106,27 @@ jobs:
 
       - name: Install dependencies
         run: |
+          if [ "${{ matrix.arch }}" = "armv7" ]; then
+            sudo dpkg --add-architecture armhf
+          fi
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libboost-all-dev
+          if [ "${{ matrix.arch }}" = "armv7" ]; then
+            sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libasound2-dev:armhf
+          else
+            sudo apt-get install -y libasound2-dev libboost-all-dev
+          fi
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          CC_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-gcc
+          CXX_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-g++
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+          PKG_CONFIG_ALLOW_CROSS: 1
+          PKG_CONFIG_PATH_armv7_unknown_linux_gnueabihf: /usr/lib/arm-linux-gnueabihf/pkgconfig
 
       - name: Prepare release files
         run: scripts/prepare-release.sh --prepare-files
@@ -113,7 +134,7 @@ jobs:
       - name: Create release zip
         run: |
           output="skymrp_${GITHUB_REF_NAME}_Linux_${{ matrix.arch }}.zip"
-          scripts/prepare-release.sh --create-zip target/release/skymrp -o "$output"
+          scripts/prepare-release.sh --create-zip target/${{ matrix.target }}/release/skymrp -o "$output"
           echo "ASSET_NAME=$output" >> "$GITHUB_ENV"
 
       - name: Upload artifact
@@ -138,8 +159,8 @@ jobs:
           7z -ovendor x boost_1_81_0.7z
           mv vendor/boost_1_81_0 vendor/boost
 
-      - name: Install AArch64 Android Rust toolchain
-        run: rustup target add aarch64-linux-android
+      - name: Install Android Rust targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk@3.5.4
@@ -164,7 +185,7 @@ jobs:
 
       # Don't attempt to run tests (can't run on Android).
       - name: Build for Android
-        run: cd android && ../gradle/gradle-8.11.1/bin/gradle assembleRelease && mv app/build/outputs/apk/release/app-release.apk ../SkyMRP.apk
+        run: cd android && ../gradle/gradle-8.11.1/bin/gradle assembleRelease
         env:
           # The version should match the ndkVersion defined in `android\app\build.gradle`
           ANDROID_NDK_ROOT: '/usr/local/lib/android/sdk/ndk/25.2.9519653'
@@ -176,15 +197,17 @@ jobs:
 
       - name: Create release zip
         run: |
-          output="SkyMRP_${GITHUB_REF_NAME}_Android_AArch64.zip"
-          scripts/prepare-release.sh --create-zip SkyMRP.apk -o "$output"
-          echo "ASSET_NAME=$output" >> "$GITHUB_ENV"
+          prefix="SkyMRP_${GITHUB_REF_NAME}_Android"
+          scripts/prepare-release.sh --create-zip android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk -o "${prefix}_ARMv7.zip"
+          scripts/prepare-release.sh --create-zip android/app/build/outputs/apk/release/app-arm64-v8a-release.apk -o "${prefix}_ARM64.zip"
+          scripts/prepare-release.sh --create-zip android/app/build/outputs/apk/release/app-universal-release.apk -o "${prefix}_Universal.zip"
+          echo "ASSET_PATTERN=${prefix}_*.zip" >> "$GITHUB_ENV"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: artifact-android
-          path: ${{ env.ASSET_NAME }}
+          path: ${{ env.ASSET_PATTERN }}
 
   release:
     runs-on: ubuntu-latest

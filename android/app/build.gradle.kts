@@ -27,13 +27,21 @@ android {
         buildConfigField("int", "APP_ICON", "R.drawable.icon")
         versionName = "0.2.1"
 
-        minSdk = 21 // first version with AArch64
+        minSdk = 21
         targetSdk = 31
         externalNativeBuild {
             ndkBuild {
                 arguments("APP_PLATFORM=android-21")
-                abiFilters("arm64-v8a")
+                abiFilters("armeabi-v7a", "arm64-v8a")
             }
+        }
+    }
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a")
+            isUniversalApk = true
         }
     }
     // The target JVM version must be the same for Java and Kotlin.
@@ -96,12 +104,16 @@ android {
 
 cargoNdk {
     // Make sure this matches the android abiFilters above.
-    targets = arrayListOf("arm64")
+    targets = arrayListOf("arm", "arm64")
     module = ".."
     librariesNames = arrayListOf("libskymrp.so", "libSDL2.so", "libc++_shared.so")
     extraCargoEnv = mapOf(
         "ANDROID_NDK" to android.ndkDirectory.toString(),
         "ANDROID_NDK_HOME" to android.ndkDirectory.toString(),
+        "CMAKE_TOOLCHAIN_FILE_armv7-linux-androideabi" to
+            android.ndkDirectory.toPath()
+                .resolve("build/cmake/android.toolchain.cmake")
+                .toString(),
     )
 
     if (DefaultNativePlatform.host().operatingSystem.isWindows) {

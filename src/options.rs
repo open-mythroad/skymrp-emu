@@ -24,7 +24,10 @@ impl Default for Options {
             scale: NonZeroU32::new(1).unwrap(),
             fullscreen: false,
             font_size_override: Some(FontSize::Medium),
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             cpu_backend: CpuBackend::Dynarmic,
+            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+            cpu_backend: CpuBackend::Interpreter,
         }
     }
 }
@@ -41,7 +44,18 @@ impl Options {
             self.font_size_override = Some(FontSize::parse(value)?);
         } else if let Some(value) = arg.strip_prefix("--cpu=") {
             self.cpu_backend = match value {
-                "dynarmic" => CpuBackend::Dynarmic,
+                "dynarmic" => {
+                    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+                    {
+                        CpuBackend::Dynarmic
+                    }
+                    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+                    {
+                        return Err(
+                            "Dynarmic CPU backend is unavailable on this architecture".to_string()
+                        );
+                    }
+                }
                 "interpreter" => CpuBackend::Interpreter,
                 _ => return Err(format!("Invalid CPU backend: {value}")),
             };

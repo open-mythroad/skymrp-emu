@@ -4,18 +4,20 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use crate::abi::GuestFunction;
-use crate::mem::{
-    ConstPtr, GuestUSize, Memory, MutPtr, Ptr, SafeRead, SafeWrite, LINEAR_MEMORY_SIZE, PAGE_SIZE,
-};
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+use crate::mem::{ConstPtr, MutPtr, Ptr, SafeRead, SafeWrite};
+use crate::mem::{GuestUSize, Memory, LINEAR_MEMORY_SIZE, PAGE_SIZE};
 
 mod interpreter;
 use interpreter::InterpreterCpu;
 
 // Import functions from C++
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use skymrp_dynarmic_wrapper::*;
 
 type VAddr = u32;
 
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn skymrp_cpu_read_impl<T: SafeRead + Default>(
     mem: *mut skymrp_Memory,
     addr: VAddr,
@@ -33,6 +35,7 @@ fn skymrp_cpu_read_impl<T: SafeRead + Default>(
     res.unwrap_or_default()
 }
 
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn skymrp_cpu_write_impl<T: SafeWrite>(mem: *mut skymrp_Memory, addr: VAddr, value: T) -> bool {
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mem = unsafe { &mut *mem.cast::<Memory>() };
@@ -43,34 +46,42 @@ fn skymrp_cpu_write_impl<T: SafeWrite>(mem: *mut skymrp_Memory, addr: VAddr, val
 }
 
 // Export functions for use by C++
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[no_mangle]
 extern "C" fn skymrp_cpu_read_u8(mem: *mut skymrp_Memory, addr: VAddr, error: *mut bool) -> u8 {
     skymrp_cpu_read_impl(mem, addr, error)
 }
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[no_mangle]
 extern "C" fn skymrp_cpu_read_u16(mem: *mut skymrp_Memory, addr: VAddr, error: *mut bool) -> u16 {
     skymrp_cpu_read_impl(mem, addr, error)
 }
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[no_mangle]
 extern "C" fn skymrp_cpu_read_u32(mem: *mut skymrp_Memory, addr: VAddr, error: *mut bool) -> u32 {
     skymrp_cpu_read_impl(mem, addr, error)
 }
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[no_mangle]
 extern "C" fn skymrp_cpu_read_u64(mem: *mut skymrp_Memory, addr: VAddr, error: *mut bool) -> u64 {
     skymrp_cpu_read_impl(mem, addr, error)
 }
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[no_mangle]
 extern "C" fn skymrp_cpu_write_u8(mem: *mut skymrp_Memory, addr: VAddr, value: u8) -> bool {
     skymrp_cpu_write_impl(mem, addr, value)
 }
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[no_mangle]
 extern "C" fn skymrp_cpu_write_u16(mem: *mut skymrp_Memory, addr: VAddr, value: u16) -> bool {
     skymrp_cpu_write_impl(mem, addr, value)
 }
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[no_mangle]
 extern "C" fn skymrp_cpu_write_u32(mem: *mut skymrp_Memory, addr: VAddr, value: u32) -> bool {
     skymrp_cpu_write_impl(mem, addr, value)
 }
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[no_mangle]
 extern "C" fn skymrp_cpu_write_u64(mem: *mut skymrp_Memory, addr: VAddr, value: u64) -> bool {
     skymrp_cpu_write_impl(mem, addr, value)
@@ -82,18 +93,21 @@ pub struct Cpu {
 }
 
 enum Backend {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     Dynarmic(*mut skymrp_DynarmicWrapper),
     Interpreter(InterpreterCpu),
 }
 
 #[derive(Clone, Copy)]
 pub enum CpuBackend {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     Dynarmic,
     Interpreter,
 }
 
 impl Drop for Cpu {
     fn drop(&mut self) {
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if let Backend::Dynarmic(dynarmic_wrapper) = self.backend {
             unsafe { skymrp_DynarmicWrapper_delete(dynarmic_wrapper) }
         }
@@ -125,6 +139,7 @@ impl Cpu {
 
     pub fn new(backend: CpuBackend) -> Cpu {
         let backend = match backend {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             CpuBackend::Dynarmic => Backend::Dynarmic(unsafe { skymrp_DynarmicWrapper_new() }),
             CpuBackend::Interpreter => Backend::Interpreter(InterpreterCpu::new()),
         };
@@ -137,6 +152,7 @@ impl Cpu {
     pub fn reg(&self, index: usize) -> u32 {
         assert!(index < 16);
         match &self.backend {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             Backend::Dynarmic(dynarmic_wrapper) => unsafe {
                 *skymrp_DynarmicWrapper_regs_const(*dynarmic_wrapper).add(index)
             },
@@ -147,6 +163,7 @@ impl Cpu {
     pub fn set_reg(&mut self, index: usize, value: u32) {
         assert!(index < 16);
         match &mut self.backend {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             Backend::Dynarmic(dynarmic_wrapper) => unsafe {
                 *skymrp_DynarmicWrapper_regs_mut(*dynarmic_wrapper).add(index) = value;
             },
@@ -173,6 +190,7 @@ impl Cpu {
 
     pub fn cpsr(&self) -> u32 {
         match &self.backend {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             Backend::Dynarmic(dynarmic_wrapper) => unsafe {
                 skymrp_DynarmicWrapper_cpsr(*dynarmic_wrapper)
             },
@@ -182,6 +200,7 @@ impl Cpu {
 
     pub fn set_cpsr(&mut self, cpsr: u32) {
         match &mut self.backend {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             Backend::Dynarmic(dynarmic_wrapper) => unsafe {
                 skymrp_DynarmicWrapper_set_cpsr(*dynarmic_wrapper, cpsr)
             },
@@ -190,12 +209,16 @@ impl Cpu {
     }
 
     pub fn clear_cache(&mut self) {
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if let Backend::Dynarmic(dynarmic_wrapper) = self.backend {
             unsafe { skymrp_DynarmicWrapper_clear_cache(dynarmic_wrapper) }
         }
     }
 
     fn invalidate_cache_range_inner(&mut self, start_address: u32, length: usize) {
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        let _ = (start_address, length);
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if let Backend::Dynarmic(dynarmic_wrapper) = self.backend {
             unsafe {
                 skymrp_DynarmicWrapper_invalidate_cache_range(
@@ -271,6 +294,7 @@ impl Cpu {
     #[must_use]
     pub fn run(&mut self, mem: &mut Memory, ticks: &mut u64) -> CpuState {
         match &mut self.backend {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             Backend::Dynarmic(dynarmic_wrapper) => unsafe {
                 let res = skymrp_DynarmicWrapper_run(
                     *dynarmic_wrapper,

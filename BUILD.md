@@ -54,7 +54,8 @@ mv vendor/boost_1_81_0 vendor/boost
 
 All the general prerequisites apply for Android, and you need three additional things:
 
-1. Rust toolchain: `rustup target add aarch64-linux-android`
+1. Rust toolchains:
+   `rustup target add aarch64-linux-android armv7-linux-androideabi`
 2. cargo-ndk: `cargo install cargo-ndk`
    - Important: make sure to use version 3.4.0 or later (can be checked with `cargo ndk -v`)
 3. The Android SDK and NDK. There's two options:
