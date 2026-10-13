@@ -261,9 +261,8 @@ pub(super) fn mr_draw_bitmap(
     h: u16,
 ) {
     log_dbg!(
-        "Mythroad: mr_drawBitmap(bmp={:#x}, x={x}, y={y}, w={w}, h={h}) called from {:#x}",
-        bmp.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_drawBitmap(bmp={:#x}, x={x}, y={y}, w={w}, h={h})",
+        bmp.to_bits()
     );
 
     if bmp.is_null() || w == 0 || h == 0 {
@@ -306,21 +305,16 @@ pub(super) fn mr_get_char_bitmap(
     height: MutPtr<i32>,
 ) -> ConstPtr<u8> {
     log_dbg!(
-        "Mythroad: mr_getCharBitmap(ch={ch}, fontSize={font_size}, width={:#x}, height={:#x}) called from {:#x}",
+        "Mythroad: mr_getCharBitmap(ch={ch}, fontSize={font_size}, width={:#x}, height={:#x})",
         width.to_bits(),
-        height.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        height.to_bits()
     );
 
     font::get_char_bitmap(env, ch, font_size, width, height)
 }
 
 pub(super) fn mr_get_screen_info(env: &mut Environment, screen_info: MutPtr<u32>) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_getScreenInfo(s={:#x}) called from {:#x}",
-        screen_info.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_getScreenInfo(s={:#x})", screen_info.to_bits());
 
     env.mem
         .write(screen_info, env.mythroad.state.sysinfo.screen_width as u32);
@@ -337,10 +331,7 @@ pub(super) fn mr_get_screen_info(env: &mut Environment, screen_info: MutPtr<u32>
 }
 
 pub(super) fn disp_up_ex(env: &mut Environment, x: i16, y: i16, w: u16, h: u16) -> i32 {
-    log_dbg!(
-        "Mythroad: _DispUpEx(x={x}, y={y}, w={w}, h={h}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: _DispUpEx(x={x}, y={y}, w={w}, h={h})");
 
     if env.mythroad.state.mr_state.get(&env.mem) == MrRunState::Run as u32 {
         let screen_buf = env.mythroad.state.mr_screen_buf.get(&env.mem);
@@ -351,10 +342,7 @@ pub(super) fn disp_up_ex(env: &mut Environment, x: i16, y: i16, w: u16, h: u16) 
 }
 
 pub(super) fn draw_point(env: &mut Environment, x: i16, y: i16, native_color: u16) {
-    log_dbg!(
-        "Mythroad: _DrawPoint(x={x}, y={y}, native_color={native_color}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: _DrawPoint(x={x}, y={y}, native_color={native_color})");
 
     let state = &env.mythroad.state;
 
@@ -391,9 +379,8 @@ pub(super) fn draw_bitmap(
     mw: i16,
 ) {
     log_dbg!(
-        "Mythroad: _DrawBitmap(p={:#x}, x={x}, y={y}, w={w}, h={h}, rop={rop}, transcolor={transcolor:#x}, sx={sx}, sy={sy}, mw={mw}) called from {:#x}",
-        p.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: _DrawBitmap(p={:#x}, x={x}, y={y}, w={w}, h={h}, rop={rop}, transcolor={transcolor:#x}, sx={sx}, sy={sy}, mw={mw})",
+        p.to_bits()
     );
 
     let screen_buf: MutPtr<u16> = env.mythroad.state.mr_screen_buf.get(&env.mem);
@@ -569,11 +556,10 @@ pub(super) fn draw_bitmap_ex(
     transcolor: u16,
 ) {
     log_dbg!(
-        "Mythroad: _DrawBitmapEx(srcbmp={:#x}, dstbmp={:#x}, w={w}, h={h}, pTrans={:#x}, transcolor={transcolor:#x}) called from {:#x}",
+        "Mythroad: _DrawBitmapEx(srcbmp={:#x}, dstbmp={:#x}, w={w}, h={h}, pTrans={:#x}, transcolor={transcolor:#x})",
         srcbmp.to_bits(),
         dstbmp.to_bits(),
-        p_trans.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        p_trans.to_bits()
     );
 
     if srcbmp.is_null() || dstbmp.is_null() || p_trans.is_null() || w == 0 || h == 0 {
@@ -691,10 +677,7 @@ pub(super) fn draw_rect(
     g: u8,
     b: u8,
 ) {
-    log_dbg!(
-        "Mythroad: DrawRect(x={x}, y={y}, w={w}, h={h}, r={r}, g={g}, b={b}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: DrawRect(x={x}, y={y}, w={w}, h={h}, r={r}, g={g}, b={b})");
 
     let screen_buf: MutPtr<u16> = env.mythroad.state.mr_screen_buf.get(&env.mem);
     if screen_buf.is_null() {
@@ -773,9 +756,8 @@ pub(super) fn draw_text(
     let color = make_rgb565(r as u32, g as u32, b as u32);
 
     log_dbg!(
-        "Mythroad: _DrawText(pcText={:#x}, x={x}, y={y}, r={r}, g={g}, b={b}, is_unicode={is_unicode}, font={font}) called from {:#x}",
-        pc_text.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: _DrawText(pcText={:#x}, x={x}, y={y}, r={r}, g={g}, b={b}, is_unicode={is_unicode}, font={font})",
+        pc_text.to_bits()
     );
 
     let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
@@ -829,9 +811,8 @@ pub(super) fn bitmap_check(
     color_check: u16,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: _BitmapCheck(p={:#x}, x={x}, y={y}, w={w}, h={h}, transcolor={transcolor:#x}, color_check={color_check:#x}) called from {:#x}",
-        p.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: _BitmapCheck(p={:#x}, x={x}, y={y}, w={w}, h={h}, transcolor={transcolor:#x}, color_check={color_check:#x})",
+        p.to_bits()
     );
 
     let screen_buf: MutPtr<u16> = env.mythroad.state.mr_screen_buf.get(&env.mem);
@@ -885,8 +866,7 @@ pub(super) fn mr_eff_set_con(
     perb: i16,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: _mr_EffSetCon(x={x}, y={y}, w={w}, h={h}, perr={perr}, perg={perg}, perb={perb}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: _mr_EffSetCon(x={x}, y={y}, w={w}, h={h}, perr={perr}, perg={perg}, perb={perb})"
     );
 
     let screen_buf: MutPtr<u16> = env.mythroad.state.mr_screen_buf.get(&env.mem);
@@ -943,7 +923,7 @@ pub(super) fn draw_text_ex(
     let native_color = make_rgb565(u32::from(color.r), u32::from(color.g), u32::from(color.b));
 
     log_dbg!(
-        "Mythroad: _DrawTextEx(pcText={:#x}, x={x}, y={y}, rect=({}, {}, {}, {}), color=({}, {}, {}), flag={flag:#x}, font={font}) called from {:#x}",
+        "Mythroad: _DrawTextEx(pcText={:#x}, x={x}, y={y}, rect=({}, {}, {}, {}), color=({}, {}, {}), flag={flag:#x}, font={font})",
         pc_text.to_bits(),
         rect.x,
         rect.y,
@@ -951,8 +931,7 @@ pub(super) fn draw_text_ex(
         rect.h,
         color.r,
         color.g,
-        color.b,
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        color.b
     );
 
     if pc_text.is_null() {
@@ -1028,10 +1007,7 @@ pub(super) fn draw_text_ex(
 }
 
 pub(super) fn mr_plat_draw_char(env: &mut Environment, ch: u16, x: i32, y: i32, color: u32) {
-    log_dbg!(
-        "Mythroad: mr_platDrawChar(ch={ch}, x={x}, y={y}, color={color:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_platDrawChar(ch={ch}, x={x}, y={y}, color={color:#x})");
     font::draw_char(env, x, y, ch, color as u16);
 }
 
@@ -1049,10 +1025,9 @@ pub(super) fn mr_transbitmap_draw(
     mut dy: i32,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_transbitmapDraw(hTransBmp={:#x}, dstBuf={:#x}, dest_max_w={dest_max_w}, dest_max_h={dest_max_h}, sx={sx}, sy={sy}, width={width}, height={height}, dx={dx}, dy={dy}) called from {:#x}",
+        "Mythroad: mr_transbitmapDraw(hTransBmp={:#x}, dstBuf={:#x}, dest_max_w={dest_max_w}, dest_max_h={dest_max_h}, sx={sx}, sy={sy}, width={width}, height={height}, dx={dx}, dy={dy})",
         h_trans_bmp.to_bits(),
-        dst_buf.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        dst_buf.to_bits()
     );
 
     if h_trans_bmp.is_null() {
@@ -1250,10 +1225,9 @@ pub(super) fn mr_draw_region(
     anchor: i32,
 ) {
     log_dbg!(
-        "Mythroad: mr_drawRegion(gContext={:#x}, src={:#x}, sx={sx}, sy={sy}, w={w}, h={h}, transform={transform}, x={x}, y={y}, anchor={anchor}) called from {:#x}",
+        "Mythroad: mr_drawRegion(gContext={:#x}, src={:#x}, sx={sx}, sy={sy}, w={w}, h={h}, transform={transform}, x={x}, y={y}, anchor={anchor})",
         g_context.to_bits(),
-        src.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        src.to_bits()
     );
 
     if g_context.is_null() || src.is_null() {

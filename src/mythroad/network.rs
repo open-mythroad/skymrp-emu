@@ -112,10 +112,7 @@ pub(crate) fn mr_init_network(
         String::from_utf8_lossy(env.mem.cstr_at(mode)).into_owned()
     };
 
-    log_dbg!(
-        "Mythroad: mr_initNetwork(callback={callback:?}, mode={mode_string:?}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_initNetwork(callback={callback:?}, mode={mode_string:?})");
 
     mr_close_network(env);
 
@@ -134,10 +131,7 @@ pub(crate) fn mr_init_network(
 }
 
 pub(crate) fn mr_socket(env: &mut Environment, type_: i32, protocol: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_socket(type={type_}, protocol={protocol}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_socket(type={type_}, protocol={protocol})");
 
     let Some(index) = env.mythroad.state.network.free_socket_index() else {
         return MrResult::Failed as i32;
@@ -182,10 +176,7 @@ pub(crate) fn mr_connect(
     port: u16,
     type_: i32,
 ) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_connect(socket={socket}, ip={ip:#010x}, port={port}, type={type_}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_connect(socket={socket}, ip={ip:#010x}, port={port}, type={type_})");
 
     let Some(index) = env.mythroad.state.network.socket_index(socket) else {
         log!("Warning: mr_connect invalid socket {socket}, returning MR_FAILED");
@@ -237,10 +228,7 @@ pub(crate) fn mr_connect(
 }
 
 pub(crate) fn mr_close_socket(env: &mut Environment, socket: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_closeSocket(socket={socket}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_closeSocket(socket={socket})");
 
     let Some(index) = env.mythroad.state.network.socket_index(socket) else {
         log!("Warning: mr_closeSocket invalid socket {socket}, returning MR_FAILED");
@@ -255,10 +243,7 @@ pub(crate) fn mr_close_socket(env: &mut Environment, socket: i32) -> i32 {
 }
 
 pub(crate) fn mr_close_network(env: &mut Environment) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_closeNetwork() called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_closeNetwork()");
 
     let mut ok = true;
     for index in 0..DSM_SUPPORT_SOCK_NUM {
@@ -282,10 +267,7 @@ pub(crate) fn mr_get_host_by_name(
     callback: GuestFunction,
 ) -> i32 {
     let host = String::from_utf8_lossy(env.mem.cstr_at(name)).into_owned();
-    log_dbg!(
-        "Mythroad: mr_getHostByName(name={host:?}, callback={callback:?}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_getHostByName(name={host:?}, callback={callback:?})");
 
     // The callback is part of the Mythroad async DNS API, but this simplified
     // backend resolves synchronously and returns the IP address directly.
@@ -299,9 +281,8 @@ pub(crate) fn mr_get_host_by_name(
 
 pub(crate) fn mr_recv(env: &mut Environment, socket: i32, buffer: MutVoidPtr, len: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_recv(socket={socket}, buffer={:#x}, len={len}) called from {:#x}",
-        buffer.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_recv(socket={socket}, buffer={:#x}, len={len})",
+        buffer.to_bits()
     );
 
     let Some(length) = len.try_into().ok() else {
@@ -339,11 +320,10 @@ pub(crate) fn mr_recvfrom(
     port: MutPtr<u16>,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_recvfrom(socket={socket}, buffer={:#x}, len={len}, ip={:#x}, port={:#x}) called from {:#x}",
+        "Mythroad: mr_recvfrom(socket={socket}, buffer={:#x}, len={len}, ip={:#x}, port={:#x})",
         buffer.to_bits(),
         ip.to_bits(),
-        port.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        port.to_bits()
     );
 
     let Some(length) = len.try_into().ok() else {
@@ -379,9 +359,8 @@ pub(crate) fn mr_recvfrom(
 
 pub(crate) fn mr_send(env: &mut Environment, socket: i32, buffer: ConstVoidPtr, len: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_send(socket={socket}, buffer={:#x}, len={len}) called from {:#x}",
-        buffer.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_send(socket={socket}, buffer={:#x}, len={len})",
+        buffer.to_bits()
     );
 
     let Some(length) = len.try_into().ok() else {
@@ -419,9 +398,8 @@ pub(crate) fn mr_sendto(
     port: u16,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_sendto(socket={socket}, buffer={:#x}, len={len}, ip={ip:#010x}, port={port}) called from {:#x}",
-        buffer.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_sendto(socket={socket}, buffer={:#x}, len={len}, ip={ip:#010x}, port={port})",
+        buffer.to_bits()
     );
 
     let Some(length) = len.try_into().ok() else {

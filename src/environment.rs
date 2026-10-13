@@ -77,6 +77,29 @@ impl Environment {
         })
     }
 
+    fn stack_trace(&self) {
+        eprintln!(
+            "-1. {:#x} (PC)",
+            self.cpu.pc_with_thumb_bit().addr_with_thumb_bit()
+        );
+        let regs = self.cpu.regs();
+        let mut lr = regs[cpu::Cpu::LR];
+        eprintln!(" 0. {:#x} (LR)", lr);
+        let mut i = 0;
+        let mut frame_pointer: mem::ConstPtr<u8> = mem::Ptr::from_bits(regs[7]);
+        loop {
+            let fp = frame_pointer.to_bits();
+            if fp < mem::Memory::STACK_LOW_END || fp > mem::Memory::STACK_HIGH_END - 8 {
+                eprintln!("Next FP ({frame_pointer:?}) is outside the stack.");
+                break;
+            }
+            lr = self.mem.read((frame_pointer + 4).cast());
+            frame_pointer = self.mem.read(frame_pointer.cast());
+            eprintln!("{:2}. {:#x}", i, lr);
+            i += 1;
+        }
+    }
+
     /// Run the emulator.
     pub fn run(&mut self) {
         let entry = format!("%{}", self.initial_pack_filename);
@@ -93,11 +116,10 @@ impl Environment {
                 log!("Mythroad: mr_start_dsmC failed");
             }
             Err(e) => {
-                log!(
-                    "Panic at PC {:#x}, LR {:#x}",
-                    self.cpu.regs()[cpu::Cpu::PC],
-                    self.cpu.regs()[cpu::Cpu::LR]
-                );
+                eprintln!("Register state immediately after panic:");
+                self.cpu.dump_regs();
+                eprintln!("Attempting to produce stack trace:");
+                self.stack_trace();
                 std::panic::resume_unwind(e);
             }
         }

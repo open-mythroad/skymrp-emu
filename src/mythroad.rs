@@ -5,7 +5,6 @@
  */
 use crate::abi::{CallFromHost, DotDotDot, GuestFunction};
 use crate::audio;
-use crate::cpu::Cpu;
 use crate::dsm;
 use crate::editbox::{EditBox, EDIT_HANDLE};
 use crate::encoding;
@@ -856,20 +855,13 @@ pub(crate) fn reset_resource_tables(env: &mut Environment) {
 }
 
 pub(crate) fn mr_malloc(env: &mut Environment, len: u32) -> MutVoidPtr {
-    log_dbg!(
-        "Mythroad: mr_malloc(len={len}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_malloc(len={len})");
 
     env.mythroad.state.heap.malloc(&mut env.mem, len)
 }
 
 pub(crate) fn mr_free(env: &mut Environment, p: MutVoidPtr, len: u32) {
-    log_dbg!(
-        "Mythroad: mr_free(p={:#x}, len={len}) called from {:#x}",
-        p.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_free(p={:#x}, len={len})", p.to_bits());
     env.mythroad.state.heap.free(&mut env.mem, p, len);
 }
 
@@ -880,9 +872,8 @@ pub(crate) fn mr_realloc(
     len: u32,
 ) -> MutVoidPtr {
     log_dbg!(
-        "Mythroad: mr_realloc(p={:#x}, oldlen={oldlen:#x}, len={len:#x}) called from {:#x}",
-        p.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_realloc(p={:#x}, oldlen={oldlen:#x}, len={len:#x})",
+        p.to_bits()
     );
     let minsize = if oldlen > len { len } else { oldlen };
     if p.is_null() {
@@ -903,10 +894,9 @@ pub(crate) fn mr_realloc(
 
 fn mr_memcpy(env: &mut Environment, dst: MutVoidPtr, src: ConstVoidPtr, n: u32) -> MutVoidPtr {
     log_dbg!(
-        "Mythroad: mr_memcpy(dst={:#x}, src={:#x}, n={n}) called from {:#x}",
+        "Mythroad: mr_memcpy(dst={:#x}, src={:#x}, n={n})",
         dst.to_bits(),
-        src.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        src.to_bits()
     );
 
     let result = libc::string::memcpy(env, dst, src, n);
@@ -916,10 +906,9 @@ fn mr_memcpy(env: &mut Environment, dst: MutVoidPtr, src: ConstVoidPtr, n: u32) 
 
 fn mr_memmove(env: &mut Environment, dst: MutVoidPtr, src: ConstVoidPtr, n: u32) -> MutVoidPtr {
     log_dbg!(
-        "Mythroad: mr_memmove(dst={:#x}, src={:#x}, n={n}) called from {:#x}",
+        "Mythroad: mr_memmove(dst={:#x}, src={:#x}, n={n})",
         dst.to_bits(),
-        src.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        src.to_bits()
     );
 
     let result = libc::string::memmove(env, dst, src, n);
@@ -929,10 +918,9 @@ fn mr_memmove(env: &mut Environment, dst: MutVoidPtr, src: ConstVoidPtr, n: u32)
 
 fn mr_strcpy(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>) -> MutPtr<u8> {
     log_dbg!(
-        "Mythroad: mr_strcpy(dst={:#x}, src={:#x}) called from {:#x}",
+        "Mythroad: mr_strcpy(dst={:#x}, src={:#x})",
         dst.to_bits(),
-        src.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        src.to_bits()
     );
 
     libc::string::strcpy(env, dst, src)
@@ -940,10 +928,9 @@ fn mr_strcpy(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>) -> MutPt
 
 fn mr_strncpy(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>, n: u32) -> MutPtr<u8> {
     log_dbg!(
-        "Mythroad: mr_strncpy(dst={:#x}, src={:#x}, n={n}) called from {:#x}",
+        "Mythroad: mr_strncpy(dst={:#x}, src={:#x}, n={n})",
         dst.to_bits(),
-        src.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        src.to_bits()
     );
 
     libc::string::strncpy(env, dst, src, n)
@@ -951,10 +938,9 @@ fn mr_strncpy(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>, n: u32)
 
 fn mr_strcat(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>) -> MutPtr<u8> {
     log_dbg!(
-        "Mythroad: mr_strcat(dst={:#x}, src={:#x}) called from {:#x}",
+        "Mythroad: mr_strcat(dst={:#x}, src={:#x})",
         dst.to_bits(),
-        src.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        src.to_bits()
     );
 
     libc::string::strcat(env, dst, src)
@@ -962,10 +948,9 @@ fn mr_strcat(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>) -> MutPt
 
 fn mr_strncat(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>, n: u32) -> MutPtr<u8> {
     log_dbg!(
-        "Mythroad: mr_strncat(dst={:#x}, src={:#x}, n={n}) called from {:#x}",
+        "Mythroad: mr_strncat(dst={:#x}, src={:#x}, n={n})",
         dst.to_bits(),
-        src.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        src.to_bits()
     );
 
     libc::string::strncat(env, dst, src, n)
@@ -973,10 +958,9 @@ fn mr_strncat(env: &mut Environment, dst: MutPtr<u8>, src: ConstPtr<u8>, n: u32)
 
 fn mr_memcmp(env: &mut Environment, s1: ConstVoidPtr, s2: ConstVoidPtr, n: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_memcmp(s1={:#x}, s2={:#x}, n={n}) called from {:#x}",
+        "Mythroad: mr_memcmp(s1={:#x}, s2={:#x}, n={n})",
         s1.to_bits(),
-        s2.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        s2.to_bits()
     );
 
     libc::string::memcmp(env, s1, s2, n)
@@ -984,10 +968,9 @@ fn mr_memcmp(env: &mut Environment, s1: ConstVoidPtr, s2: ConstVoidPtr, n: u32) 
 
 fn mr_strcmp(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>) -> i32 {
     log_dbg!(
-        "Mythroad: mr_strcmp(s1={:#x}, s2={:#x}) called from {:#x}",
+        "Mythroad: mr_strcmp(s1={:#x}, s2={:#x})",
         s1.to_bits(),
-        s2.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        s2.to_bits()
     );
 
     libc::string::strcmp(env, s1, s2)
@@ -995,10 +978,9 @@ fn mr_strcmp(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>) -> i32 {
 
 fn mr_strncmp(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>, n: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_strncmp(s1={:#x}, s2={:#x}, n={n}) called from {:#x}",
+        "Mythroad: mr_strncmp(s1={:#x}, s2={:#x}, n={n})",
         s1.to_bits(),
-        s2.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        s2.to_bits()
     );
 
     libc::string::strncmp(env, s1, s2, n)
@@ -1006,10 +988,9 @@ fn mr_strncmp(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>, n: u32)
 
 fn mr_strcoll(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>) -> i32 {
     log_dbg!(
-        "Mythroad: mr_strcoll(s1={:#x}, s2={:#x}) called from {:#x}",
+        "Mythroad: mr_strcoll(s1={:#x}, s2={:#x})",
         s1.to_bits(),
-        s2.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        s2.to_bits()
     );
 
     libc::string::strcoll(env, s1, s2)
@@ -1017,9 +998,8 @@ fn mr_strcoll(env: &mut Environment, s1: ConstPtr<u8>, s2: ConstPtr<u8>) -> i32 
 
 fn mr_memchr(env: &mut Environment, s: ConstVoidPtr, ch: u32, n: u32) -> ConstVoidPtr {
     log_dbg!(
-        "Mythroad: mr_memchr(s={:#x}, ch={ch:#x}, n={n}) called from {:#x}",
-        s.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_memchr(s={:#x}, ch={ch:#x}, n={n})",
+        s.to_bits()
     );
 
     libc::string::memchr(env, s, ch, n)
@@ -1027,29 +1007,23 @@ fn mr_memchr(env: &mut Environment, s: ConstVoidPtr, ch: u32, n: u32) -> ConstVo
 
 fn mr_memset(env: &mut Environment, dst: MutVoidPtr, ch: u32, n: u32) -> MutVoidPtr {
     log_dbg!(
-        "Mythroad: mr_memset(s={:#x}, ch={ch}, n={n}) called from {:#x}",
-        dst.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_memset(s={:#x}, ch={ch}, n={n})",
+        dst.to_bits()
     );
     libc::string::memset(env, dst, ch as i32, n)
 }
 
 pub(crate) fn mr_strlen(env: &mut Environment, str: ConstPtr<u8>) -> u32 {
-    log_dbg!(
-        "Mythroad: mr_strlen(str={:#x}) called from {:#x}",
-        str.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_strlen(str={:#x})", str.to_bits());
 
     libc::string::strlen(env, str)
 }
 
 fn mr_strstr(env: &mut Environment, haystack: ConstPtr<u8>, needle: ConstPtr<u8>) -> ConstPtr<u8> {
     log_dbg!(
-        "Mythroad: mr_strstr(haystack={:#x}, needle={:#x}) called from {:#x}",
+        "Mythroad: mr_strstr(haystack={:#x}, needle={:#x})",
         haystack.to_bits(),
-        needle.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        needle.to_bits()
     );
 
     libc::string::strstr(env, haystack, needle)
@@ -1057,21 +1031,16 @@ fn mr_strstr(env: &mut Environment, haystack: ConstPtr<u8>, needle: ConstPtr<u8>
 
 fn mr_sprintf(env: &mut Environment, buf: MutPtr<u8>, fmt: ConstPtr<u8>, args: DotDotDot) -> i32 {
     log_dbg!(
-        "Mythroad: mr_sprintf(buf={:#x}, fmt={:#x}) called from {:#x}",
+        "Mythroad: mr_sprintf(buf={:#x}, fmt={:#x})",
         buf.to_bits(),
-        fmt.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        fmt.to_bits()
     );
 
     libc::stdio::printf::sprintf(env, buf, fmt, args)
 }
 
 fn mr_atoi(env: &mut Environment, s: ConstPtr<u8>) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_atoi(s={:#x}) called from {:#x}",
-        s.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_atoi(s={:#x})", s.to_bits());
 
     libc::stdlib::atoi(env, s)
 }
@@ -1083,28 +1052,21 @@ fn mr_strtoul(
     base: i32,
 ) -> u32 {
     log_dbg!(
-        "Mythroad: mr_strtoul(nptr={:#x}, endptr={:#x}, base={base}) called from {:#x}",
+        "Mythroad: mr_strtoul(nptr={:#x}, endptr={:#x}, base={base})",
         nptr.to_bits(),
-        endptr.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        endptr.to_bits()
     );
 
     libc::stdlib::strtoul(env, nptr, endptr, base)
 }
 
 fn mr_rand(env: &mut Environment) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_rand() called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_rand()");
     libc::stdlib::rand(env)
 }
 
 pub(crate) fn mr_stop(env: &mut Environment) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_stop() called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_stop()");
 
     let stop_function = env.mythroad.state.mr_stop_function;
     if stop_function.addr_without_thumb_bit() != 0 {
@@ -1119,10 +1081,7 @@ pub(crate) fn mr_stop(env: &mut Environment) -> i32 {
 }
 
 fn mr_stop_ex(env: &mut Environment, freemem: i16) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_stop_ex(freemem={freemem}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_stop_ex(freemem={freemem})");
 
     clear_editbox(env);
 
@@ -1182,9 +1141,8 @@ fn mr_stop_ex(env: &mut Environment, freemem: i16) -> i32 {
 
 fn mr_c_function_new(env: &mut Environment, func: GuestFunction, len: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_c_function_new(func={:#010x}, len={len}) called from {:#x}",
-        func.addr_with_thumb_bit(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_c_function_new(func={:#010x}, len={len})",
+        func.addr_with_thumb_bit()
     );
 
     if !env.mythroad.state.mr_c_function_p.is_null() {
@@ -1226,11 +1184,7 @@ fn mr_c_function_new(env: &mut Environment, func: GuestFunction, len: u32) -> i3
 }
 
 fn mr_printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_printf(format={:#x}) called from {:#x}",
-        format.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_printf(format={:#x})", format.to_bits());
 
     let len = libc::stdio::printf::printf(env, format, args);
     if std::io::Write::write_all(&mut std::io::stdout(), b"\n").is_err() {
@@ -1241,10 +1195,9 @@ fn mr_printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i3
 
 fn mr_mem_get(env: &mut Environment, mem_base: MutPtr<MutPtr<u8>>, mem_len: MutPtr<u32>) -> i32 {
     log_dbg!(
-        "Mythroad: mr_mem_get(mem_base={:#x}, mem_len={:#x}) called from {:#x}",
+        "Mythroad: mr_mem_get(mem_base={:#x}, mem_len={:#x})",
         mem_base.to_bits(),
-        mem_len.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        mem_len.to_bits()
     );
 
     if mem_base.is_null() || mem_len.is_null() {
@@ -1265,9 +1218,8 @@ fn mr_mem_get(env: &mut Environment, mem_base: MutPtr<MutPtr<u8>>, mem_len: MutP
 
 fn mr_mem_free(env: &mut Environment, mem: MutPtr<u8>, len: u32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_mem_free(mem={:#x}, len={len:#x}) called from {:#x}",
-        mem.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_mem_free(mem={:#x}, len={len:#x})",
+        mem.to_bits()
     );
 
     env.mythroad.state.heap.destroy(&mut env.mem);
@@ -1276,10 +1228,7 @@ fn mr_mem_free(env: &mut Environment, mem: MutPtr<u8>, len: u32) -> i32 {
 }
 
 pub(crate) fn mr_timer_start(env: &mut Environment, interval: u16) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_timerStart(t={interval}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_timerStart(t={interval})");
 
     env.mythroad.state.mr_timer_start_time = dsm::mr_get_time(env);
     env.mythroad.state.mr_timer_interval = interval.into();
@@ -1292,10 +1241,7 @@ pub(crate) fn mr_timer_start(env: &mut Environment, interval: u16) -> i32 {
 }
 
 pub(crate) fn mr_timer_stop(env: &mut Environment) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_timerStop() called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_timerStop()");
 
     env.mythroad
         .state
@@ -1309,19 +1255,13 @@ pub(crate) fn mr_timer_stop(env: &mut Environment) -> i32 {
 
 fn mr_get_time(env: &mut Environment) -> u32 {
     let time = dsm::mr_get_time(env);
-    log_dbg!(
-        "Mythroad: mr_getTime() -> {time} called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_getTime() -> {time}");
 
     time
 }
 
 fn mr_get_datetime(env: &mut Environment, datetime: MutPtr<MrDatetime>) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_getDatetime(datetime={datetime:?}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_getDatetime(datetime={datetime:?})");
 
     if datetime.is_null() {
         return MrResult::Failed as i32;
@@ -1344,10 +1284,7 @@ fn mr_get_datetime(env: &mut Environment, datetime: MutPtr<MrDatetime>) -> i32 {
 }
 
 fn mr_get_user_info(env: &mut Environment, user_info: MutPtr<MrUserInfo>) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_getUserInfo(user_info={user_info:?}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_getUserInfo(user_info={user_info:?})");
     if user_info.is_null() {
         return MrResult::Failed as i32;
     }
@@ -1359,20 +1296,14 @@ fn mr_get_user_info(env: &mut Environment, user_info: MutPtr<MrUserInfo>) -> i32
     MrResult::Success as i32
 }
 
-fn mr_sleep(env: &mut Environment, ms: u32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_sleep(ms={ms:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_sleep(_env: &mut Environment, ms: u32) -> i32 {
+    log_dbg!("Mythroad: mr_sleep(ms={ms:#x})");
     dsm::mr_sleep(ms);
     MrResult::Success as i32
 }
 
 fn mr_plat(env: &mut Environment, code: u32, param: u32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_plat(code={code:#x}, param={param:#x}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_plat(code={code:#x}, param={param:#x})");
 
     dsm::mr_plat(env, code, param)
 }
@@ -1387,26 +1318,19 @@ fn mr_plat_ex(
     cb: MutVoidPtr,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_platEx(code={code}, input={input:?}, input_len={input_len}, output={output:?}, output_len={output_len:?}, cb={cb:?}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_platEx(code={code}, input={input:?}, input_len={input_len}, output={output:?}, output_len={output_len:?}, cb={cb:?})"
     );
 
     dsm::mr_plat_ex(env, code, input, input_len, output, output_len, cb)
 }
 
-fn mr_ferrno(env: &mut Environment) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_ferrno called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_ferrno(_env: &mut Environment) -> i32 {
+    log_dbg!("Mythroad: mr_ferrno");
     MrResult::Failed as i32
 }
 
 pub(crate) fn mr_exit(env: &mut Environment) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_exit() called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_exit()");
 
     clear_editbox(env);
 
@@ -1460,11 +1384,8 @@ pub(crate) fn mr_exit(env: &mut Environment) -> i32 {
     MrResult::Success as i32
 }
 
-fn mr_start_shake(env: &mut Environment, ms: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_startShake(ms={ms}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_start_shake(_env: &mut Environment, ms: i32) -> i32 {
+    log_dbg!("Mythroad: mr_startShake(ms={ms})");
 
     match haptics::start(ms) {
         Ok(()) => MrResult::Success as i32,
@@ -1475,11 +1396,8 @@ fn mr_start_shake(env: &mut Environment, ms: i32) -> i32 {
     }
 }
 
-fn mr_stop_shake(env: &mut Environment) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_stopShake() called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_stop_shake(_env: &mut Environment) -> i32 {
+    log_dbg!("Mythroad: mr_stopShake()");
 
     match haptics::stop() {
         Ok(()) => MrResult::Success as i32,
@@ -1498,9 +1416,8 @@ fn mr_play_sound(
     loop_: i32,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_playSound(type={type_}, data={:#x}, dataLen={data_len:#x}, loop={loop_}) called from {:#x}",
-        data.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_playSound(type={type_}, data={:#x}, dataLen={data_len:#x}, loop={loop_})",
+        data.to_bits()
     );
 
     let Ok(sound_type) = audio::SoundType::try_from(type_) else {
@@ -1518,11 +1435,8 @@ fn mr_play_sound(
     }
 }
 
-pub(crate) fn mr_stop_sound(env: &mut Environment, type_: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_stopSound(type={type_}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+pub(crate) fn mr_stop_sound(_env: &mut Environment, type_: i32) -> i32 {
+    log_dbg!("Mythroad: mr_stopSound(type={type_})");
 
     let Ok(sound_type) = audio::SoundType::try_from(type_) else {
         log!("Mythroad: mr_stopSound failed: unsupported sound type: {type_}");
@@ -1539,180 +1453,144 @@ pub(crate) fn mr_stop_sound(env: &mut Environment, type_: i32) -> i32 {
 }
 
 fn mr_send_sms(
-    env: &mut Environment,
+    _env: &mut Environment,
     number: ConstPtr<u8>,
     content: ConstPtr<u8>,
     flags: i32,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_sendSms(number={:#x}, content={:#x}, flags={flags:#x}) called from {:#x}",
+        "Mythroad: mr_sendSms(number={:#x}, content={:#x}, flags={flags:#x})",
         number.to_bits(),
-        content.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        content.to_bits()
     );
 
     MrResult::Success as i32
 }
 
-fn mr_call(env: &mut Environment, number: ConstPtr<u8>) {
-    log_dbg!(
-        "Mythroad: mr_call(number={:#x}) called from {:#x}",
-        number.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_call(_env: &mut Environment, number: ConstPtr<u8>) {
+    log_dbg!("Mythroad: mr_call(number={:#x})", number.to_bits());
 }
 
-fn mr_get_network_id(env: &mut Environment) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_getNetworkID() -> 0 called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_get_network_id(_env: &mut Environment) -> i32 {
+    log_dbg!("Mythroad: mr_getNetworkID() -> 0");
 
     0
 }
 
-fn mr_connect_wap(env: &mut Environment, wap: ConstPtr<u8>) {
-    log_dbg!(
-        "Mythroad: mr_connectWAP(wap={:#x}) called from {:#x}",
-        wap.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_connect_wap(_env: &mut Environment, wap: ConstPtr<u8>) {
+    log_dbg!("Mythroad: mr_connectWAP(wap={:#x})", wap.to_bits());
 }
 
-fn mr_menu_create(env: &mut Environment, title: ConstPtr<u8>, num: i16) -> i32 {
+fn mr_menu_create(_env: &mut Environment, title: ConstPtr<u8>, num: i16) -> i32 {
     log_dbg!(
-        "Mythroad: mr_menuCreate(title={:#x}, num={num}) called from {:#x}",
-        title.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_menuCreate(title={:#x}, num={num})",
+        title.to_bits()
     );
 
     MrResult::Failed as i32
 }
 
-fn mr_menu_set_item(env: &mut Environment, menu: i32, text: ConstPtr<u8>, index: i32) -> i32 {
+fn mr_menu_set_item(_env: &mut Environment, menu: i32, text: ConstPtr<u8>, index: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_menuSetItem(menu={menu}, text={:#x}, index={index}) called from {:#x}",
-        text.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_menuSetItem(menu={menu}, text={:#x}, index={index})",
+        text.to_bits()
     );
 
     MrResult::Failed as i32
 }
 
-fn mr_menu_show(env: &mut Environment, menu: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_menuShow(menu={menu}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_menu_show(_env: &mut Environment, menu: i32) -> i32 {
+    log_dbg!("Mythroad: mr_menuShow(menu={menu})");
 
     MrResult::Ignored as i32
 }
 
-fn mr_menu_set_focus(env: &mut Environment, menu: i32, index: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_menuSetFocus(menu={menu}, index={index}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_menu_set_focus(_env: &mut Environment, menu: i32, index: i32) -> i32 {
+    log_dbg!("Mythroad: mr_menuSetFocus(menu={menu}, index={index})");
 
     MrResult::Ignored as i32
 }
 
-fn mr_menu_release(env: &mut Environment, menu: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_menuRelease(menu={menu}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_menu_release(_env: &mut Environment, menu: i32) -> i32 {
+    log_dbg!("Mythroad: mr_menuRelease(menu={menu})");
 
     MrResult::Ignored as i32
 }
 
-fn mr_menu_refresh(env: &mut Environment, menu: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_menuRefresh(menu={menu}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_menu_refresh(_env: &mut Environment, menu: i32) -> i32 {
+    log_dbg!("Mythroad: mr_menuRefresh(menu={menu})");
 
     MrResult::Ignored as i32
 }
 
 fn mr_dialog_create(
-    env: &mut Environment,
+    _env: &mut Environment,
     title: ConstPtr<u8>,
     text: ConstPtr<u8>,
     type_: i32,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_dialogCreate(title={:#x}, text={:#x}, type={type_}) called from {:#x}",
+        "Mythroad: mr_dialogCreate(title={:#x}, text={:#x}, type={type_})",
         title.to_bits(),
-        text.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        text.to_bits()
     );
 
     MrResult::Ignored as i32
 }
 
-fn mr_dialog_release(env: &mut Environment, dialog: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_dialogRelease(dialog={dialog}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_dialog_release(_env: &mut Environment, dialog: i32) -> i32 {
+    log_dbg!("Mythroad: mr_dialogRelease(dialog={dialog})");
 
     MrResult::Ignored as i32
 }
 
 fn mr_dialog_refresh(
-    env: &mut Environment,
+    _env: &mut Environment,
     dialog: i32,
     title: ConstPtr<u8>,
     text: ConstPtr<u8>,
     type_: i32,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_dialogRefresh(dialog={dialog}, title={:#x}, text={:#x}, type={type_}) called from {:#x}",
+        "Mythroad: mr_dialogRefresh(dialog={dialog}, title={:#x}, text={:#x}, type={type_})",
         title.to_bits(),
-        text.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        text.to_bits()
     );
 
     MrResult::Ignored as i32
 }
 
 fn mr_text_create(
-    env: &mut Environment,
+    _env: &mut Environment,
     title: ConstPtr<u8>,
     text: ConstPtr<u8>,
     type_: i32,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_textCreate(title={:#x}, text={:#x}, type={type_}) called from {:#x}",
+        "Mythroad: mr_textCreate(title={:#x}, text={:#x}, type={type_})",
         title.to_bits(),
-        text.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        text.to_bits()
     );
 
     MrResult::Ignored as i32
 }
 
-fn mr_text_release(env: &mut Environment, text: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_textRelease(text={text}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_text_release(_env: &mut Environment, text: i32) -> i32 {
+    log_dbg!("Mythroad: mr_textRelease(text={text})");
 
     MrResult::Ignored as i32
 }
 
 fn mr_text_refresh(
-    env: &mut Environment,
+    _env: &mut Environment,
     handle: i32,
     title: ConstPtr<u8>,
     text: ConstPtr<u8>,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_textRefresh(handle={handle}, title={:#x}, text={:#x}) called from {:#x}",
+        "Mythroad: mr_textRefresh(handle={handle}, title={:#x}, text={:#x})",
         title.to_bits(),
-        text.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        text.to_bits()
     );
 
     MrResult::Ignored as i32
@@ -1726,10 +1604,9 @@ fn mr_edit_create(
     max_size: i32,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_editCreate(title={:#x}, text={:#x}, type={type_}, max_size={max_size}) called from {:#x}",
+        "Mythroad: mr_editCreate(title={:#x}, text={:#x}, type={type_}, max_size={max_size})",
         title.to_bits(),
-        text.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        text.to_bits()
     );
 
     clear_editbox(env);
@@ -1788,10 +1665,7 @@ fn mr_edit_create(
 }
 
 fn mr_edit_release(env: &mut Environment, edit: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_editRelease(edit={edit}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_editRelease(edit={edit})");
 
     if edit != EDIT_HANDLE || env.mythroad.editbox.is_none() {
         return MrResult::Failed as i32;
@@ -1802,10 +1676,7 @@ fn mr_edit_release(env: &mut Environment, edit: i32) -> i32 {
 }
 
 fn mr_edit_get_text(env: &mut Environment, edit: i32) -> ConstPtr<u8> {
-    log_dbg!(
-        "Mythroad: mr_editGetText(edit={edit}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_editGetText(edit={edit})");
 
     if edit != EDIT_HANDLE || env.mythroad.editbox.is_none() {
         Ptr::null()
@@ -1857,40 +1728,29 @@ fn clear_editbox(env: &mut Environment) {
     }
 }
 
-fn mr_win_create(env: &mut Environment) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_winCreate() called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_win_create(_env: &mut Environment) -> i32 {
+    log_dbg!("Mythroad: mr_winCreate()");
 
     MrResult::Ignored as i32
 }
 
-fn mr_win_release(env: &mut Environment, win: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_winRelease(win={win}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_win_release(_env: &mut Environment, win: i32) -> i32 {
+    log_dbg!("Mythroad: mr_winRelease(win={win})");
 
     MrResult::Ignored as i32
 }
 
 fn mr_md5_init(env: &mut Environment, pms: MutPtr<Md5State>) {
-    log_dbg!(
-        "Mythroad: mr_md5_init(pms={:#x}) called from {:#x}",
-        pms.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_md5_init(pms={:#x})", pms.to_bits());
 
     md5::init(env, pms);
 }
 
 fn mr_md5_append(env: &mut Environment, pms: MutPtr<Md5State>, data: ConstPtr<u8>, nbytes: i32) {
     log_dbg!(
-        "Mythroad: mr_md5_append(pms={:#x}, data={:#x}, nbytes={nbytes}) called from {:#x}",
+        "Mythroad: mr_md5_append(pms={:#x}, data={:#x}, nbytes={nbytes})",
         pms.to_bits(),
-        data.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        data.to_bits()
     );
 
     md5::append(env, pms, data, nbytes);
@@ -1898,20 +1758,16 @@ fn mr_md5_append(env: &mut Environment, pms: MutPtr<Md5State>, data: ConstPtr<u8
 
 fn mr_md5_finish(env: &mut Environment, pms: MutPtr<Md5State>, digest: MutPtr<u8>) {
     log_dbg!(
-        "Mythroad: mr_md5_finish(pms={:#x}, digest={:#x}) called from {:#x}",
+        "Mythroad: mr_md5_finish(pms={:#x}, digest={:#x})",
         pms.to_bits(),
-        digest.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        digest.to_bits()
     );
 
     md5::finish(env, pms, digest);
 }
 
 fn mr_load_sms_cfg(env: &mut Environment) -> i32 {
-    log_dbg!(
-        "Mythroad: _mr_load_sms_cfg() called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: _mr_load_sms_cfg()");
 
     libc::string::memset(
         env,
@@ -1923,11 +1779,8 @@ fn mr_load_sms_cfg(env: &mut Environment) -> i32 {
     MrResult::Success as i32
 }
 
-fn mr_save_sms_cfg(env: &mut Environment, f: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: _mr_save_sms_cfg(f={f}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_save_sms_cfg(_env: &mut Environment, f: i32) -> i32 {
+    log_dbg!("Mythroad: _mr_save_sms_cfg(f={f})");
 
     MrResult::Success as i32
 }
@@ -1938,20 +1791,15 @@ fn make_plat_version(plat: u32, ver: u32, card: u32, r#impl: u32, brun: u32) -> 
 }
 
 fn mr_wstrlen(env: &mut Environment, str: ConstPtr<u8>) -> i32 {
-    log_dbg!(
-        "Mythroad: mr_wstrlen(str={:#x}) called from {:#x}",
-        str.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_wstrlen(str={:#x})", str.to_bits());
 
     env.mem.wstr_len_bytes_at(str) as i32
 }
 
 fn mr_register_app(env: &mut Environment, p: MutPtr<u8>, len: i32, index: i32) -> i32 {
     log_dbg!(
-        "Mythroad: mr_registerAPP(p={:#x}, len={len}, index={index}) called from {:#x}",
-        p.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: mr_registerAPP(p={:#x}, len={len}, index={index})",
+        p.to_bits()
     );
 
     if !env.mythroad.register_app(&mut env.mem, index, p) {
@@ -1963,18 +1811,14 @@ fn mr_register_app(env: &mut Environment, p: MutPtr<u8>, len: i32, index: i32) -
 }
 
 fn mr_test_com(env: &mut Environment, l: u32, input0: u32, input1: u32) -> i32 {
-    log_dbg!(
-        "Mythroad: _mr_TestCom(L={l}, input0={input0}, input1={input1}) called from {:#x}",
-        env.cpu.regs()[Cpu::PC]
-    );
+    log_dbg!("Mythroad: _mr_TestCom(L={l}, input0={input0}, input1={input1})");
     dsm::test_com(env, l, input0, input1)
 }
 
 fn mr_test_com1(env: &mut Environment, l: u32, input0: u32, input1: MutPtr<u8>, len: u32) -> i32 {
     log_dbg!(
-        "Mythroad: _mr_TestCom1(L={l:#x}, input0={input0:#x}, input1={:#x}, len={len}) called from {:#x}",
-        input1.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        "Mythroad: _mr_TestCom1(L={l:#x}, input0={input0:#x}, input1={:#x}, len={len})",
+        input1.to_bits()
     );
     dsm::test_com1(env, l, input0, input1, len)
 }
@@ -1986,38 +1830,27 @@ fn mr_c2u(
     size: MutPtr<i32>,
 ) -> MutPtr<u16> {
     log_dbg!(
-        "Mythroad: mr_c2u(cp={:#x}, err={:#x}, size={:#x}) called from {:#x}",
+        "Mythroad: mr_c2u(cp={:#x}, err={:#x}, size={:#x})",
         cp.to_bits(),
         err.to_bits(),
-        size.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        size.to_bits()
     );
 
     encoding::mr_c2u(env, cp, err, size)
 }
 
-fn mr_div(env: &mut Environment, a: i32, b: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: _mr_div(a={a}, b={b}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_div(_env: &mut Environment, a: i32, b: i32) -> i32 {
+    log_dbg!("Mythroad: _mr_div(a={a}, b={b})");
     a / b
 }
 
-fn mr_mod(env: &mut Environment, a: i32, b: i32) -> i32 {
-    log_dbg!(
-        "Mythroad: _mr_mod(a={a}, b={b}) called from {:#x}",
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+fn mr_mod(_env: &mut Environment, a: i32, b: i32) -> i32 {
+    log_dbg!("Mythroad: _mr_mod(a={a}, b={b})");
     a % b
 }
 
 fn mr_updcrc(env: &mut Environment, s: ConstPtr<u8>, n: u32) -> u32 {
-    log_dbg!(
-        "Mythroad: mr_updcrc(s={:#x}, n={n}) called from {:#x}",
-        s.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
-    );
+    log_dbg!("Mythroad: mr_updcrc(s={:#x}, n={n})", s.to_bits());
 
     if s.is_null() {
         env.mythroad.state.mr_updcrc = crc32fast::Hasher::new();
@@ -2037,11 +1870,10 @@ fn mr_unzip(
     outputlen: MutPtr<i32>,
 ) -> i32 {
     log_dbg!(
-        "Mythroad: mr_unzip(inputbuf={:#x}, inputlen={input_len}, outputbuf={:#x}, outputlen={:#x}) called from {:#x}",
+        "Mythroad: mr_unzip(inputbuf={:#x}, inputlen={input_len}, outputbuf={:#x}, outputlen={:#x})",
         input_buf.to_bits(),
         output_buf.to_bits(),
-        outputlen.to_bits(),
-        env.cpu.regs()[crate::cpu::Cpu::PC]
+        outputlen.to_bits()
     );
 
     if input_buf.is_null() || input_len <= 0 || output_buf.is_null() || outputlen.is_null() {
