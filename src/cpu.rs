@@ -8,6 +8,9 @@ use crate::mem::{
     ConstPtr, GuestUSize, Memory, MutPtr, Ptr, SafeRead, SafeWrite, LINEAR_MEMORY_SIZE, PAGE_SIZE,
 };
 
+mod interpreter;
+use interpreter::InterpreterCpu;
+
 // Import functions from C++
 use skymrp_dynarmic_wrapper::*;
 
@@ -74,13 +77,26 @@ extern "C" fn skymrp_cpu_write_u64(mem: *mut skymrp_Memory, addr: VAddr, value: 
 }
 
 pub struct Cpu {
-    dynarmic_wrapper: *mut skymrp_DynarmicWrapper,
+    backend: Backend,
     executable_pages: Vec<bool>,
+}
+
+enum Backend {
+    Dynarmic(*mut skymrp_DynarmicWrapper),
+    Interpreter(InterpreterCpu),
+}
+
+#[derive(Clone, Copy)]
+pub enum CpuBackend {
+    Dynarmic,
+    Interpreter,
 }
 
 impl Drop for Cpu {
     fn drop(&mut self) {
-        unsafe { skymrp_DynarmicWrapper_delete(self.dynarmic_wrapper) }
+        if let Backend::Dynarmic(dynarmic_wrapper) = self.backend {
+            unsafe { skymrp_DynarmicWrapper_delete(dynarmic_wrapper) }
+        }
     }
 }
 
@@ -107,29 +123,38 @@ impl Cpu {
     /// When this bit is set in CPSR, the CPU is in user mode.
     pub const CPSR_USER_MODE: u32 = 0x00000010;
 
-    pub fn new() -> Cpu {
-        let dynarmic_wrapper = unsafe { skymrp_DynarmicWrapper_new() };
+    pub fn new(backend: CpuBackend) -> Cpu {
+        let backend = match backend {
+            CpuBackend::Dynarmic => Backend::Dynarmic(unsafe { skymrp_DynarmicWrapper_new() }),
+            CpuBackend::Interpreter => Backend::Interpreter(InterpreterCpu::new()),
+        };
         Cpu {
-            dynarmic_wrapper,
+            backend,
             executable_pages: vec![false; (LINEAR_MEMORY_SIZE / PAGE_SIZE) as usize],
         }
     }
 
-    pub fn regs(&self) -> &[u32; 16] {
-        unsafe {
-            let ptr = skymrp_DynarmicWrapper_regs_const(self.dynarmic_wrapper);
-            &*(ptr as *const [u32; 16])
+    pub fn reg(&self, index: usize) -> u32 {
+        assert!(index < 16);
+        match &self.backend {
+            Backend::Dynarmic(dynarmic_wrapper) => unsafe {
+                *skymrp_DynarmicWrapper_regs_const(*dynarmic_wrapper).add(index)
+            },
+            Backend::Interpreter(cpu) => cpu.reg(index),
         }
     }
-    pub fn regs_mut(&mut self) -> &mut [u32; 16] {
-        unsafe {
-            let ptr = skymrp_DynarmicWrapper_regs_mut(self.dynarmic_wrapper);
-            &mut *(ptr as *mut [u32; 16])
+
+    pub fn set_reg(&mut self, index: usize, value: u32) {
+        assert!(index < 16);
+        match &mut self.backend {
+            Backend::Dynarmic(dynarmic_wrapper) => unsafe {
+                *skymrp_DynarmicWrapper_regs_mut(*dynarmic_wrapper).add(index) = value;
+            },
+            Backend::Interpreter(cpu) => cpu.set_reg(index, value),
         }
     }
 
     pub fn dump_regs(&self) {
-        let regs = self.regs();
         for row in 0..4 {
             for col in 0..4 {
                 let reg_idx = row * 4 + col;
@@ -140,30 +165,45 @@ impl Cpu {
                     _ if reg_idx <= 9 => eprint!("\t R{}: ", reg_idx),
                     _ => eprint!("\tR{}: ", reg_idx),
                 };
-                eprint!("{:#010x}", regs[reg_idx]);
+                eprint!("{:#010x}", self.reg(reg_idx));
             }
             eprintln!();
         }
     }
 
     pub fn cpsr(&self) -> u32 {
-        unsafe { skymrp_DynarmicWrapper_cpsr(self.dynarmic_wrapper) }
+        match &self.backend {
+            Backend::Dynarmic(dynarmic_wrapper) => unsafe {
+                skymrp_DynarmicWrapper_cpsr(*dynarmic_wrapper)
+            },
+            Backend::Interpreter(cpu) => cpu.cpsr(),
+        }
     }
+
     pub fn set_cpsr(&mut self, cpsr: u32) {
-        unsafe { skymrp_DynarmicWrapper_set_cpsr(self.dynarmic_wrapper, cpsr) }
+        match &mut self.backend {
+            Backend::Dynarmic(dynarmic_wrapper) => unsafe {
+                skymrp_DynarmicWrapper_set_cpsr(*dynarmic_wrapper, cpsr)
+            },
+            Backend::Interpreter(cpu) => cpu.set_cpsr(cpsr),
+        }
     }
 
     pub fn clear_cache(&mut self) {
-        unsafe { skymrp_DynarmicWrapper_clear_cache(self.dynarmic_wrapper) }
+        if let Backend::Dynarmic(dynarmic_wrapper) = self.backend {
+            unsafe { skymrp_DynarmicWrapper_clear_cache(dynarmic_wrapper) }
+        }
     }
 
     fn invalidate_cache_range_inner(&mut self, start_address: u32, length: usize) {
-        unsafe {
-            skymrp_DynarmicWrapper_invalidate_cache_range(
-                self.dynarmic_wrapper,
-                start_address,
-                length,
-            )
+        if let Backend::Dynarmic(dynarmic_wrapper) = self.backend {
+            unsafe {
+                skymrp_DynarmicWrapper_invalidate_cache_range(
+                    dynarmic_wrapper,
+                    start_address,
+                    length,
+                )
+            }
         }
     }
 
@@ -201,7 +241,7 @@ impl Cpu {
 
     /// Get PC with the Thumb bit appropriately set.
     pub fn pc_with_thumb_bit(&self) -> GuestFunction {
-        let pc = self.regs()[Self::PC];
+        let pc = self.reg(Self::PC);
         let thumb = (self.cpsr() & Self::CPSR_THUMB) == Self::CPSR_THUMB;
         GuestFunction::from_addr_and_thumb_flag(pc, thumb)
     }
@@ -209,7 +249,7 @@ impl Cpu {
     /// Set PC and the Thumb flag for executing a guest function. Note that this
     /// does not touch LR.
     pub fn branch(&mut self, new_pc: GuestFunction) {
-        self.regs_mut()[Self::PC] = new_pc.addr_without_thumb_bit();
+        self.set_reg(Self::PC, new_pc.addr_without_thumb_bit());
         let cpsr_without_thumb = self.cpsr() & (!Self::CPSR_THUMB);
         self.set_cpsr(cpsr_without_thumb | ((new_pc.is_thumb() as u32) * Self::CPSR_THUMB))
     }
@@ -222,31 +262,34 @@ impl Cpu {
         new_lr: GuestFunction,
     ) -> (GuestFunction, GuestFunction) {
         let old_pc = self.pc_with_thumb_bit();
-        let old_lr = GuestFunction::from_addr_with_thumb_bit(self.regs()[Self::LR]);
+        let old_lr = GuestFunction::from_addr_with_thumb_bit(self.reg(Self::LR));
         self.branch(new_pc);
-        self.regs_mut()[Self::LR] = new_lr.addr_with_thumb_bit();
+        self.set_reg(Self::LR, new_lr.addr_with_thumb_bit());
         (old_pc, old_lr)
     }
 
     #[must_use]
     pub fn run(&mut self, mem: &mut Memory, ticks: &mut u64) -> CpuState {
-        unsafe {
-            let res = skymrp_DynarmicWrapper_run(
-                self.dynarmic_wrapper,
-                mem as *mut Memory as *mut skymrp_Memory,
-                ticks,
-            );
-            match res {
-                -1 => {
-                    assert!(*ticks == 0);
-                    CpuState::Normal
+        match &mut self.backend {
+            Backend::Dynarmic(dynarmic_wrapper) => unsafe {
+                let res = skymrp_DynarmicWrapper_run(
+                    *dynarmic_wrapper,
+                    mem as *mut Memory as *mut skymrp_Memory,
+                    ticks,
+                );
+                match res {
+                    -1 => {
+                        assert!(*ticks == 0);
+                        CpuState::Normal
+                    }
+                    -2 => {
+                        panic!("Memory error during CPU execution!");
+                    }
+                    _ if res < -1 => panic!("Unexpected CPU execution result"),
+                    svc => CpuState::Svc(svc as u32),
                 }
-                -2 => {
-                    panic!("Memory error during CPU execution!");
-                }
-                _ if res < -1 => panic!("Unexpected CPU execution result"),
-                svc => CpuState::Svc(svc as u32),
-            }
+            },
+            Backend::Interpreter(cpu) => cpu.run(mem, ticks),
         }
     }
 }

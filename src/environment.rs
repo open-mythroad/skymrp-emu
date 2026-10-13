@@ -54,7 +54,7 @@ impl Environment {
 
         let mythroad = mythroad::Mythroad::new(&mut mem);
         syscall.setup_stubs(&mut mem, &mythroad);
-        let mut cpu = cpu::Cpu::new();
+        let mut cpu = cpu::Cpu::new(options.cpu_backend);
         stack::prep_stack_for_start(&mut mem, &mut cpu);
         let libc_state = Default::default();
 
@@ -82,11 +82,10 @@ impl Environment {
             "-1. {:#x} (PC)",
             self.cpu.pc_with_thumb_bit().addr_with_thumb_bit()
         );
-        let regs = self.cpu.regs();
-        let mut lr = regs[cpu::Cpu::LR];
+        let mut lr = self.cpu.reg(cpu::Cpu::LR);
         eprintln!(" 0. {:#x} (LR)", lr);
         let mut i = 0;
-        let mut frame_pointer: mem::ConstPtr<u8> = mem::Ptr::from_bits(regs[7]);
+        let mut frame_pointer: mem::ConstPtr<u8> = mem::Ptr::from_bits(self.cpu.reg(7));
         loop {
             let fp = frame_pointer.to_bits();
             if fp < mem::Memory::STACK_LOW_END || fp > mem::Memory::STACK_HIGH_END - 8 {
@@ -264,7 +263,12 @@ impl Environment {
                         // the program counter is pointing at the
                         // instruction after the SVC, but we want the
                         // address of the SVC itself
-                        let svc_pc = self.cpu.regs()[cpu::Cpu::PC] - 4;
+                        let instruction_size = if self.cpu.cpsr() & cpu::Cpu::CPSR_THUMB != 0 {
+                            2
+                        } else {
+                            4
+                        };
+                        let svc_pc = self.cpu.reg(cpu::Cpu::PC) - instruction_size;
                         if svc == syscall::Syscall::SVC_RETURN_TO_HOST {
                             assert!(!root);
                             assert!(

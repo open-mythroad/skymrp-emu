@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use crate::cpu::CpuBackend;
 use crate::font::FontSize;
 use std::num::NonZeroU32;
 
@@ -14,6 +15,7 @@ pub struct Options {
     pub fullscreen: bool,
     pub scale: NonZeroU32,
     pub font_size_override: Option<FontSize>,
+    pub cpu_backend: CpuBackend,
 }
 
 impl Default for Options {
@@ -22,6 +24,7 @@ impl Default for Options {
             scale: NonZeroU32::new(1).unwrap(),
             fullscreen: false,
             font_size_override: Some(FontSize::Medium),
+            cpu_backend: CpuBackend::Dynarmic,
         }
     }
 }
@@ -36,6 +39,12 @@ impl Options {
                 .map_err(|_| "Invalid scale hack factor".to_string())?;
         } else if let Some(value) = arg.strip_prefix("--font-size-override=") {
             self.font_size_override = Some(FontSize::parse(value)?);
+        } else if let Some(value) = arg.strip_prefix("--cpu=") {
+            self.cpu_backend = match value {
+                "dynarmic" => CpuBackend::Dynarmic,
+                "interpreter" => CpuBackend::Interpreter,
+                _ => return Err(format!("Invalid CPU backend: {value}")),
+            };
         } else {
             return Ok(false);
         }

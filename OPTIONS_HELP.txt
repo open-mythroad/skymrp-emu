@@ -8,3 +8,7 @@ View options:
 Font options:
     --font-size-override=small|medium|big
         Override the font size used for Mythroad text rendering.
+
+CPU options:
+    --cpu=dynarmic|interpreter
+        Select the CPU backend. The default is dynarmic.

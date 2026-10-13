@@ -7,6 +7,21 @@ use crate::cpu::Cpu;
 use crate::mem::{ConstPtr, ConstVoidPtr, Memory, MutPtr, Ptr};
 use crate::Environment;
 
+pub trait RegisterAccess {
+    fn reg(&self, index: usize) -> u32;
+    fn set_reg(&mut self, index: usize, value: u32);
+}
+
+impl RegisterAccess for Cpu {
+    fn reg(&self, index: usize) -> u32 {
+        Cpu::reg(self, index)
+    }
+
+    fn set_reg(&mut self, index: usize, value: u32) {
+        Cpu::set_reg(self, index, value);
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct GuestFunction(ConstVoidPtr);
 
@@ -43,7 +58,7 @@ impl GuestFunction {
         env.run_call();
 
         env.cpu.branch(old_pc);
-        env.cpu.regs_mut()[Cpu::LR] = old_lr.addr_with_thumb_bit();
+        env.cpu.set_reg(Cpu::LR, old_lr.addr_with_thumb_bit());
 
         log_dbg!("End call to guest function {:?}", self);
     }
@@ -60,15 +75,14 @@ macro_rules! impl_CallFromGuest {
             // ignore warnings for the zero-argument case
             #[allow(unused_variables, unused_mut, clippy::unused_unit)]
             fn call_from_guest(&self, env: &mut Environment) {
-                let regs = env.cpu.regs();
                 let mut reg_offset = 0;
                 let args: ($($P,)*) = {
-                    ($(read_next_arg::<$P>(&mut reg_offset, regs, Ptr::from_bits(regs[Cpu::SP]), &env.mem),)*)
+                    ($(read_next_arg::<$P>(&mut reg_offset, &env.cpu, Ptr::from_bits(env.cpu.reg(Cpu::SP)), &env.mem),)*)
                 };
                 log_dbg!("CallFromGuest {:?}", args);
                 let retval = self(env, $(args.$p),*);
                 log_dbg!("CallFromGuest => {:?}", retval);
-                retval.to_regs(env.cpu.regs_mut());
+                retval.to_regs(&mut env.cpu);
             }
         }
 
@@ -78,15 +92,14 @@ macro_rules! impl_CallFromGuest {
             #[allow(unused_variables, unused_mut, clippy::unused_unit)]
             fn call_from_guest(&self, env: &mut Environment) {
                 let mut reg_offset = 0;
-                let regs = env.cpu.regs();
                 let args: ($($P,)*) = {
-                    ($(read_next_arg::<$P>(&mut reg_offset, regs, Ptr::from_bits(regs[Cpu::SP]), &env.mem),)*)
+                    ($(read_next_arg::<$P>(&mut reg_offset, &env.cpu, Ptr::from_bits(env.cpu.reg(Cpu::SP)), &env.mem),)*)
                 };
-                let va_list = DotDotDot(VaList { reg_offset, stack_pointer: Ptr::from_bits(regs[Cpu::SP]) });
+                let va_list = DotDotDot(VaList { reg_offset, stack_pointer: Ptr::from_bits(env.cpu.reg(Cpu::SP)) });
                 log_dbg!("CallFromGuest {:?}, ...{:?}", args, va_list);
                 let retval = self(env, $(args.$p,)* va_list);
                 log_dbg!("CallFromGuest => {:?}", retval);
-                retval.to_regs(env.cpu.regs_mut());
+                retval.to_regs(&mut env.cpu);
             }
         }
     }
@@ -120,16 +133,14 @@ macro_rules! impl_CallFromHost {
                 args: ($($P,)*),
             ) -> R {
                 let mut reg_offset = 0;
-                let regs = env.cpu.regs_mut();
                 let old_sp = extend_stack_for_args(
                     0 $(+ <$P as GuestArg>::REG_COUNT)*,
-                    regs,
+                    &mut env.cpu,
                 );
-                $(write_next_arg::<$P>(&mut reg_offset, regs, &mut env.mem, args.$p);)*
+                $(write_next_arg::<$P>(&mut reg_offset, &mut env.cpu, &mut env.mem, args.$p);)*
                 self.call_from_guest(env);
-                let regs = env.cpu.regs_mut();
-                regs[Cpu::SP] = old_sp;
-                <R as GuestRet>::from_regs(regs)
+                env.cpu.set_reg(Cpu::SP, old_sp);
+                <R as GuestRet>::from_regs(&env.cpu)
             }
         }
 
@@ -144,17 +155,15 @@ macro_rules! impl_CallFromHost {
             ) -> R {
                 log_dbg!("Begin call to guest function {:?}", self);
                 let mut reg_offset = 0;
-                let regs = env.cpu.regs_mut();
                 let old_sp = extend_stack_for_args(
                     0 $(+ <$P as GuestArg>::REG_COUNT)*,
-                    regs,
+                    &mut env.cpu,
                 );
-                $(write_next_arg::<$P>(&mut reg_offset, regs, &mut env.mem, args.$p);)*
+                $(write_next_arg::<$P>(&mut reg_offset, &mut env.cpu, &mut env.mem, args.$p);)*
                 self.call(env);
-                let regs = env.cpu.regs_mut();
                 log_dbg!("End call to guest function {:?}", self);
-                regs[Cpu::SP] = old_sp;
-                <R as GuestRet>::from_regs(regs)
+                env.cpu.set_reg(Cpu::SP, old_sp);
+                <R as GuestRet>::from_regs(&env.cpu)
             }
         }
 
@@ -186,7 +195,7 @@ pub trait GuestArg: std::fmt::Debug + Sized {
 /// Read a single argument from registers. Call this for each argument in order.
 fn read_next_arg<T: GuestArg>(
     reg_offset: &mut usize,
-    regs: &[u32],
+    regs: &dyn RegisterAccess,
     stack_ptr: ConstPtr<u32>,
     mem: &Memory,
 ) -> T {
@@ -198,7 +207,7 @@ fn read_next_arg<T: GuestArg>(
 
     for fake_reg in fake_regs.iter_mut() {
         if *reg_offset < 4 {
-            *fake_reg = regs[*reg_offset];
+            *fake_reg = regs.reg(*reg_offset);
         } else {
             *fake_reg = mem.read(stack_ptr + (*reg_offset - 4).try_into().unwrap());
         }
@@ -212,14 +221,17 @@ fn read_next_arg<T: GuestArg>(
 /// the sum of the [GuestArg::REG_COUNT]s for all the arguments to be written,
 /// and this will update the stack pointer if necessary, as well as returning
 /// a copy of the original stack pointer so it can be restored later.
-pub fn extend_stack_for_args(reg_count_sum: usize, regs: &mut [u32]) -> u32 {
+pub fn extend_stack_for_args(reg_count_sum: usize, regs: &mut dyn RegisterAccess) -> u32 {
     // After the fourth register is used, the arguments go on the stack.
     // In some cases the argument is split over both registers and the stack.
 
-    let old = regs[Cpu::SP];
+    let old = regs.reg(Cpu::SP);
     if reg_count_sum > 4 {
         let old: ConstPtr<u32> = Ptr::from_bits(old);
-        regs[Cpu::SP] = (old - (reg_count_sum - 4).try_into().unwrap()).to_bits()
+        regs.set_reg(
+            Cpu::SP,
+            (old - (reg_count_sum - 4).try_into().unwrap()).to_bits(),
+        );
     }
     old
 }
@@ -231,7 +243,7 @@ pub fn extend_stack_for_args(reg_count_sum: usize, regs: &mut [u32]) -> u32 {
 /// appropriately decremented in advance! See [extend_stack_for_args].
 pub fn write_next_arg<T: GuestArg>(
     reg_offset: &mut usize,
-    regs: &mut [u32],
+    regs: &mut dyn RegisterAccess,
     mem: &mut Memory,
     arg: T,
 ) {
@@ -243,9 +255,9 @@ pub fn write_next_arg<T: GuestArg>(
 
     for &mut fake_reg in fake_regs {
         if *reg_offset < 4 {
-            regs[*reg_offset] = fake_reg;
+            regs.set_reg(*reg_offset, fake_reg);
         } else {
-            let stack_ptr: MutPtr<u32> = Ptr::from_bits(regs[Cpu::SP]);
+            let stack_ptr: MutPtr<u32> = Ptr::from_bits(regs.reg(Cpu::SP));
             mem.write(stack_ptr + (*reg_offset - 4).try_into().unwrap(), fake_reg);
         }
         *reg_offset += 1;
@@ -271,7 +283,7 @@ impl VaList {
     /// Get the next argument, like C's `va_arg()`.
     pub fn next<T: GuestArg>(&mut self, env: &mut Environment) -> T {
         let sp_reg = self.stack_pointer.cast();
-        read_next_arg(&mut self.reg_offset, env.cpu.regs_mut(), sp_reg, &env.mem)
+        read_next_arg(&mut self.reg_offset, &env.cpu, sp_reg, &env.mem)
     }
 }
 
@@ -386,19 +398,19 @@ impl GuestArg for f64 {
 
 pub trait GuestRet: std::fmt::Debug + Sized {
     /// Read the return value from registers.
-    fn from_regs(regs: &[u32]) -> Self;
+    fn from_regs(regs: &dyn RegisterAccess) -> Self;
 
     /// Write the return value to registers.
-    fn to_regs(self, regs: &mut [u32]);
+    fn to_regs(self, regs: &mut dyn RegisterAccess);
 }
 
 macro_rules! impl_GuestRet_with {
     ($for:ty, $with:ty) => {
         impl GuestRet for $for {
-            fn from_regs(regs: &[u32]) -> Self {
+            fn from_regs(regs: &dyn RegisterAccess) -> Self {
                 <$with as GuestRet>::from_regs(regs) as $for
             }
-            fn to_regs(self, regs: &mut [u32]) {
+            fn to_regs(self, regs: &mut dyn RegisterAccess) {
                 <$with as GuestRet>::to_regs(self as $with, regs)
             }
         }
@@ -406,17 +418,17 @@ macro_rules! impl_GuestRet_with {
 }
 
 impl GuestRet for () {
-    fn to_regs(self, _regs: &mut [u32]) {}
-    fn from_regs(_regs: &[u32]) -> Self {}
+    fn to_regs(self, _regs: &mut dyn RegisterAccess) {}
+    fn from_regs(_regs: &dyn RegisterAccess) -> Self {}
 }
 
 // GuestRet implementations for u32-like types
 impl GuestRet for u32 {
-    fn from_regs(regs: &[u32]) -> Self {
-        regs[0]
+    fn from_regs(regs: &dyn RegisterAccess) -> Self {
+        regs.reg(0)
     }
-    fn to_regs(self, regs: &mut [u32]) {
-        regs[0] = self;
+    fn to_regs(self, regs: &mut dyn RegisterAccess) {
+        regs.set_reg(0, self);
     }
 }
 
@@ -427,20 +439,20 @@ impl_GuestRet_with!(u8, u32);
 impl_GuestRet_with!(i8, u32);
 
 impl GuestRet for f32 {
-    fn from_regs(regs: &[u32]) -> Self {
+    fn from_regs(regs: &dyn RegisterAccess) -> Self {
         Self::from_bits(<u32 as GuestRet>::from_regs(regs))
     }
 
-    fn to_regs(self, regs: &mut [u32]) {
+    fn to_regs(self, regs: &mut dyn RegisterAccess) {
         <u32 as GuestRet>::to_regs(self.to_bits(), regs)
     }
 }
 
 impl<T, const MUT: bool> GuestRet for Ptr<T, MUT> {
-    fn from_regs(regs: &[u32]) -> Self {
+    fn from_regs(regs: &dyn RegisterAccess) -> Self {
         Self::from_bits(<u32 as GuestRet>::from_regs(regs))
     }
-    fn to_regs(self, regs: &mut [u32]) {
+    fn to_regs(self, regs: &mut dyn RegisterAccess) {
         <u32 as GuestRet>::to_regs(self.to_bits(), regs)
     }
 }
@@ -448,24 +460,24 @@ impl<T, const MUT: bool> GuestRet for Ptr<T, MUT> {
 // GuestRet implementations for u64-like types
 
 impl GuestRet for u64 {
-    fn from_regs(regs: &[u32]) -> Self {
+    fn from_regs(regs: &dyn RegisterAccess) -> Self {
         let mut bytes = [0u8; 8];
-        bytes[0..4].copy_from_slice(&regs[0].to_le_bytes());
-        bytes[4..8].copy_from_slice(&regs[1].to_le_bytes());
+        bytes[0..4].copy_from_slice(&regs.reg(0).to_le_bytes());
+        bytes[4..8].copy_from_slice(&regs.reg(1).to_le_bytes());
         u64::from_le_bytes(bytes)
     }
-    fn to_regs(self, regs: &mut [u32]) {
+    fn to_regs(self, regs: &mut dyn RegisterAccess) {
         let bytes = self.to_le_bytes();
-        regs[0] = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
-        regs[1] = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        regs.set_reg(0, u32::from_le_bytes(bytes[0..4].try_into().unwrap()));
+        regs.set_reg(1, u32::from_le_bytes(bytes[4..8].try_into().unwrap()));
     }
 }
 
 impl GuestRet for f64 {
-    fn from_regs(regs: &[u32]) -> Self {
+    fn from_regs(regs: &dyn RegisterAccess) -> Self {
         Self::from_bits(<u64 as GuestRet>::from_regs(regs))
     }
-    fn to_regs(self, regs: &mut [u32]) {
+    fn to_regs(self, regs: &mut dyn RegisterAccess) {
         <u64 as GuestRet>::to_regs(self.to_bits(), regs)
     }
 }
