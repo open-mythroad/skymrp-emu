@@ -146,7 +146,9 @@ pub fn mr_start_dsm_c(env: &mut Environment, start_file: &str, entry: Option<&st
         MR_FILE_MAX_LEN,
     );
 
-    let pack_filename_src = env.mem.alloc_and_write_cstr(pack_filename.as_bytes());
+    let pack_filename_src = env
+        .mem
+        .alloc_and_write_cstr(&encoding::utf8_to_gb_bytes(pack_filename));
     libc::string::strcpy(
         env,
         env.mythroad.state.pack_filename,
@@ -1311,7 +1313,9 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
         MR_FILE_MAX_LEN,
     );
 
-    let entry_src = env.mem.alloc_and_write_cstr(entry.as_bytes());
+    let entry_src = env
+        .mem
+        .alloc_and_write_cstr(&encoding::utf8_to_gb_bytes(entry));
     libc::string::strncpy(
         env,
         env.mythroad.state.entry,
