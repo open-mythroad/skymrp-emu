@@ -110,11 +110,16 @@ impl AudioSystem {
         let audio = sdl.audio().map_err(Error::Sdl)?;
         let state = Arc::new(Mutex::new(PlaybackState::with_default_params()?));
         let params = state.lock().unwrap().params();
+        let samples = if cfg!(target_os = "emscripten") {
+            2048
+        } else {
+            params.mix_buffer_size
+        };
 
         let desired = AudioSpecDesired {
             freq: Some(params.sample_rate),
             channels: Some(params.channels.try_into().unwrap()),
-            samples: Some(params.mix_buffer_size.try_into().unwrap()),
+            samples: Some(samples.try_into().unwrap()),
         };
 
         let device = audio
