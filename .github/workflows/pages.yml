@@ -1,0 +1,66 @@
+name: Deploy web to Pages
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.92.0 --profile minimal --target wasm32-unknown-emscripten
+          rustup default 1.92.0
+
+      - name: Install Emscripten
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 3.1.74
+          "$RUNNER_TEMP/emsdk/emsdk" activate 3.1.74
+
+      - name: Build
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          cargo build -p skymrp_web --target wasm32-unknown-emscripten --release
+
+      - name: Prepare Pages artifact
+        run: |
+          mkdir _site
+          cp web/index.html _site/
+          cp target/wasm32-unknown-emscripten/release/skymrp_web.js _site/
+          cp target/wasm32-unknown-emscripten/release/skymrp_web.wasm _site/
+          cp -R fonts _site/
+          touch _site/.nojekyll
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

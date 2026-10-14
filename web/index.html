@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SkyMRP</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            background: #101214;
+            color: #f4f4f5;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            margin: 0;
+            display: grid;
+            place-items: center;
+            background: #101214;
+        }
+
+        main {
+            width: min(100%, 720px);
+            padding: 16px;
+        }
+
+        header {
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: 0;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .github-link {
+            width: 40px;
+            height: 40px;
+            display: grid;
+            flex: 0 0 40px;
+            place-items: center;
+            border: 1px solid #3f464e;
+            border-radius: 6px;
+            background: #272b30;
+            color: inherit;
+        }
+
+        .github-link:hover,
+        .file-button:hover:not(:disabled) {
+            background: #32373d;
+        }
+
+        .github-link:focus-visible,
+        .file-button:focus-visible {
+            outline: 2px solid #64b4ff;
+            outline-offset: 2px;
+        }
+
+        .file-button {
+            min-height: 40px;
+            padding: 0 16px;
+            border: 1px solid #3f464e;
+            border-radius: 6px;
+            background: #272b30;
+            color: inherit;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        .file-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
+
+        .file-input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip-path: inset(50%);
+            white-space: nowrap;
+        }
+
+        #status {
+            min-height: 20px;
+            margin-bottom: 12px;
+            color: #a1a1aa;
+            font-size: 13px;
+        }
+
+        .screen {
+            display: grid;
+            place-items: center;
+            min-height: 336px;
+        }
+
+        #canvas {
+            display: block;
+            width: 240px;
+            height: 320px;
+            border: 0;
+            padding: 0;
+            background: #000;
+            outline: none;
+            image-rendering: pixelated;
+        }
+
+        #canvas:focus-visible {
+            outline: 2px solid #64b4ff;
+            outline-offset: 3px;
+        }
+
+        .keypad {
+            display: grid;
+            grid-template-columns: repeat(7, 42px);
+            gap: 8px;
+            width: max-content;
+            max-width: 100%;
+            margin: 16px auto 0;
+            touch-action: none;
+            user-select: none;
+        }
+
+        .key {
+            height: 48px;
+            min-width: 0;
+            border: 0;
+            border-radius: 6px;
+            background: #272b30;
+            color: #f4f4f5;
+            font: 600 16px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .key.control {
+            background: #31363d;
+        }
+
+        .key:active,
+        .key.pressed {
+            background: #3773cd;
+        }
+
+        .keyboard-help {
+            margin-top: 24px;
+            border-top: 1px solid #2f343a;
+            padding-top: 16px;
+        }
+
+        .keyboard-help summary {
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .keyboard-help[open] summary {
+            margin-bottom: 12px;
+        }
+
+        .key-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            column-gap: 24px;
+            margin: 0;
+        }
+
+        .key-binding {
+            min-height: 40px;
+            display: grid;
+            grid-template-columns: minmax(112px, auto) 1fr;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid #272b30;
+        }
+
+        .key-binding dt,
+        .key-binding dd {
+            margin: 0;
+        }
+
+        .key-binding dd {
+            color: #a1a1aa;
+            font-size: 13px;
+        }
+
+        kbd {
+            display: inline-block;
+            min-width: 24px;
+            margin: 2px;
+            padding: 3px 6px;
+            border: 1px solid #4a515a;
+            border-bottom-width: 2px;
+            border-radius: 4px;
+            background: #272b30;
+            color: #f4f4f5;
+            font: 500 12px/16px ui-monospace, "SFMono-Regular", Consolas, monospace;
+            text-align: center;
+        }
+
+        @media (max-width: 480px) {
+            main {
+                padding: 12px;
+            }
+
+            header {
+                margin-bottom: 8px;
+            }
+
+            .screen {
+                min-height: 320px;
+            }
+
+            .keypad {
+                margin-top: 12px;
+            }
+
+            .key {
+                height: 48px;
+            }
+
+            .key-list {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .keypad {
+                grid-template-columns: repeat(7, minmax(0, 1fr));
+                gap: 5px;
+                width: 100%;
+            }
+
+            .key {
+                height: 44px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <header>
+            <h1>SkyMRP</h1>
+            <div class="header-actions">
+                <a class="github-link"
+                    href="https://github.com/open-mythroad/skymrp-emu"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="View SkyMRP on GitHub"
+                    title="GitHub">
+                    <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.28-.36 6.72-1.61 6.72-7.1A5.4 5.4 0 0 0 18.3 3.7a5.07 5.07 0 0 0-.08-3.57S17.28-.23 15 1.6a13.38 13.38 0 0 0-7 0C5.72-.23 4.78.13 4.78.13A5.07 5.07 0 0 0 4.7 3.7a5.4 5.4 0 0 0-1.44 3.75c0 5.42 3.44 6.67 6.72 7.1A4.8 4.8 0 0 0 9 18v4"></path>
+                        <path d="M9 18c-4.51 2-5-2-7-2"></path>
+                    </svg>
+                </a>
+                <button class="file-button" id="open-mrp" type="button" disabled>Open MRP</button>
+            </div>
+            <input class="file-input" id="mrp-file" type="file" accept=".mrp,.mr" aria-label="MRP file">
+        </header>
+
+        <div id="status" role="status">Loading runtime...</div>
+
+        <div class="screen">
+            <canvas id="canvas" width="240" height="320" tabindex="0"></canvas>
+        </div>
+
+        <div class="keypad" aria-label="Virtual keypad">
+            <button class="key control" type="button" data-key="q" data-code="KeyQ" data-key-code="81" aria-label="Left soft key">=</button>
+            <button class="key control" type="button" data-key="ArrowUp" data-code="ArrowUp" data-key-code="38" aria-label="Up">↑</button>
+            <button class="key control" type="button" data-key="e" data-code="KeyE" data-key-code="69" aria-label="Right soft key">=</button>
+            <button class="key" type="button" data-key="1" data-code="Digit1" data-key-code="49">1</button>
+            <button class="key" type="button" data-key="2" data-code="Digit2" data-key-code="50">2</button>
+            <button class="key" type="button" data-key="3" data-code="Digit3" data-key-code="51">3</button>
+            <button class="key" type="button" data-key="-" data-code="Minus" data-key-code="189" aria-label="Star">*</button>
+
+            <button class="key control" type="button" data-key="ArrowLeft" data-code="ArrowLeft" data-key-code="37" aria-label="Left">←</button>
+            <button class="key control" type="button" data-key="Enter" data-code="Enter" data-key-code="13">OK</button>
+            <button class="key control" type="button" data-key="ArrowRight" data-code="ArrowRight" data-key-code="39" aria-label="Right">→</button>
+            <button class="key" type="button" data-key="4" data-code="Digit4" data-key-code="52">4</button>
+            <button class="key" type="button" data-key="5" data-code="Digit5" data-key-code="53">5</button>
+            <button class="key" type="button" data-key="6" data-code="Digit6" data-key-code="54">6</button>
+            <button class="key" type="button" data-key="0" data-code="Digit0" data-key-code="48">0</button>
+
+            <button class="key control" type="button" data-key="Tab" data-code="Tab" data-key-code="9" aria-label="Send">=</button>
+            <button class="key control" type="button" data-key="ArrowDown" data-code="ArrowDown" data-key-code="40" aria-label="Down">↓</button>
+            <button class="key control" type="button" data-key="Escape" data-code="Escape" data-key-code="27" aria-label="Power">=</button>
+            <button class="key" type="button" data-key="7" data-code="Digit7" data-key-code="55">7</button>
+            <button class="key" type="button" data-key="8" data-code="Digit8" data-key-code="56">8</button>
+            <button class="key" type="button" data-key="9" data-code="Digit9" data-key-code="57">9</button>
+            <button class="key" type="button" data-key="=" data-code="Equal" data-key-code="187" aria-label="Pound">#</button>
+        </div>
+
+        <details class="keyboard-help">
+            <summary>Keyboard controls</summary>
+            <dl class="key-list">
+                <div class="key-binding">
+                    <dt><kbd>0</kbd>-<kbd>9</kbd></dt>
+                    <dd>Number keys</dd>
+                </div>
+                <div class="key-binding">
+                    <dt><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></dt>
+                    <dd>Direction</dd>
+                </div>
+                <div class="key-binding">
+                    <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt>
+                    <dd>Direction</dd>
+                </div>
+                <div class="key-binding">
+                    <dt><kbd>Enter</kbd></dt>
+                    <dd>OK</dd>
+                </div>
+                <div class="key-binding">
+                    <dt><kbd>Q</kbd> / <kbd>[</kbd></dt>
+                    <dd>Left soft key</dd>
+                </div>
+                <div class="key-binding">
+                    <dt><kbd>E</kbd> / <kbd>]</kbd></dt>
+                    <dd>Right soft key</dd>
+                </div>
+                <div class="key-binding">
+                    <dt><kbd>-</kbd> / <kbd>=</kbd></dt>
+                    <dd>* / #</dd>
+                </div>
+                <div class="key-binding">
+                    <dt><kbd>Tab</kbd> / <kbd>Esc</kbd></dt>
+                    <dd>Send / power</dd>
+                </div>
+                <div class="key-binding">
+                    <dt><kbd>Backspace</kbd> / <kbd>Delete</kbd></dt>
+                    <dd>Clear</dd>
+                </div>
+                <div class="key-binding">
+                    <dt><kbd>Z</kbd> / <kbd>X</kbd></dt>
+                    <dd>A / B</dd>
+                </div>
+            </dl>
+        </details>
+    </main>
+
+    <script>
+        const canvas = document.getElementById("canvas");
+        const status = document.getElementById("status");
+        const openButton = document.getElementById("open-mrp");
+        const fileInput = document.getElementById("mrp-file");
+        let launchRequested = false;
+
+        var Module = {
+            canvas,
+            print: console.log,
+            printErr: console.error,
+            onRuntimeInitialized() {
+                openButton.disabled = false;
+                status.textContent = "Ready";
+
+                const mrpUrl = new URLSearchParams(location.search).get("mrp");
+                if (mrpUrl) {
+                    startMrpFromUrl(mrpUrl).catch(showError);
+                }
+            },
+            onAbort(reason) {
+                status.textContent = `Runtime error: ${reason}`;
+            }
+        };
+
+        openButton.addEventListener("click", () => fileInput.click());
+        fileInput.addEventListener("change", async () => {
+            const [file] = fileInput.files;
+            if (file) {
+                await startMrp(file, file.name);
+            }
+        });
+
+        async function startMrp(source, filename) {
+            if (launchRequested) {
+                return;
+            }
+            launchRequested = true;
+            openButton.disabled = true;
+            status.textContent = `Starting ${filename}...`;
+            try {
+                await Module.loadMrp(source, filename);
+                status.textContent = filename;
+                canvas.focus();
+            } catch (error) {
+                launchRequested = false;
+                openButton.disabled = false;
+                showError(error);
+            }
+        }
+
+        async function startMrpFromUrl(value) {
+            const url = new URL(value, location.href);
+            if (url.protocol !== "http:" && url.protocol !== "https:") {
+                throw new Error("Unsupported MRP URL");
+            }
+
+            openButton.disabled = true;
+            status.textContent = "Downloading MRP...";
+
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Download failed: HTTP ${response.status}`);
+            }
+
+            const data = await response.arrayBuffer();
+            const encodedName = url.pathname.split("/").pop();
+            const filename = encodedName ? decodeURIComponent(encodedName) : "remote.mrp";
+            await startMrp(data, filename);
+        }
+
+        function showError(error) {
+            console.error(error);
+            status.textContent = error instanceof Error ? error.message : String(error);
+            openButton.disabled = false;
+        }
+
+        function dispatchKey(type, button) {
+            const keyCode = Number(button.dataset.keyCode);
+            const event = new KeyboardEvent(type, {
+                key: button.dataset.key,
+                code: button.dataset.code,
+                keyCode,
+                which: keyCode,
+                bubbles: true,
+                cancelable: true
+            });
+            canvas.dispatchEvent(event);
+        }
+
+        for (const button of document.querySelectorAll(".key")) {
+            button.addEventListener("pointerdown", event => {
+                event.preventDefault();
+                button.setPointerCapture(event.pointerId);
+                button.classList.add("pressed");
+                dispatchKey("keydown", button);
+            });
+
+            const release = event => {
+                if (!button.classList.contains("pressed")) {
+                    return;
+                }
+                event.preventDefault();
+                button.classList.remove("pressed");
+                dispatchKey("keyup", button);
+                canvas.focus();
+            };
+
+            button.addEventListener("pointerup", release);
+            button.addEventListener("pointercancel", release);
+            button.addEventListener("lostpointercapture", release);
+        }
+
+        canvas.addEventListener("contextmenu", event => event.preventDefault());
+    </script>
+    <script src="./skymrp_web.js"></script>
+</body>
+</html>

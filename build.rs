@@ -11,11 +11,16 @@ fn rerun_if_changed(path: &Path) {
 
 pub fn main() {
     let package_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
 
     rerun_if_changed(&package_root.join("Cargo.lock"));
 
+    if target_os == "emscripten" {
+        println!("cargo:rustc-link-arg-cdylib=--no-entry");
+    }
+
     // libc++_shared.so has to be copied into the APK. See README of cargo-ndk.
-    if std::env::var("CARGO_CFG_TARGET_OS").unwrap() == "android" {
+    if target_os == "android" {
         println!("cargo:rustc-link-lib=c++_shared");
         let sysroot_libs_path =
             PathBuf::from(std::env::var_os("CARGO_NDK_SYSROOT_LIBS_PATH").unwrap());

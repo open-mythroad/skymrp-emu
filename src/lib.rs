@@ -130,7 +130,7 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         assert!(parse_result == Ok(true));
     }
 
-    let mut env = Environment::new(mrp_path, options.clone())?;
+    let env = Environment::new(mrp_path, options.clone())?;
     env.run();
     Ok(())
 }
