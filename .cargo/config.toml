@@ -1,2 +1,9 @@
 [env]
 CMAKE_POLICY_VERSION_MINIMUM = "3.5"
+
+[target.wasm32-unknown-emscripten]
+rustflags = [
+    "-C", "link-arg=-sUSE_SDL=2",
+    "-C", "link-arg=-sFORCE_FILESYSTEM=1",
+    "-C", "link-arg=-sALLOW_MEMORY_GROWTH=1",
+]

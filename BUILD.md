@@ -64,6 +64,21 @@ All the general prerequisites apply for Android, and you need three additional t
       - You might also need to install Gradle (check the version in `android/gradle/wrapper/gradle-wrapper.properties`)
 4. Boost: Download and extract Boost into `vendor/boost` by following the Windows instructions above.
 
+### WebAssembly
+
+Additional dependencies:
+
+- Python 3.10 or later
+- Emscripten 3.1.74
+- The `wasm32-unknown-emscripten` Rust target
+
+```bash
+git clone https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+"$HOME/emsdk/emsdk" install 3.1.74
+"$HOME/emsdk/emsdk" activate 3.1.74
+rustup target add wasm32-unknown-emscripten
+```
+
 ## Building
 
 ### Non-Android platforms
@@ -87,4 +102,25 @@ export ANDROID_SDK_HOME="path/to/sdk"
 
 cd android
 gradle assembleRelease
+```
+
+### WebAssembly
+
+Activate Emscripten and build the Web entry package:
+
+```bash
+source "$HOME/emsdk/emsdk_env.sh"
+
+# Debug
+cargo build -p skymrp_web --target wasm32-unknown-emscripten
+
+# Release
+cargo build -p skymrp_web --target wasm32-unknown-emscripten --release
+```
+
+The release artifacts are:
+
+```text
+target/wasm32-unknown-emscripten/release/skymrp_web.js
+target/wasm32-unknown-emscripten/release/skymrp_web.wasm
 ```

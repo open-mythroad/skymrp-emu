@@ -12,6 +12,16 @@ use std::time::{Duration, Instant};
 
 use std::path::PathBuf;
 
+#[cfg(target_os = "emscripten")]
+extern "C" {
+    fn emscripten_set_main_loop_arg(
+        func: extern "C" fn(*mut std::ffi::c_void),
+        arg: *mut std::ffi::c_void,
+        fps: std::ffi::c_int,
+        simulate_infinite_loop: bool,
+    );
+}
+
 /// The struct containing the entire emulator state.
 pub struct Environment {
     pub options: options::Options,
@@ -100,10 +110,10 @@ impl Environment {
     }
 
     /// Run the emulator.
-    pub fn run(&mut self) {
+    pub fn run(mut self) {
         let entry = format!("%{}", self.initial_pack_filename);
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            dsm::mr_start_dsm_c(self, mrp::MR_START_FILE_NAME, Some(&entry))
+            dsm::mr_start_dsm_c(&mut self, mrp::MR_START_FILE_NAME, Some(&entry))
                 == mythroad::MrResult::Success as i32
         }));
 
@@ -128,69 +138,10 @@ impl Environment {
         self.run_inner(false)
     }
 
+    #[cfg(not(target_os = "emscripten"))]
     fn run_event_loop(&mut self) {
         loop {
-            self.window.poll_for_events(self.mythroad.editbox.is_some());
-
-            while let Some(event) = self.window.pop_event() {
-                match event {
-                    Event::Quit => panic!("User requested quit, exiting..."),
-                    Event::AppWillEnterBackground => {
-                        dsm::mr_pause_app(self);
-                        continue;
-                    }
-                    Event::AppDidEnterForeground => {
-                        dsm::mr_resume_app(self);
-                        continue;
-                    }
-                    _ => {}
-                }
-
-                if self.mythroad.editbox.is_some() {
-                    let result = self.handle_editbox_event(&event);
-                    match result {
-                        editbox::EditResult::Ok => {
-                            self.window.stop_text_input();
-                            dsm::mr_event(self, dsm::MR_DIALOG_EVENT, dsm::MR_DIALOG_KEY_OK, 0);
-                        }
-                        editbox::EditResult::Cancel => {
-                            self.window.stop_text_input();
-                            dsm::mr_event(self, dsm::MR_DIALOG_EVENT, dsm::MR_DIALOG_KEY_CANCEL, 0);
-                        }
-                        editbox::EditResult::None => {}
-                    }
-                    continue;
-                }
-
-                match event {
-                    Event::Quit | Event::AppWillEnterBackground | Event::AppDidEnterForeground => {
-                        unreachable!()
-                    }
-                    Event::KeyDown(key) => {
-                        dsm::mr_event(self, dsm::MR_KEY_PRESS, key as i32, 0);
-                    }
-                    Event::KeyUp(key) => {
-                        dsm::mr_event(self, dsm::MR_KEY_RELEASE, key as i32, 0);
-                    }
-                    Event::MouseDown((x, y)) => {
-                        dsm::mr_event(self, dsm::MR_MOUSE_DOWN, x as i32, y as i32);
-                    }
-                    Event::MouseUp((x, y)) => {
-                        dsm::mr_event(self, dsm::MR_MOUSE_UP, x as i32, y as i32);
-                    }
-                    Event::MouseMove((x, y)) => {
-                        dsm::mr_event(self, dsm::MR_MOUSE_MOVE, x as i32, y as i32);
-                    }
-                    Event::TextKeyDown { .. } | Event::TextInput(_) | Event::TextEditing { .. } => {
-                    }
-                }
-            }
-
-            if self.mythroad.editbox.is_some() {
-                self.refresh_editbox();
-            }
-
-            dsm::mr_timer(self);
+            self.event_loop_tick();
 
             let mr_state = self.mythroad.state.mr_state.get(&self.mem);
             if mr_state == mythroad::MrRunState::Stop as u32 {
@@ -202,6 +153,84 @@ impl Environment {
                 std::thread::sleep(sleep_duration);
             }
         }
+    }
+
+    #[cfg(target_os = "emscripten")]
+    fn run_event_loop(self) {
+        let env = Box::into_raw(Box::new(self));
+        unsafe {
+            emscripten_set_main_loop_arg(Self::web_loop, env.cast(), 0, true);
+            drop(Box::from_raw(env));
+        }
+    }
+
+    #[cfg(target_os = "emscripten")]
+    extern "C" fn web_loop(arg: *mut std::ffi::c_void) {
+        let env = unsafe { &mut *arg.cast::<Environment>() };
+        env.event_loop_tick();
+    }
+
+    fn event_loop_tick(&mut self) {
+        self.window.poll_for_events(self.mythroad.editbox.is_some());
+
+        while let Some(event) = self.window.pop_event() {
+            match event {
+                Event::Quit => panic!("User requested quit, exiting..."),
+                Event::AppWillEnterBackground => {
+                    dsm::mr_pause_app(self);
+                    continue;
+                }
+                Event::AppDidEnterForeground => {
+                    dsm::mr_resume_app(self);
+                    continue;
+                }
+                _ => {}
+            }
+
+            if self.mythroad.editbox.is_some() {
+                let result = self.handle_editbox_event(&event);
+                match result {
+                    editbox::EditResult::Ok => {
+                        self.window.stop_text_input();
+                        dsm::mr_event(self, dsm::MR_DIALOG_EVENT, dsm::MR_DIALOG_KEY_OK, 0);
+                    }
+                    editbox::EditResult::Cancel => {
+                        self.window.stop_text_input();
+                        dsm::mr_event(self, dsm::MR_DIALOG_EVENT, dsm::MR_DIALOG_KEY_CANCEL, 0);
+                    }
+                    editbox::EditResult::None => {}
+                }
+                continue;
+            }
+
+            match event {
+                Event::Quit | Event::AppWillEnterBackground | Event::AppDidEnterForeground => {
+                    unreachable!()
+                }
+                Event::KeyDown(key) => {
+                    dsm::mr_event(self, dsm::MR_KEY_PRESS, key as i32, 0);
+                }
+                Event::KeyUp(key) => {
+                    dsm::mr_event(self, dsm::MR_KEY_RELEASE, key as i32, 0);
+                }
+                Event::MouseDown((x, y)) => {
+                    dsm::mr_event(self, dsm::MR_MOUSE_DOWN, x as i32, y as i32);
+                }
+                Event::MouseUp((x, y)) => {
+                    dsm::mr_event(self, dsm::MR_MOUSE_UP, x as i32, y as i32);
+                }
+                Event::MouseMove((x, y)) => {
+                    dsm::mr_event(self, dsm::MR_MOUSE_MOVE, x as i32, y as i32);
+                }
+                Event::TextKeyDown { .. } | Event::TextInput(_) | Event::TextEditing { .. } => {}
+            }
+        }
+
+        if self.mythroad.editbox.is_some() {
+            self.refresh_editbox();
+        }
+
+        dsm::mr_timer(self);
     }
 
     fn handle_editbox_event(&mut self, event: &Event) -> editbox::EditResult {
@@ -228,6 +257,7 @@ impl Environment {
             .set_text_input_rect(x, y, cursor_width, cursor_height);
     }
 
+    #[cfg(not(target_os = "emscripten"))]
     fn event_loop_sleep_duration(&self) -> Duration {
         const MAX_SLEEP: Duration = Duration::from_millis(1000 / 60);
 
