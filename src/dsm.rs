@@ -131,7 +131,7 @@ enum MrMsdcStatus {
     NotUseful,
 }
 
-pub fn mr_start_dsm_c(env: &mut Environment, start_file: &str, entry: Option<&str>) -> i32 {
+pub fn mr_start_dsm(env: &mut Environment, start_file: &str, entry: Option<&str>) -> i32 {
     let pack_filename = match entry {
         Some(entry) if entry.starts_with('*') => entry,
         Some(entry) if entry.starts_with('%') => &entry[1..],
@@ -180,7 +180,7 @@ pub fn mr_start_dsm_c(env: &mut Environment, start_file: &str, entry: Option<&st
         pack_filename
     );
 
-    intra_start(env, start_file, entry)
+    mr_intra_start(env, start_file, entry)
 }
 
 fn mr_file_handle_to_posix_fd(handle: u32) -> Option<posix_io::FileDescriptor> {
@@ -1088,7 +1088,7 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
         mr_stop_sound(env, 0);
         env.package_cache = None;
         env.cpu.clear_cache();
-        intra_start(env, &start_filename, None);
+        mr_intra_start(env, &start_filename, None);
         return MrResult::Success as i32;
     }
 
@@ -1248,14 +1248,7 @@ pub(crate) fn mr_sleep(ms: u32) {
     std::thread::sleep(Duration::from_millis(ms.into()));
 }
 
-fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>) -> i32 {
-    let is_mr_start = start_file_name == mrp::MR_START_FILE_NAME;
-    let start_file_name = if is_mr_start {
-        mrp::START_FILE_NAME
-    } else {
-        start_file_name
-    };
-
+fn mr_intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>) -> i32 {
     if env.mythroad.state.heap.create(&mut env.mem).is_none() {
         env.mythroad
             .state
@@ -1329,17 +1322,9 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
         .mr_state
         .set(&mut env.mem, MrRunState::Run as u32);
 
-    log_dbg!("Mythroad: mr_intra_start(filename={start_file_name}, entry={entry})");
-
-    let mut ret = mr_do_ext(env, start_file_name);
-    if ret != MrResult::Success as i32 {
-        ret = mr_do_ext(env, mrp::LOGO_EXT_FILE_NAME);
-    }
+    let ret = start_runtime(env, start_file_name, entry);
 
     if ret != MrResult::Success as i32 {
-        if is_mr_start {
-            log!("Mythroad: Lua MRP applications are not supported");
-        }
         env.mythroad
             .state
             .mr_state
@@ -1349,6 +1334,42 @@ fn intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>
     }
 
     MrResult::Success as i32
+}
+
+#[cfg(feature = "lua")]
+fn start_runtime(env: &mut Environment, filename: &str, entry: &str) -> i32 {
+    if let Err(err) = read_current_package_file(env, filename) {
+        log!("Mythroad: failed to load Lua entry file: {err}");
+        return MrResult::Failed as i32;
+    }
+
+    log!("Mythroad: Lua runtime is not implemented yet (filename={filename}, entry={entry})");
+    MrResult::Failed as i32
+}
+
+#[cfg(not(feature = "lua"))]
+fn start_runtime(env: &mut Environment, filename: &str, entry: &str) -> i32 {
+    let is_mr_start = filename == mrp::MR_START_FILE_NAME;
+    let filename = if is_mr_start {
+        mrp::START_FILE_NAME
+    } else {
+        filename
+    };
+
+    log_dbg!("Mythroad: mr_intra_start(filename={filename}, entry={entry})");
+
+    let ret = mr_do_ext(env, filename);
+    let ret = if ret != MrResult::Success as i32 {
+        mr_do_ext(env, mrp::LOGO_EXT_FILE_NAME)
+    } else {
+        ret
+    };
+
+    if ret != MrResult::Success as i32 && is_mr_start {
+        log!("Mythroad: Lua MRP applications are not supported");
+    }
+
+    ret
 }
 
 fn reset_screen_buffer(env: &mut Environment) -> bool {
