@@ -9,9 +9,8 @@ skymrp 并不模拟完整的早期功能机平台，而是实现 MRP 应用运�
 这个项目的目标，是让经典 MRP 应用和游戏能在现代系统上重新运行：
 
 - 当前：主要面向用 C 编写、核心逻辑编译为 ARM 原生代码，并调用常见 Mythroad 接口的 MRP 应用和游戏。
+- 实验性支持：已完成基础 `.mr` 加载、Lua/Native 桥接和必要生命周期，但还不是完整的 Mythroad Lua 运行时。
 - 长期：提升真实 MRP 软件的兼容性，逐步补齐更多平台接口。
-- 计划中，但尚未实现：完整 `mr` 虚拟机模式，用于运行主逻辑由 Mythroad
-  类 Lua 运行时的 `start.mr` 字节码实现的 MRP 应用和游戏。
 
 ## 重要免责声明
 
@@ -46,6 +45,12 @@ skymrp path/to/app.mrp
 
 ```sh
 cargo run -- path/to/app.mrp
+```
+
+如需尝试实验性的 Full 运行模式：
+
+```sh
+cargo run --features lua -- path/to/app.mrp --runtime=full
 ```
 
 可以通过 `--help` 查看命令行参数：

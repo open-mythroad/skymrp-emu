@@ -14,11 +14,11 @@ systems:
 
 - Currently: C/ARM-based MRP packages that use commonly implemented Mythroad
   APIs.
+- Experimental: basic `.mr` loading, Lua/Native bridging, and essential
+  lifecycle support are implemented, but this is not yet a complete Mythroad
+  Lua runtime.
 - Longer term: broader compatibility with real-world MRP software and more
   complete platform API coverage.
-- Planned, but not implemented yet: full `mr` virtual machine mode for packages
-  whose main logic is implemented as `start.mr` bytecode for the Mythroad
-  Lua-like runtime.
 
 ## Important Disclaimer
 
@@ -60,6 +60,12 @@ When running from the source tree:
 
 ```sh
 cargo run -- path/to/app.mrp
+```
+
+To try the experimental Full runtime mode:
+
+```sh
+cargo run --features lua -- path/to/app.mrp --runtime=full
 ```
 
 You can see the command-line usage by passing the `--help` flag:

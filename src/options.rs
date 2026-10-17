@@ -33,11 +33,7 @@ impl Default for Options {
             fullscreen: false,
             screen_size: (240, 320),
             font_size_override: Some(FontSize::Medium),
-            runtime_mode: if cfg!(feature = "lua") {
-                RuntimeMode::Full
-            } else {
-                RuntimeMode::Mini
-            },
+            runtime_mode: RuntimeMode::Mini,
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             cpu_backend: CpuBackend::Dynarmic,
             #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]

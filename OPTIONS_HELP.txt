@@ -19,4 +19,4 @@ CPU options:
 Runtime options:
     --runtime=mini|full
         Select the Mythroad runtime. Full requires the lua feature.
-        The default is full with the lua feature, otherwise mini.
+        The default is mini. Full runtime support is experimental.
