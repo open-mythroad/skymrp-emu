@@ -9,7 +9,7 @@ use crate::{dsm, font, mrp, Environment};
 
 use lunify::lua50::Dialect;
 use mlua::{ffi, FromLuaMulti, Function, IntoLuaMulti, Lua, LuaOptions, StdLib, Table};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ffi::CStr;
 use std::os::raw::c_int;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -21,6 +21,9 @@ pub(crate) struct LuaContext {
     environment: Cell<Option<NonNull<Environment>>>,
     state: Cell<Option<NonNull<ffi::lua_State>>>,
     guest_handle: u32,
+    // Native extensions may retain pointers after a Lua API call returns.
+    // Keep Guest copies of Host Lua strings alive for the lifetime of the VM.
+    retained_strings: RefCell<Vec<MutPtr<u8>>>,
 }
 
 pub(crate) type SharedLuaContext = Rc<LuaContext>;
@@ -87,6 +90,7 @@ impl LuaContext {
             environment: Cell::new(None),
             state: Cell::new(None),
             guest_handle,
+            retained_strings: RefCell::new(Vec::new()),
         }
     }
 
@@ -103,14 +107,27 @@ impl LuaContext {
     pub(crate) fn guest_handle(&self) -> u32 {
         self.guest_handle
     }
+
+    fn retain_string(&self, env: &mut Environment, bytes: &[u8]) -> MutPtr<u8> {
+        let ptr = env.mem.alloc_and_write_cstr(bytes);
+        self.retained_strings.borrow_mut().push(ptr);
+        ptr
+    }
+
+    fn clear_retained_strings(&self, env: &mut Environment) {
+        for ptr in self.retained_strings.borrow_mut().drain(..) {
+            env.mem.free(ptr.cast_void());
+        }
+    }
 }
 
 pub(crate) fn start(env: &mut Environment, filename: &str, entry: &str) -> Result<(), String> {
     env.mythroad.lua.vm.take();
+    let context = Rc::clone(&env.mythroad.lua.context);
+    context.clear_retained_strings(env);
     env.mythroad.state.vm_state.set(&mut env.mem, 0);
 
     let mr_data = dsm::read_current_package_file(env, filename)?;
-    let context = Rc::clone(&env.mythroad.lua.context);
     let lua = create_lua(Rc::clone(&context))?;
     env.mythroad
         .state
@@ -137,6 +154,7 @@ pub(crate) fn start(env: &mut Environment, filename: &str, entry: &str) -> Resul
     });
     if result.is_err() {
         env.mythroad.lua.vm.take();
+        context.clear_retained_strings(env);
         env.mythroad.state.vm_state.set(&mut env.mem, 0);
     }
     result
@@ -200,6 +218,19 @@ where
 
 fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     let globals = lua.globals();
+    let string_table: Table = globals.get("string")?;
+    string_table.set(
+        "subV",
+        create_api(lua, context, {
+            let context = Rc::clone(context);
+            move |_, env, value: mlua::LuaString| {
+                let bytes = value.as_bytes();
+                let len = u32::try_from(bytes.len()).map_err(mlua::Error::external)?;
+                let ptr = context.retain_string(env, &bytes);
+                Ok((ptr.to_bits() as f64, len as f64))
+            }
+        })?,
+    )?;
     let test_com = create_api(lua, context, |_, env, (input0, input1): (u32, u32)| {
         Ok(dsm::test_com(env, 0, input0, input1))
     })?;
@@ -316,45 +347,40 @@ unsafe extern "C-unwind" fn lua_test_com1(state: *mut ffi::lua_State) -> c_int {
         let env = unsafe { env.as_mut() };
 
         let input0 = unsafe { ffi::lua_tointeger(state, 1) } as u32;
-        let (input_ptr, input_len, temporary) =
-            if unsafe { ffi::lua_type(state, 2) } == ffi::LUA_TTABLE {
-                unsafe { ffi::lua_rawgeti(state, 2, 1) };
-                let ptr = MutPtr::from_bits(unsafe { ffi::lua_tointeger(state, -1) } as u32);
-                unsafe { ffi::lua_pop(state, 1) };
+        let (input_ptr, input_len) = if unsafe { ffi::lua_type(state, 2) } == ffi::LUA_TTABLE {
+            unsafe { ffi::lua_rawgeti(state, 2, 1) };
+            let ptr = MutPtr::from_bits(unsafe { ffi::lua_tointeger(state, -1) } as u32);
+            unsafe { ffi::lua_pop(state, 1) };
 
-                unsafe { ffi::lua_rawgeti(state, 2, 2) };
-                let len = unsafe { ffi::lua_tointeger(state, -1) } as u32;
-                unsafe { ffi::lua_pop(state, 1) };
-                (ptr, len, false)
-            } else {
-                let mut len = 0usize;
-                let bytes = unsafe { ffi::lua_tolstring(state, 2, &mut len) };
-                if bytes.is_null() {
-                    return 0;
-                }
-                let Ok(len_u32) = u32::try_from(len) else {
-                    return 0;
-                };
-                let bytes = unsafe { slice::from_raw_parts(bytes.cast::<u8>(), len) };
-
-                if matches!(input0, 2 | 800) {
-                    let ptr = mr_malloc(env, len_u32).cast::<u8>();
-                    if ptr.is_null() {
-                        unsafe { ffi::lua_pushnumber(state, MrResult::Failed as i32 as f64) };
-                        return 1;
-                    }
-                    env.mem.bytes_at_mut(ptr, len_u32).copy_from_slice(bytes);
-                    (ptr, len_u32, false)
-                } else {
-                    (env.mem.alloc_and_write_cstr(bytes), len_u32, true)
-                }
+            unsafe { ffi::lua_rawgeti(state, 2, 2) };
+            let len = unsafe { ffi::lua_tointeger(state, -1) } as u32;
+            unsafe { ffi::lua_pop(state, 1) };
+            (ptr, len)
+        } else {
+            let mut len = 0usize;
+            let bytes = unsafe { ffi::lua_tolstring(state, 2, &mut len) };
+            if bytes.is_null() {
+                return 0;
+            }
+            let Ok(len_u32) = u32::try_from(len) else {
+                return 0;
             };
+            let bytes = unsafe { slice::from_raw_parts(bytes.cast::<u8>(), len) };
 
-        let result = dsm::test_com1(env, context.guest_handle(), input0, input_ptr, input_len);
-        if temporary {
-            env.mem.free(input_ptr.cast_void());
-        }
-        result
+            if matches!(input0, 2 | 800) {
+                let ptr = mr_malloc(env, len_u32).cast::<u8>();
+                if ptr.is_null() {
+                    unsafe { ffi::lua_pushnumber(state, MrResult::Failed as i32 as f64) };
+                    return 1;
+                }
+                env.mem.bytes_at_mut(ptr, len_u32).copy_from_slice(bytes);
+                (ptr, len_u32)
+            } else {
+                (context.retain_string(env, bytes), len_u32)
+            }
+        };
+
+        dsm::test_com1(env, context.guest_handle(), input0, input_ptr, input_len)
     }))
     .unwrap_or_else(|_| {
         log!("Mythroad: panic while handling _strCom");
