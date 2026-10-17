@@ -306,7 +306,7 @@ dependencies = [
 [[package]]
 name = "lunify"
 version = "1.1.0"
-source = "git+https://github.com/open-mythroad/lunify?tag=mythroad-1#72d482390624207cea6338eccb24d7306d2d80d2"
+source = "git+https://github.com/open-mythroad/lunify?tag=mythroad-2#740d88624d169319dd1338d96d4bc4948c0835b6"
 
 [[package]]
 name = "memchr"
