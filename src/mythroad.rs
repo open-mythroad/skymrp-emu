@@ -12,6 +12,8 @@ use crate::font;
 use crate::gzip;
 use crate::haptics;
 use crate::libc;
+#[cfg(feature = "lua")]
+use crate::lua::LuaRuntime;
 use crate::md5::{self, Md5State};
 use crate::mem::{
     guest_size_of, ConstPtr, ConstVoidPtr, GuestUSize, GuestVar, HeapAllocator, Memory, MutPtr,
@@ -47,6 +49,8 @@ const MR_EXIT_EVENT: i32 = 8;
 pub struct Mythroad {
     pub state: State,
     pub font: font::Font,
+    #[cfg(feature = "lua")]
+    pub(crate) lua: LuaRuntime,
     pub(crate) restart_timer_name: ConstPtr<u8>,
     pub(crate) editbox: Option<EditBox>,
     pub(crate) edit_text: MutPtr<u8>,
@@ -56,11 +60,19 @@ pub struct Mythroad {
 impl Mythroad {
     pub fn new(mem: &mut Memory, screen_size: (u32, u32)) -> Mythroad {
         let state = State::new(mem, screen_size);
+        #[cfg(feature = "lua")]
+        let lua = {
+            let guest_handle = state.vm_state.ptr().to_bits();
+            state.vm_state.set(mem, guest_handle);
+            LuaRuntime::new(guest_handle)
+        };
         let restart_timer_name = mem.alloc_and_write_cstr(b"restart").cast_const();
 
         Self {
             state,
             font: font::Font::new(mem),
+            #[cfg(feature = "lua")]
+            lua,
             restart_timer_name,
             editbox: None,
             edit_text: MutPtr::null(),
@@ -1091,19 +1103,25 @@ fn mr_stop_ex(env: &mut Environment, freemem: i16) -> i32 {
             event_status = event_function.call_from_host(env, (MR_EXIT_EVENT, 0i32, 0i32));
         }
 
-        if event_status == MrResult::Ignored as i32
-            && env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0
-        {
-            let event_ptr: MutPtr<MrEvent> = env.mem.alloc(guest_size_of::<MrEvent>()).cast();
-            env.mem.write(event_ptr, MrEvent::new(MR_EXIT_EVENT, 0, 0));
-            dsm::mr_test_com_c(
-                env,
-                801,
-                event_ptr.cast_void(),
-                guest_size_of::<MrEvent>(),
-                1,
-            );
-            env.mem.free(event_ptr.cast_void());
+        if event_status == MrResult::Ignored as i32 {
+            if env.options.runtime_mode == crate::options::RuntimeMode::Mini {
+                if env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0 {
+                    let event_ptr: MutPtr<MrEvent> =
+                        env.mem.alloc(guest_size_of::<MrEvent>()).cast();
+                    env.mem.write(event_ptr, MrEvent::new(MR_EXIT_EVENT, 0, 0));
+                    dsm::mr_test_com_c(
+                        env,
+                        801,
+                        event_ptr.cast_void(),
+                        guest_size_of::<MrEvent>(),
+                        1,
+                    );
+                    env.mem.free(event_ptr.cast_void());
+                }
+            } else {
+                #[cfg(feature = "lua")]
+                crate::lua::call_global(env, b"dealevent", (MR_EXIT_EVENT,));
+            }
         }
     }
 
@@ -1121,6 +1139,9 @@ fn mr_stop_ex(env: &mut Environment, freemem: i16) -> i32 {
         .set(&mut env.mem, 0);
     env.mythroad.state.mr_timer_interval = 0;
     env.mythroad.state.mr_timer_start_time = dsm::mr_get_time(env);
+
+    #[cfg(feature = "lua")]
+    crate::lua::shutdown(env);
 
     if freemem != 0 {
         env.mythroad
@@ -1374,6 +1395,9 @@ pub(crate) fn mr_exit(env: &mut Environment) -> i32 {
         .mr_timer_state
         .set(&mut env.mem, MrTimerState::Idle as u32);
     env.mythroad.state.mr_timer_interval = 0;
+
+    #[cfg(feature = "lua")]
+    crate::lua::shutdown(env);
 
     MrResult::Success as i32
 }

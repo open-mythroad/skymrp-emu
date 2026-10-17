@@ -10,6 +10,12 @@ use std::num::NonZeroU32;
 pub const OPTIONS_HELP: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/OPTIONS_HELP.txt"));
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeMode {
+    Mini,
+    Full,
+}
+
 #[derive(Clone)]
 pub struct Options {
     pub fullscreen: bool,
@@ -17,6 +23,7 @@ pub struct Options {
     pub screen_size: (u32, u32),
     pub font_size_override: Option<FontSize>,
     pub cpu_backend: CpuBackend,
+    pub runtime_mode: RuntimeMode,
 }
 
 impl Default for Options {
@@ -26,6 +33,7 @@ impl Default for Options {
             fullscreen: false,
             screen_size: (240, 320),
             font_size_override: Some(FontSize::Medium),
+            runtime_mode: RuntimeMode::Mini,
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             cpu_backend: CpuBackend::Dynarmic,
             #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
@@ -77,6 +85,13 @@ impl Options {
                 }
                 "interpreter" => CpuBackend::Interpreter,
                 _ => return Err(format!("Invalid CPU backend: {value}")),
+            };
+        } else if let Some(value) = arg.strip_prefix("--runtime=") {
+            self.runtime_mode = match value {
+                "mini" => RuntimeMode::Mini,
+                "full" if cfg!(feature = "lua") => RuntimeMode::Full,
+                "full" => return Err("This build only supports the mini runtime".to_owned()),
+                _ => return Err(format!("Invalid runtime mode: {value}")),
             };
         } else {
             return Ok(false);

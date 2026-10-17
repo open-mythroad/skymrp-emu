@@ -17,6 +17,8 @@ mod fs;
 mod gzip;
 mod haptics;
 mod libc;
+#[cfg(feature = "lua")]
+mod lua;
 mod md5;
 mod mem;
 mod mrp;

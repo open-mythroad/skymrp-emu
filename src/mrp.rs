@@ -12,6 +12,8 @@ use std::collections::HashMap;
 pub const MR_START_FILE_NAME: &str = "start.mr";
 pub const START_FILE_NAME: &str = "cfunction.ext";
 pub const LOGO_EXT_FILE_NAME: &str = "logo.ext";
+pub const MR_VERSION: i32 = 1968;
+pub const MRP_SIGNATURE: &str = "\x1bMRP";
 const MRP_MAGIC: &[u8; 4] = b"MRPG";
 const MRP_HEADER_SIZE: usize = 16;
 const LEGACY_MRP_HEADER_SIZE: usize = 8;

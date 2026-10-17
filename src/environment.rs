@@ -113,8 +113,13 @@ impl Environment {
     pub fn run(mut self) {
         let entry = format!("%{}", self.initial_pack_filename);
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            dsm::mr_start_dsm_c(&mut self, mrp::MR_START_FILE_NAME, Some(&entry))
-                == mythroad::MrResult::Success as i32
+            let start_file = match self.options.runtime_mode {
+                options::RuntimeMode::Full => mrp::MR_START_FILE_NAME,
+                options::RuntimeMode::Mini => mrp::START_FILE_NAME,
+            };
+
+            let result = dsm::mr_start_dsm(&mut self, start_file, Some(&entry));
+            result == mythroad::MrResult::Success as i32
         }));
 
         match res {
@@ -122,7 +127,7 @@ impl Environment {
                 self.run_event_loop();
             }
             Ok(false) => {
-                log!("Mythroad: mr_start_dsmC failed");
+                log!("Mythroad: DSM startup failed");
             }
             Err(e) => {
                 eprintln!("Register state immediately after panic:");
