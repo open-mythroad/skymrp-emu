@@ -3,13 +3,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use crate::mem::MutPtr;
-use crate::mythroad::{mr_malloc, MrResult, MrUserInfo};
+use crate::mem::{ConstPtr, MutPtr};
+use crate::mythroad::{
+    mr_exit, mr_malloc, mr_timer_start, mr_timer_stop, MrResult, MrRunState, MrUserInfo,
+};
 use crate::{dsm, font, mrp, Environment};
 
 use lunify::lua50::Dialect;
-use mlua::{ffi, FromLuaMulti, Function, IntoLuaMulti, Lua, LuaOptions, StdLib, Table};
+use mlua::{ffi, FromLuaMulti, Function, IntoLuaMulti, Lua, LuaOptions, StdLib, Table, Value};
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::ffi::CStr;
 use std::os::raw::c_int;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -27,6 +30,8 @@ pub(crate) struct LuaContext {
     // Native extensions may retain pointers after a Lua API call returns.
     // Keep Guest copies of Host Lua strings alive for the lifetime of the VM.
     retained_strings: RefCell<Vec<MutPtr<u8>>>,
+    open_files: RefCell<HashSet<u32>>,
+    shutdown_requested: Cell<bool>,
 }
 
 pub(crate) type SharedLuaContext = Rc<LuaContext>;
@@ -94,6 +99,8 @@ impl LuaContext {
             state: Cell::new(None),
             guest_handle,
             retained_strings: RefCell::new(Vec::new()),
+            open_files: RefCell::new(HashSet::new()),
+            shutdown_requested: Cell::new(false),
         }
     }
 
@@ -122,13 +129,28 @@ impl LuaContext {
             env.mem.free(ptr.cast_void());
         }
     }
+
+    fn register_file(&self, handle: u32) {
+        self.open_files.borrow_mut().insert(handle);
+    }
+
+    fn unregister_file(&self, handle: u32) {
+        self.open_files.borrow_mut().remove(&handle);
+    }
+
+    fn close_open_files(&self, env: &mut Environment) {
+        let handles = self.open_files.borrow_mut().drain().collect::<Vec<_>>();
+        for handle in handles {
+            if dsm::mr_close(env, handle) != MrResult::Success as i32 {
+                log_dbg!("Mythroad: failed to close Lua file handle {handle}");
+            }
+        }
+    }
 }
 
 pub(crate) fn start(env: &mut Environment, filename: &str, entry: &str) -> Result<(), String> {
-    env.mythroad.lua.vm.take();
+    shutdown(env);
     let context = Rc::clone(&env.mythroad.lua.context);
-    context.clear_retained_strings(env);
-    env.mythroad.state.vm_state.set(&mut env.mem, 0);
 
     let mr_data = dsm::read_current_package_file(env, filename)?;
     let lua = create_lua(Rc::clone(&context))?;
@@ -156,11 +178,25 @@ pub(crate) fn start(env: &mut Environment, filename: &str, entry: &str) -> Resul
             .map_err(|err| format!("failed to execute {filename}: {err}"))
     });
     if result.is_err() {
-        env.mythroad.lua.vm.take();
-        context.clear_retained_strings(env);
-        env.mythroad.state.vm_state.set(&mut env.mem, 0);
+        if env.mythroad.state.mr_state.get(&env.mem) == MrRunState::Stop as u32 {
+            return Ok(());
+        }
+        shutdown(env);
     }
     result
+}
+
+pub(crate) fn shutdown(env: &mut Environment) {
+    let context = Rc::clone(&env.mythroad.lua.context);
+    if context.active_environment().is_some() {
+        context.shutdown_requested.set(true);
+        return;
+    }
+    context.shutdown_requested.set(false);
+    context.close_open_files(env);
+    env.mythroad.lua.vm.take();
+    context.clear_retained_strings(env);
+    env.mythroad.state.vm_state.set(&mut env.mem, 0);
 }
 
 pub(crate) fn with_lua<R>(
@@ -179,7 +215,52 @@ pub(crate) fn with_lua<R>(
         f(&lua)
     };
     env.mythroad.lua.vm = Some(lua);
+    if context.shutdown_requested.replace(false) {
+        shutdown(env);
+    }
     result
+}
+
+pub(crate) fn call_global<A>(env: &mut Environment, name: &[u8], arguments: A) -> i32
+where
+    A: IntoLuaMulti,
+{
+    if env.mythroad.lua.vm.is_none() {
+        return MrResult::Ignored as i32;
+    }
+
+    let result = with_lua(env, |lua| {
+        let name = lua.create_string(name).map_err(|err| err.to_string())?;
+        let value = lua
+            .globals()
+            .get::<Value>(name)
+            .map_err(|err| err.to_string())?;
+        let Value::Function(function) = value else {
+            return Ok(false);
+        };
+        function
+            .call::<()>(arguments)
+            .map_err(|err| err.to_string())?;
+        Ok(true)
+    });
+
+    match result {
+        Ok(true) => MrResult::Success as i32,
+        Ok(false) => MrResult::Success as i32,
+        Err(err) => {
+            let mr_state = env.mythroad.state.mr_state.get(&env.mem);
+            if mr_state == MrRunState::Stop as u32 || mr_state == MrRunState::Restart as u32 {
+                MrResult::Success as i32
+            } else {
+                log!("Mythroad: Lua callback failed: {err}");
+                env.mythroad
+                    .state
+                    .mr_state
+                    .set(&mut env.mem, MrRunState::Error as u32);
+                MrResult::Failed as i32
+            }
+        }
+    }
 }
 
 fn with_env<R>(
@@ -259,6 +340,70 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     let str_com = unsafe { lua.create_c_function(lua_test_com1) }?;
     globals.set("_strCom", str_com.clone())?;
     globals.set("TestCom1", str_com)?;
+
+    globals.set(
+        "_t",
+        lua.create_function(|_, value: Value| {
+            Ok(match value {
+                Value::Nil => "nil",
+                Value::Boolean(_) => "bool",
+                Value::LightUserData(_) | Value::UserData(_) | Value::Error(_) => "obj",
+                Value::Integer(_) | Value::Number(_) => "num",
+                Value::String(_) => "str",
+                Value::Table(_) => "tab",
+                Value::Function(_) => "func",
+                Value::Thread(_) => "co",
+                _ => "nil",
+            })
+        })?,
+    )?;
+    let exit = create_api(lua, context, |_, env, (): ()| {
+        mr_exit(env);
+        if env.mythroad.state.mr_state.get(&env.mem) == MrRunState::Stop as u32 {
+            return Err(mlua::Error::runtime("Exiting..."));
+        }
+        Ok(())
+    })?;
+    globals.set("_exit", exit.clone())?;
+    globals.set("Exit", exit)?;
+    let timer_start = create_api(lua, context, {
+        let context = Rc::clone(context);
+        move |_,
+              env,
+              (_id, interval, callback): (
+            Option<Value>,
+            Option<u16>,
+            Option<mlua::LuaString>,
+        )| {
+            let mr_state = env.mythroad.state.mr_state.get(&env.mem);
+            let timer_runs_while_paused =
+                env.mythroad.state.mr_timer_run_without_pause.get(&env.mem) != 0;
+            if mr_state != MrRunState::Run as u32
+                && !(timer_runs_while_paused && mr_state == MrRunState::Pause as u32)
+            {
+                return Ok(());
+            }
+
+            let callback = callback
+                .map(|callback| {
+                    context
+                        .retain_string(env, &callback.as_bytes())
+                        .cast_const()
+                })
+                .unwrap_or_else(ConstPtr::null);
+            env.mythroad.state.mr_timer_p.set(&mut env.mem, callback);
+            mr_timer_start(env, interval.unwrap_or(0));
+            Ok(())
+        }
+    })?;
+    globals.set("_timerStart", timer_start.clone())?;
+    globals.set("TimerStart", timer_start)?;
+    let timer_stop = create_api(lua, context, |_, env, _id: Option<Value>| {
+        mr_timer_stop(env);
+        Ok(())
+    })?;
+    globals.set("_timerStop", timer_stop.clone())?;
+    globals.set("TimerStop", timer_stop)?;
 
     globals.set(
         "_gc",

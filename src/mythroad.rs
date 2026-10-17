@@ -1103,19 +1103,25 @@ fn mr_stop_ex(env: &mut Environment, freemem: i16) -> i32 {
             event_status = event_function.call_from_host(env, (MR_EXIT_EVENT, 0i32, 0i32));
         }
 
-        if event_status == MrResult::Ignored as i32
-            && env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0
-        {
-            let event_ptr: MutPtr<MrEvent> = env.mem.alloc(guest_size_of::<MrEvent>()).cast();
-            env.mem.write(event_ptr, MrEvent::new(MR_EXIT_EVENT, 0, 0));
-            dsm::mr_test_com_c(
-                env,
-                801,
-                event_ptr.cast_void(),
-                guest_size_of::<MrEvent>(),
-                1,
-            );
-            env.mem.free(event_ptr.cast_void());
+        if event_status == MrResult::Ignored as i32 {
+            if env.options.runtime_mode == crate::options::RuntimeMode::Mini {
+                if env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0 {
+                    let event_ptr: MutPtr<MrEvent> =
+                        env.mem.alloc(guest_size_of::<MrEvent>()).cast();
+                    env.mem.write(event_ptr, MrEvent::new(MR_EXIT_EVENT, 0, 0));
+                    dsm::mr_test_com_c(
+                        env,
+                        801,
+                        event_ptr.cast_void(),
+                        guest_size_of::<MrEvent>(),
+                        1,
+                    );
+                    env.mem.free(event_ptr.cast_void());
+                }
+            } else {
+                #[cfg(feature = "lua")]
+                crate::lua::call_global(env, b"dealevent", (MR_EXIT_EVENT,));
+            }
         }
     }
 
@@ -1133,6 +1139,9 @@ fn mr_stop_ex(env: &mut Environment, freemem: i16) -> i32 {
         .set(&mut env.mem, 0);
     env.mythroad.state.mr_timer_interval = 0;
     env.mythroad.state.mr_timer_start_time = dsm::mr_get_time(env);
+
+    #[cfg(feature = "lua")]
+    crate::lua::shutdown(env);
 
     if freemem != 0 {
         env.mythroad
@@ -1386,6 +1395,9 @@ pub(crate) fn mr_exit(env: &mut Environment) -> i32 {
         .mr_timer_state
         .set(&mut env.mem, MrTimerState::Idle as u32);
     env.mythroad.state.mr_timer_interval = 0;
+
+    #[cfg(feature = "lua")]
+    crate::lua::shutdown(env);
 
     MrResult::Success as i32
 }

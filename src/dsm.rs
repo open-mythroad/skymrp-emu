@@ -1209,17 +1209,31 @@ pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
     }
 
     let timer_function = env.mythroad.state.mr_timer_function;
-    if timer_function.addr_without_thumb_bit() == 0 {
-        mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 2);
+    if timer_function.addr_without_thumb_bit() != 0 {
+        let timer_status: i32 = timer_function.call_from_host(env, ());
+        if timer_status != MrResult::Ignored as i32 {
+            return timer_status;
+        }
+    }
+
+    if env.options.runtime_mode == RuntimeMode::Mini {
+        if env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0 {
+            mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 2);
+        }
         return MrResult::Success as i32;
     }
 
-    let timer_status: i32 = timer_function.call_from_host(env, ());
-    if timer_status != MrResult::Ignored as i32 {
-        return timer_status;
+    #[cfg(feature = "lua")]
+    {
+        let timer_name = env.mythroad.state.mr_timer_p.get(&env.mem);
+        if !timer_name.is_null() {
+            let timer_name = env.mem.cstr_at(timer_name).to_vec();
+            if crate::lua::call_global(env, &timer_name, ()) == MrResult::Failed as i32 {
+                return MrResult::Failed as i32;
+            }
+        }
     }
 
-    mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 2);
     MrResult::Success as i32
 }
 
@@ -1247,8 +1261,15 @@ pub(crate) fn mr_pause_app(env: &mut Environment) -> i32 {
         }
     }
 
-    if env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0 {
-        mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 4);
+    if env.options.runtime_mode == RuntimeMode::Mini {
+        if env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0 {
+            mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 4);
+        }
+    } else {
+        #[cfg(feature = "lua")]
+        if crate::lua::call_global(env, b"suspend", ()) == MrResult::Failed as i32 {
+            return MrResult::Failed as i32;
+        }
     }
 
     let timer_runs_while_paused = env.mythroad.state.mr_timer_run_without_pause.get(&env.mem) != 0;
@@ -1294,8 +1315,15 @@ pub(crate) fn mr_resume_app(env: &mut Environment) -> i32 {
         }
     }
 
-    if env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0 {
-        mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 5);
+    if env.options.runtime_mode == RuntimeMode::Mini {
+        if env.mythroad.state.mr_c_function.addr_without_thumb_bit() != 0 {
+            mr_test_com_c(env, 801, MutVoidPtr::null(), 1, 5);
+        }
+    } else {
+        #[cfg(feature = "lua")]
+        if crate::lua::call_global(env, b"resume", ()) == MrResult::Failed as i32 {
+            return MrResult::Failed as i32;
+        }
     }
 
     if env.mythroad.state.mr_timer_state.get(&env.mem) == MrTimerState::Suspended as u32 {
@@ -1325,22 +1353,33 @@ pub(crate) fn mr_event(env: &mut Environment, code: i32, param0: i32, param1: i3
         }
     }
 
-    if env.mythroad.state.mr_c_function.addr_without_thumb_bit() == 0 {
-        return MrResult::Ignored as i32;
+    if env.options.runtime_mode == RuntimeMode::Mini {
+        if env.mythroad.state.mr_c_function.addr_without_thumb_bit() == 0 {
+            return MrResult::Ignored as i32;
+        }
+
+        let event_ptr: MutPtr<MrEvent> = env.mem.alloc(guest_size_of::<MrEvent>()).cast();
+        env.mem.write(event_ptr, MrEvent::new(code, param0, param1));
+        let result = mr_test_com_c(
+            env,
+            801,
+            event_ptr.cast_void(),
+            guest_size_of::<MrEvent>(),
+            1,
+        );
+        env.mem.free(event_ptr.cast_void());
+        return result;
     }
 
-    let event_ptr: MutPtr<MrEvent> = env.mem.alloc(guest_size_of::<MrEvent>()).cast();
-    env.mem.write(event_ptr, MrEvent::new(code, param0, param1));
+    #[cfg(feature = "lua")]
+    {
+        let result = crate::lua::call_global(env, b"dealevent", (code, param0, param1));
+        if result != MrResult::Ignored as i32 {
+            return result;
+        }
+    }
 
-    let result = mr_test_com_c(
-        env,
-        801,
-        event_ptr.cast_void(),
-        guest_size_of::<MrEvent>(),
-        1,
-    );
-    env.mem.free(event_ptr.cast_void());
-    result
+    MrResult::Ignored as i32
 }
 
 fn mr_start_shake(_env: &mut Environment, ms: u32) -> i32 {

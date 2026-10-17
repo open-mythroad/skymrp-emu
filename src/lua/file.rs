@@ -49,6 +49,7 @@ impl LuaFile {
         if dsm::mr_close(env, handle) != MrResult::Success as i32 {
             return false;
         }
+        self.context.unregister_file(handle);
         self.handle.set(0);
         true
     }
@@ -153,6 +154,7 @@ pub(super) fn open(
     }
 
     userdata.borrow::<LuaFile>()?.handle.set(handle as u32);
+    context.register_file(handle as u32);
     Ok(MultiValue::from_vec(vec![Value::UserData(userdata)]))
 }
 
