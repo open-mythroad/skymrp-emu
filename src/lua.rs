@@ -17,6 +17,8 @@ use std::ptr::NonNull;
 use std::rc::Rc;
 use std::slice;
 
+mod string_pack;
+
 pub(crate) struct LuaContext {
     environment: Cell<Option<NonNull<Environment>>>,
     state: Cell<Option<NonNull<ffi::lua_State>>>,
@@ -219,6 +221,8 @@ where
 fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     let globals = lua.globals();
     let string_table: Table = globals.get("string")?;
+    string_table.set("pack", lua.create_function(string_pack::pack)?)?;
+    string_table.set("unpack", lua.create_function(string_pack::unpack)?)?;
     string_table.set(
         "subV",
         create_api(lua, context, {
