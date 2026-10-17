@@ -17,6 +17,7 @@ use std::ptr::NonNull;
 use std::rc::Rc;
 use std::slice;
 
+mod file;
 mod string_pack;
 
 pub(crate) struct LuaContext {
@@ -220,6 +221,18 @@ where
 
 fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     let globals = lua.globals();
+    let file_table = lua.create_table()?;
+    file_table.set("close", lua.create_function(file::close)?)?;
+    file_table.set(
+        "open",
+        create_api(lua, context, {
+            let context = Rc::clone(context);
+            move |lua, env, arguments| file::open(lua, env, arguments, &context)
+        })?,
+    )?;
+    file_table.set("state", lua.create_function(file::state)?)?;
+    file_table.set("readAll", create_api(lua, context, file::read_all)?)?;
+    globals.set("file", file_table)?;
     let string_table: Table = globals.get("string")?;
     string_table.set("pack", lua.create_function(string_pack::pack)?)?;
     string_table.set("unpack", lua.create_function(string_pack::unpack)?)?;
