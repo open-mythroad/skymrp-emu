@@ -17,6 +17,7 @@ use crate::mythroad::{
     reset_resource_tables, DsmDiskInfo, MrAppInfo, MrEvent, MrResult, MrRunState, MrTimerState,
     BITMAPMAX, MR_FILE_MAX_LEN,
 };
+use crate::options::RuntimeMode;
 use crate::Environment;
 
 use encoding_rs::GBK;
@@ -975,6 +976,8 @@ pub(crate) fn test_com1(
     len: u32,
 ) -> i32 {
     let ret = 0;
+    #[cfg(feature = "lua")]
+    let is_full_runtime = env.options.runtime_mode == RuntimeMode::Full;
     #[cfg(not(feature = "lua"))]
     let _ = l;
 
@@ -1018,8 +1021,11 @@ pub(crate) fn test_com1(
                 MR_FILE_MAX_LEN,
             );
             #[cfg(feature = "lua")]
-            let start_file_name =
-                crate::lua::mr_l_optstring(env, l, 3, mrp::MR_START_FILE_NAME.as_bytes());
+            let start_file_name = if is_full_runtime {
+                crate::lua::mr_l_optstring(env, l, 3, mrp::MR_START_FILE_NAME.as_bytes())
+            } else {
+                mrp::START_FILE_NAME.as_bytes().to_vec()
+            };
             #[cfg(not(feature = "lua"))]
             let start_file_name = mrp::START_FILE_NAME.as_bytes().to_vec();
             let start_file_name = env.mem.alloc_and_write_cstr(&start_file_name);
@@ -1054,7 +1060,7 @@ pub(crate) fn test_com1(
             return 0;
         }
         #[cfg(feature = "lua")]
-        600 => {
+        600 if is_full_runtime => {
             let filename = encoding::gb_to_utf8_string(env.mem.bytes_at(input1.cast_const(), len))
                 .into_owned();
             let Some((pack_base, pack_len)) = memory_pack_range(env, &filename) else {
@@ -1083,7 +1089,7 @@ pub(crate) fn test_com1(
             return 1;
         }
         #[cfg(feature = "lua")]
-        601 => {
+        601 if is_full_runtime => {
             let filename = encoding::gb_to_utf8_string(env.mem.bytes_at(input1.cast_const(), len))
                 .into_owned();
             match read_current_package_file(env, &filename) {
@@ -1093,7 +1099,7 @@ pub(crate) fn test_com1(
             return 1;
         }
         #[cfg(feature = "lua")]
-        800 => {
+        800 if is_full_runtime => {
             let code = crate::lua::mr_l_optint(env, l, 3, 0) as u32;
             env.mem
                 .write(input1.cast(), env.syscall.function_table_ptr());
@@ -1108,7 +1114,7 @@ pub(crate) fn test_com1(
             return 1;
         }
         #[cfg(feature = "lua")]
-        801 => {
+        801 if is_full_runtime => {
             let code = crate::lua::to_mr_tonumber(env, l, 3, 0) as u32;
             let output_ptr: MutPtr<MutPtr<u8>> = env.mem.alloc_and_write(MutPtr::<u8>::null());
             let output_len_ptr: MutPtr<i32> = env.mem.alloc_and_write(0);
@@ -1148,9 +1154,11 @@ pub(crate) fn test_com1(
     }
 
     #[cfg(feature = "lua")]
-    {
+    if is_full_runtime {
         crate::lua::mrp_pushnumber(env, l, ret);
         1
+    } else {
+        ret
     }
     #[cfg(not(feature = "lua"))]
     {
@@ -1438,8 +1446,21 @@ fn mr_intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&s
     MrResult::Success as i32
 }
 
-#[cfg(feature = "lua")]
 fn start_runtime(env: &mut Environment, filename: &str, entry: &str) -> i32 {
+    match env.options.runtime_mode {
+        #[cfg(feature = "lua")]
+        RuntimeMode::Full => start_lua_runtime(env, filename, entry),
+        RuntimeMode::Mini => start_mini_runtime(env, filename, entry),
+        #[cfg(not(feature = "lua"))]
+        RuntimeMode::Full => {
+            log!("Mythroad: This build only supports the mini runtime");
+            MrResult::Failed as i32
+        }
+    }
+}
+
+#[cfg(feature = "lua")]
+fn start_lua_runtime(env: &mut Environment, filename: &str, entry: &str) -> i32 {
     log_dbg!("Mythroad: start Lua runtime (filename={filename}, entry={entry})");
 
     match crate::lua::start(env, filename, entry) {
@@ -1451,8 +1472,7 @@ fn start_runtime(env: &mut Environment, filename: &str, entry: &str) -> i32 {
     }
 }
 
-#[cfg(not(feature = "lua"))]
-fn start_runtime(env: &mut Environment, filename: &str, entry: &str) -> i32 {
+fn start_mini_runtime(env: &mut Environment, filename: &str, entry: &str) -> i32 {
     let is_mr_start = filename == mrp::MR_START_FILE_NAME;
     let filename = if is_mr_start {
         mrp::START_FILE_NAME
@@ -1470,7 +1490,7 @@ fn start_runtime(env: &mut Environment, filename: &str, entry: &str) -> i32 {
     };
 
     if ret != MrResult::Success as i32 && is_mr_start {
-        log!("Mythroad: Lua MRP applications are not supported");
+        log!("Mythroad: Lua MRP applications are not supported by the Mini runtime");
     }
 
     ret

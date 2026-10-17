@@ -15,3 +15,8 @@ Font options:
 CPU options:
     --cpu=dynarmic|interpreter
         Select the CPU backend. The default is dynarmic.
+
+Runtime options:
+    --runtime=mini|full
+        Select the Mythroad runtime. Full requires the lua feature.
+        The default is full with the lua feature, otherwise mini.

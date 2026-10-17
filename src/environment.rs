@@ -113,10 +113,9 @@ impl Environment {
     pub fn run(mut self) {
         let entry = format!("%{}", self.initial_pack_filename);
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let start_file = if cfg!(feature = "lua") {
-                mrp::MR_START_FILE_NAME
-            } else {
-                mrp::START_FILE_NAME
+            let start_file = match self.options.runtime_mode {
+                options::RuntimeMode::Full => mrp::MR_START_FILE_NAME,
+                options::RuntimeMode::Mini => mrp::START_FILE_NAME,
             };
 
             let result = dsm::mr_start_dsm(&mut self, start_file, Some(&entry));
