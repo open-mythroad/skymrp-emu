@@ -14,6 +14,7 @@ pub const OPTIONS_HELP: &str =
 pub struct Options {
     pub fullscreen: bool,
     pub scale: NonZeroU32,
+    pub screen_size: (u32, u32),
     pub font_size_override: Option<FontSize>,
     pub cpu_backend: CpuBackend,
 }
@@ -23,6 +24,7 @@ impl Default for Options {
         Options {
             scale: NonZeroU32::new(1).unwrap(),
             fullscreen: false,
+            screen_size: (240, 320),
             font_size_override: Some(FontSize::Medium),
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             cpu_backend: CpuBackend::Dynarmic,
@@ -40,6 +42,23 @@ impl Options {
             self.scale = value
                 .parse()
                 .map_err(|_| "Invalid scale hack factor".to_string())?;
+        } else if let Some(value) = arg.strip_prefix("--screen-size=") {
+            let (width, height) = value
+                .split_once('x')
+                .ok_or_else(|| "Screen size must use WIDTHxHEIGHT format".to_string())?;
+            let width: u32 = width
+                .parse()
+                .map_err(|_| "Invalid screen width".to_string())?;
+            let height: u32 = height
+                .parse()
+                .map_err(|_| "Invalid screen height".to_string())?;
+            if width == 0 || height == 0 {
+                return Err("Screen dimensions must be greater than zero".to_string());
+            }
+            if width > i16::MAX as u32 || height > i16::MAX as u32 {
+                return Err(format!("Screen dimensions must not exceed {}", i16::MAX));
+            }
+            self.screen_size = (width, height);
         } else if let Some(value) = arg.strip_prefix("--font-size-override=") {
             self.font_size_override = Some(FontSize::parse(value)?);
         } else if let Some(value) = arg.strip_prefix("--cpu=") {

@@ -54,8 +54,8 @@ pub struct Mythroad {
 }
 
 impl Mythroad {
-    pub fn new(mem: &mut Memory) -> Mythroad {
-        let state = State::new(mem);
+    pub fn new(mem: &mut Memory, screen_size: (u32, u32)) -> Mythroad {
+        let state = State::new(mem, screen_size);
         let restart_timer_name = mem.alloc_and_write_cstr(b"restart").cast_const();
 
         Self {
@@ -640,18 +640,8 @@ pub struct SysInfo {
     pub screen_bits: i32,
 }
 
-impl Default for SysInfo {
-    fn default() -> SysInfo {
-        Self {
-            screen_width: 240,
-            screen_height: 320,
-            screen_bits: 16,
-        }
-    }
-}
-
 impl State {
-    pub fn new(mem: &mut Memory) -> State {
+    pub fn new(mem: &mut Memory, screen_size: (u32, u32)) -> State {
         let heap = MrHeap::new(mem);
         let pack_filename = alloc_array(mem, MR_FILE_MAX_LEN);
         let start_filename = alloc_array(mem, MR_FILE_MAX_LEN);
@@ -673,7 +663,11 @@ impl State {
         let mr_shake_on = GuestVar::new(mem, 1i8);
         let mr_sms_return_flag = GuestVar::new(mem, 0u32);
         let mr_sms_return_val = GuestVar::new(mem, 0u32);
-        let sysinfo = SysInfo::default();
+        let sysinfo = SysInfo {
+            screen_width: screen_size.0 as i32,
+            screen_height: screen_size.1 as i32,
+            screen_bits: 16,
+        };
         let mr_screen_buf = GuestVar::new(mem, MutPtr::<u16>::null());
         let mr_screen_w = GuestVar::new(mem, sysinfo.screen_width as i32);
         let mr_screen_h = GuestVar::new(mem, sysinfo.screen_height as i32);

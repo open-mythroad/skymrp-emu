@@ -5,6 +5,9 @@ View options:
     --scale=...
         Set a scaling factor for the window. The default is no scale hack, which is equivalent to a value of 1.
 
+    --screen-size=WIDTHxHEIGHT
+        Set the emulated screen size. The default is 240x320.
+
 Font options:
     --font-size-override=small|medium|big
         Override the font size used for Mythroad text rendering.

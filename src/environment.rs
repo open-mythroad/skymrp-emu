@@ -62,7 +62,7 @@ impl Environment {
 
         let mut syscall = syscall::Syscall::new();
 
-        let mythroad = mythroad::Mythroad::new(&mut mem);
+        let mythroad = mythroad::Mythroad::new(&mut mem, options.screen_size);
         syscall.setup_stubs(&mut mem, &mythroad);
         let mut cpu = cpu::Cpu::new(options.cpu_backend);
         stack::prep_stack_for_start(&mut mem, &mut cpu);

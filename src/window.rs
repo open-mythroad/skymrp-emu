@@ -31,8 +31,12 @@ pub enum DeviceOrientation {
     LandscapeRight,
 }
 
-fn size_for_orientation(orientation: DeviceOrientation, scale: NonZeroU32) -> (u32, u32) {
-    let (width, height) = (240, 320);
+fn size_for_orientation(
+    screen_size: (u32, u32),
+    orientation: DeviceOrientation,
+    scale: NonZeroU32,
+) -> (u32, u32) {
+    let (width, height) = screen_size;
     let scale = scale.get();
     match orientation {
         DeviceOrientation::Portrait => (width * scale, height * scale),
@@ -110,6 +114,7 @@ pub struct Window {
     text_input_keys: HashSet<Keycode>,
     fullscreen: bool,
     scale: NonZeroU32,
+    screen_size: (u32, u32),
     device_orientation: DeviceOrientation,
 }
 
@@ -121,6 +126,7 @@ impl Window {
         let device_orientation = DeviceOrientation::Portrait;
         let fullscreen = options.fullscreen;
         let scale = options.scale;
+        let screen_size = options.screen_size;
 
         let window = if fullscreen {
             let (width, height) = video_ctx.display_bounds(0).unwrap().size();
@@ -131,7 +137,7 @@ impl Window {
                 .unwrap();
             window
         } else {
-            let (width, height) = size_for_orientation(device_orientation, scale);
+            let (width, height) = size_for_orientation(screen_size, device_orientation, scale);
             let window = video_ctx
                 .window(title, width, height)
                 .position_centered()
@@ -181,6 +187,7 @@ impl Window {
             text_input_keys: HashSet::new(),
             fullscreen,
             scale,
+            screen_size,
             device_orientation,
         }
     }
@@ -391,11 +398,12 @@ impl Window {
     /// The aspect ratio, scale and orientation reflect the guest app's view of
     /// the world.
     pub fn size_unrotated_unscaled(&self) -> (u32, u32) {
-        size_for_orientation(DeviceOrientation::Portrait, NonZeroU32::new(1).unwrap())
+        self.screen_size
     }
 
     pub fn viewport(&self) -> (u32, u32, u32, u32) {
-        let (app_width, app_height) = size_for_orientation(self.device_orientation, self.scale);
+        let (app_width, app_height) =
+            size_for_orientation(self.screen_size, self.device_orientation, self.scale);
         if !cfg!(target_os = "android") && !self.fullscreen {
             return (0, 0, app_width, app_height);
         }
@@ -431,8 +439,11 @@ fn transform_input_coords(
     independent_of_viewport: bool,
 ) -> (f32, f32) {
     let (vx, vy, vw, vh) = if independent_of_viewport {
-        let (width, height) =
-            size_for_orientation(window.device_orientation, NonZeroU32::new(1).unwrap());
+        let (width, height) = size_for_orientation(
+            window.screen_size,
+            window.device_orientation,
+            NonZeroU32::new(1).unwrap(),
+        );
         (0, 0, width, height)
     } else {
         window.viewport()
