@@ -95,6 +95,7 @@ unsafe extern "C" {
     unsafe fn EAS_State(data: EasDataHandle, stream: EasHandle, state: *mut c_long) -> EasResult;
     unsafe fn EAS_SetRepeat(data: EasDataHandle, stream: EasHandle, repeat_count: i32)
         -> EasResult;
+    unsafe fn EAS_SetVolume(data: EasDataHandle, stream: EasHandle, volume: i32) -> EasResult;
 }
 
 struct MemoryMidi {
@@ -185,6 +186,16 @@ impl Sequence {
         }
 
         if let Err(err) = check(unsafe { EAS_Prepare(data, stream) }, "EAS_Prepare") {
+            unsafe {
+                EAS_CloseFile(data, stream);
+                EAS_Shutdown(data);
+            }
+            return Err(err);
+        }
+        if let Err(err) = check(
+            unsafe { EAS_SetVolume(data, ptr::null_mut(), 90) },
+            "EAS_SetVolume",
+        ) {
             unsafe {
                 EAS_CloseFile(data, stream);
                 EAS_Shutdown(data);
