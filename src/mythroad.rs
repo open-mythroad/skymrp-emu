@@ -12,6 +12,8 @@ use crate::font;
 use crate::gzip;
 use crate::haptics;
 use crate::libc;
+#[cfg(feature = "lua")]
+use crate::lua::LuaRuntime;
 use crate::md5::{self, Md5State};
 use crate::mem::{
     guest_size_of, ConstPtr, ConstVoidPtr, GuestUSize, GuestVar, HeapAllocator, Memory, MutPtr,
@@ -47,6 +49,8 @@ const MR_EXIT_EVENT: i32 = 8;
 pub struct Mythroad {
     pub state: State,
     pub font: font::Font,
+    #[cfg(feature = "lua")]
+    pub(crate) lua: LuaRuntime,
     pub(crate) restart_timer_name: ConstPtr<u8>,
     pub(crate) editbox: Option<EditBox>,
     pub(crate) edit_text: MutPtr<u8>,
@@ -56,11 +60,19 @@ pub struct Mythroad {
 impl Mythroad {
     pub fn new(mem: &mut Memory, screen_size: (u32, u32)) -> Mythroad {
         let state = State::new(mem, screen_size);
+        #[cfg(feature = "lua")]
+        let lua = {
+            let guest_handle = state.vm_state.ptr().to_bits();
+            state.vm_state.set(mem, guest_handle);
+            LuaRuntime::new(guest_handle)
+        };
         let restart_timer_name = mem.alloc_and_write_cstr(b"restart").cast_const();
 
         Self {
             state,
             font: font::Font::new(mem),
+            #[cfg(feature = "lua")]
+            lua,
             restart_timer_name,
             editbox: None,
             edit_text: MutPtr::null(),

@@ -969,11 +969,15 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
 
 pub(crate) fn test_com1(
     env: &mut Environment,
-    _l: u32,
+    l: u32,
     input0: u32,
     input1: MutPtr<u8>,
     len: u32,
 ) -> i32 {
+    let ret = 0;
+    #[cfg(not(feature = "lua"))]
+    let _ = l;
+
     match input0 {
         2 => {
             let old_ram_file = env.mythroad.state.mr_ram_file.get(&env.mem);
@@ -990,7 +994,6 @@ pub(crate) fn test_com1(
                 .mr_ram_file_len
                 .set(&mut env.mem, len as i32);
             env.package_cache = None;
-            MrResult::Success as i32
         }
         3 => {
             libc::string::memset(
@@ -1014,9 +1017,12 @@ pub(crate) fn test_com1(
                 0,
                 MR_FILE_MAX_LEN,
             );
-            let start_file_name = env
-                .mem
-                .alloc_and_write_cstr(mrp::START_FILE_NAME.as_bytes());
+            #[cfg(feature = "lua")]
+            let start_file_name =
+                crate::lua::mr_l_optstring(env, l, 3, mrp::MR_START_FILE_NAME.as_bytes());
+            #[cfg(not(feature = "lua"))]
+            let start_file_name = mrp::START_FILE_NAME.as_bytes().to_vec();
+            let start_file_name = env.mem.alloc_and_write_cstr(&start_file_name);
             libc::string::strncpy(
                 env,
                 env.mythroad.state.old_start_filename,
@@ -1024,7 +1030,6 @@ pub(crate) fn test_com1(
                 MR_FILE_MAX_LEN - 1,
             );
             env.mem.free(start_file_name.cast_void());
-            MrResult::Success as i32
         }
         4 => {
             libc::string::memset(
@@ -1041,18 +1046,115 @@ pub(crate) fn test_com1(
                     MR_FILE_MAX_LEN - 1,
                 );
             }
-            MrResult::Success as i32
         }
-        7 | 8 => MrResult::Success as i32,
+        7 | 8 => {}
         9 => {
             env.cpu
                 .invalidate_cache_range(input1.to_bits(), len as usize);
-            MrResult::Success as i32
+            return 0;
+        }
+        #[cfg(feature = "lua")]
+        600 => {
+            let filename = encoding::gb_to_utf8_string(env.mem.bytes_at(input1.cast_const(), len))
+                .into_owned();
+            let Some((pack_base, pack_len)) = memory_pack_range(env, &filename) else {
+                return 0;
+            };
+            let Ok(offset) = u32::try_from(crate::lua::to_mr_tonumber(env, l, 3, 0)) else {
+                return 0;
+            };
+            let requested_len = crate::lua::to_mr_tonumber(env, l, 4, 0);
+            let read_len = if requested_len == -1 && filename.starts_with('$') {
+                pack_len
+            } else {
+                let Ok(len) = u32::try_from(requested_len) else {
+                    return 0;
+                };
+                len
+            };
+            let Some(end) = offset.checked_add(read_len).filter(|&end| end <= pack_len) else {
+                return 0;
+            };
+            let bytes = env
+                .mem
+                .bytes_at((pack_base + offset).cast_const(), end - offset)
+                .to_vec();
+            crate::lua::mrp_pushlstring(env, l, &bytes);
+            return 1;
+        }
+        #[cfg(feature = "lua")]
+        601 => {
+            let filename = encoding::gb_to_utf8_string(env.mem.bytes_at(input1.cast_const(), len))
+                .into_owned();
+            match read_current_package_file(env, &filename) {
+                Ok(file_data) => crate::lua::mrp_pushlstring(env, l, &file_data),
+                Err(_) => crate::lua::mrp_pushnil(env, l),
+            }
+            return 1;
+        }
+        #[cfg(feature = "lua")]
+        800 => {
+            let code = crate::lua::mr_l_optint(env, l, 3, 0) as u32;
+            env.mem
+                .write(input1.cast(), env.syscall.function_table_ptr());
+            env.cpu
+                .invalidate_cache_range(input1.to_bits(), len as usize);
+            env.mythroad.state.mr_c_function_load =
+                GuestFunction::from_addr_with_thumb_bit(input1.to_bits() + 8);
+
+            let mr_c_function_load = env.mythroad.state.mr_c_function_load;
+            let ret = mr_c_function_load.call_from_host(env, (code,));
+            crate::lua::mrp_pushnumber(env, l, ret);
+            return 1;
+        }
+        #[cfg(feature = "lua")]
+        801 => {
+            let code = crate::lua::to_mr_tonumber(env, l, 3, 0) as u32;
+            let output_ptr: MutPtr<MutPtr<u8>> = env.mem.alloc_and_write(MutPtr::<u8>::null());
+            let output_len_ptr: MutPtr<i32> = env.mem.alloc_and_write(0);
+            let mr_c_function = env.mythroad.state.mr_c_function;
+            let mr_c_function_p = env.mythroad.state.mr_c_function_p;
+            let ret: i32 = mr_c_function.call_from_host(
+                env,
+                (
+                    mr_c_function_p,
+                    code,
+                    input1,
+                    len,
+                    output_ptr,
+                    output_len_ptr,
+                ),
+            );
+
+            let output = env.mem.read(output_ptr);
+            let output_len = env.mem.read(output_len_ptr);
+            let output = if !output.is_null() && output_len > 0 {
+                env.mem
+                    .bytes_at(output.cast_const(), output_len as u32)
+                    .to_vec()
+            } else {
+                Vec::new()
+            };
+
+            env.mem.free(output_ptr.cast_void());
+            env.mem.free(output_len_ptr.cast_void());
+            crate::lua::mrp_pushlstring(env, l, &output);
+            crate::lua::mrp_pushnumber(env, l, ret);
+            return 2;
         }
         _ => {
             log_dbg!("Mythroad: _mr_TestCom1 got unknown param: code={input0}");
-            MrResult::Ignored as i32
         }
+    }
+
+    #[cfg(feature = "lua")]
+    {
+        crate::lua::mrp_pushnumber(env, l, ret);
+        1
+    }
+    #[cfg(not(feature = "lua"))]
+    {
+        ret
     }
 }
 
@@ -1338,13 +1440,15 @@ fn mr_intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&s
 
 #[cfg(feature = "lua")]
 fn start_runtime(env: &mut Environment, filename: &str, entry: &str) -> i32 {
-    if let Err(err) = read_current_package_file(env, filename) {
-        log!("Mythroad: failed to load Lua entry file: {err}");
-        return MrResult::Failed as i32;
-    }
+    log_dbg!("Mythroad: start Lua runtime (filename={filename}, entry={entry})");
 
-    log!("Mythroad: Lua runtime is not implemented yet (filename={filename}, entry={entry})");
-    MrResult::Failed as i32
+    match crate::lua::start(env, filename, entry) {
+        Ok(()) => MrResult::Success as i32,
+        Err(err) => {
+            log!("Mythroad: failed to start Lua runtime: {err}");
+            MrResult::Failed as i32
+        }
+    }
 }
 
 #[cfg(not(feature = "lua"))]
