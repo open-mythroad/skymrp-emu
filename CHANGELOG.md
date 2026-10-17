@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.1
+
+- Added WebAssembly support for running MRP apps in web browsers.
+- Added configurable emulated screen sizes using `--screen-size=WIDTHxHEIGHT`.
+- Fixed audio crackling issues.
+
 ## v0.3.0
 
 - Added an ARM interpreter CPU backend with runtime selection using `--cpu`.
