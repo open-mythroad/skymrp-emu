@@ -7,10 +7,12 @@ use crate::mem::{ConstPtr, MutPtr};
 use crate::mythroad::{
     mr_exit, mr_malloc, mr_timer_start, mr_timer_stop, MrResult, MrRunState, MrUserInfo,
 };
-use crate::{dsm, font, mrp, Environment};
+use crate::{dsm, encoding, font, mrp, Environment};
 
 use lunify::lua50::Dialect;
-use mlua::{ffi, FromLuaMulti, Function, IntoLuaMulti, Lua, LuaOptions, StdLib, Table, Value};
+use mlua::{
+    ffi, FromLuaMulti, Function, IntoLuaMulti, Lua, LuaOptions, MultiValue, StdLib, Table, Value,
+};
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::ffi::CStr;
@@ -152,29 +154,27 @@ pub(crate) fn start(env: &mut Environment, filename: &str, entry: &str) -> Resul
     shutdown(env);
     let context = Rc::clone(&env.mythroad.lua.context);
 
-    let mr_data = dsm::read_current_package_file(env, filename)?;
     let lua = create_lua(Rc::clone(&context))?;
     env.mythroad
         .state
         .vm_state
         .set(&mut env.mem, context.guest_handle());
 
-    let lua_data = match (|| {
+    let entry_function = match (|| {
         register_apis(&lua, &context).map_err(|err| err.to_string())?;
         register_globals(env, &lua, entry)?;
-        convert_chunk(&mr_data)
+        load_chunk(&lua, env, filename)
     })() {
-        Ok(lua_data) => lua_data,
+        Ok(function) => function,
         Err(err) => {
             env.mythroad.state.vm_state.set(&mut env.mem, 0);
             return Err(err);
         }
     };
     env.mythroad.lua.vm = Some(lua);
-    let result = with_lua(env, |lua| {
-        lua.load(lua_data.as_slice())
-            .set_name(filename)
-            .exec()
+    let result = with_lua(env, |_| {
+        entry_function
+            .call::<()>(())
             .map_err(|err| format!("failed to execute {filename}: {err}"))
     });
     if result.is_err() {
@@ -300,8 +300,49 @@ where
     Ok(function)
 }
 
+fn load_chunk(lua: &Lua, env: &mut Environment, filename: &str) -> Result<Function, String> {
+    let data = dsm::read_current_package_file(env, filename)?;
+    let data = convert_chunk(&data)?;
+    lua.load(data.as_slice())
+        .set_name(filename)
+        .into_function()
+        .map_err(|err| err.to_string())
+}
+
+fn lua_loadfile(
+    lua: &Lua,
+    env: &mut Environment,
+    filename: mlua::LuaString,
+) -> mlua::Result<MultiValue> {
+    let filename = encoding::gb_to_utf8_string(&filename.as_bytes()).into_owned();
+    match load_chunk(lua, env, &filename) {
+        Ok(function) => Ok(MultiValue::from_vec(vec![Value::Function(function)])),
+        Err(err) => Ok(MultiValue::from_vec(vec![
+            Value::Nil,
+            Value::String(lua.create_string(err)?),
+        ])),
+    }
+}
+
 fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     let globals = lua.globals();
+    let loadfile = create_api(lua, context, lua_loadfile)?;
+    globals.set("loadfile", loadfile.clone())?;
+    let dofile = lua.create_function(move |_, filename: mlua::LuaString| {
+        let mut result = loadfile.call::<MultiValue>(filename)?.into_iter();
+        match result.next() {
+            Some(Value::Function(function)) => function.call::<MultiValue>(()),
+            _ => {
+                let message = match result.next() {
+                    Some(Value::String(message)) => message.to_string_lossy(),
+                    _ => "failed to load Lua file".to_owned(),
+                };
+                Err(mlua::Error::runtime(message))
+            }
+        }
+    })?;
+    globals.set("dofile", dofile)?;
+
     let file_table = lua.create_table()?;
     file_table.set("close", lua.create_function(file::close)?)?;
     file_table.set(
