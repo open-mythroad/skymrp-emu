@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use crate::mem::{ConstPtr, MutPtr};
+use crate::mem::{ConstPtr, MutPtr, MutVoidPtr};
 use crate::mythroad::{
     mr_exit, mr_malloc, mr_timer_start, mr_timer_stop, MrResult, MrRunState, MrUserInfo,
 };
@@ -375,6 +375,8 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     })?;
     globals.set("_com", test_com.clone())?;
     globals.set("TestCom", test_com)?;
+    globals.set("_platEx", create_api(lua, context, lua_plat_ex)?)?;
+    globals.set("_plat", create_api(lua, context, lua_plat)?)?;
     globals.set("GetSysInfo", create_api(lua, context, lua_get_sys_info)?)?;
     // SAFETY: lua_test_com1 follows the Lua C function calling convention and
     // accesses the current Environment only while with_lua keeps it active.
@@ -464,6 +466,53 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     )?;
 
     Ok(())
+}
+
+fn lua_plat_ex(
+    lua: &Lua,
+    env: &mut Environment,
+    (code, input): (Value, mlua::LuaString),
+) -> mlua::Result<(mlua::LuaString, i32)> {
+    let code = lua.coerce_integer(code)?.unwrap_or(0) as u32;
+    let input = input.as_bytes();
+    let input_len = u32::try_from(input.len()).map_err(mlua::Error::external)?;
+    let input_ptr = env.mem.alloc_and_write_cstr(&input);
+    let output_ptr: MutPtr<MutPtr<u8>> = env.mem.alloc_and_write(MutPtr::<u8>::null());
+    let output_len_ptr: MutPtr<i32> = env.mem.alloc_and_write(0);
+
+    let ret = dsm::mr_plat_ex(
+        env,
+        code,
+        input_ptr.cast_const(),
+        input_len,
+        output_ptr,
+        output_len_ptr,
+        MutVoidPtr::null(),
+    );
+
+    let output = env.mem.read(output_ptr);
+    let output_len = env.mem.read(output_len_ptr);
+    let output = if !output.is_null() && output_len > 0 {
+        env.mem
+            .bytes_at(output.cast_const(), output_len as u32)
+            .to_vec()
+    } else {
+        Vec::new()
+    };
+
+    env.mem.free(input_ptr.cast_void());
+    env.mem.free(output_ptr.cast_void());
+    env.mem.free(output_len_ptr.cast_void());
+
+    Ok((lua.create_string(output)?, ret))
+}
+
+fn lua_plat(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<i32> {
+    Ok(dsm::mr_plat(
+        env,
+        mr_to_number(lua, &arguments, 1, 0)? as u32,
+        mr_to_number(lua, &arguments, 2, 0)? as u32,
+    ))
 }
 
 fn lua_get_sys_info(
