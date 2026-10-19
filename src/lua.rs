@@ -5,7 +5,8 @@
  */
 use crate::mem::{ConstPtr, MutPtr, MutVoidPtr};
 use crate::mythroad::{
-    mr_exit, mr_malloc, mr_timer_start, mr_timer_stop, MrResult, MrRunState, MrUserInfo,
+    mr_exit, mr_free, mr_malloc, mr_timer_start, mr_timer_stop, MrResult, MrRunState, MrUserInfo,
+    BITMAPMAX,
 };
 use crate::{dsm, encoding, font, mrp, Environment};
 
@@ -378,6 +379,9 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     globals.set("_platEx", create_api(lua, context, lua_plat_ex)?)?;
     globals.set("_plat", create_api(lua, context, lua_plat)?)?;
     globals.set("GetSysInfo", create_api(lua, context, lua_get_sys_info)?)?;
+    let bitmap_load = create_api(lua, context, lua_bitmap_load)?;
+    globals.set("_bmpLoad", bitmap_load.clone())?;
+    globals.set("BitmapLoad", bitmap_load)?;
     // SAFETY: lua_test_com1 follows the Lua C function calling convention and
     // accesses the current Environment only while with_lua keeps it active.
     let str_com = unsafe { lua.create_c_function(lua_test_com1) }?;
@@ -513,6 +517,109 @@ fn lua_plat(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Re
         mr_to_number(lua, &arguments, 1, 0)? as u32,
         mr_to_number(lua, &arguments, 2, 0)? as u32,
     ))
+}
+
+fn lua_bitmap_load(
+    _: &Lua,
+    env: &mut Environment,
+    (index, filename, x, y, width, height, source_width): (
+        u16,
+        mlua::LuaString,
+        i16,
+        i16,
+        u16,
+        u16,
+        u16,
+    ),
+) -> mlua::Result<()> {
+    let filename = encoding::gb_to_utf8_string(&filename.as_bytes()).into_owned();
+    if env.mythroad.state.bi.get(&env.mem) & 1 == 0 {
+        return Err(mlua::Error::runtime(format!(
+            "BitmapLoad:cannot read File \"{filename}\"!"
+        )));
+    }
+    if u32::from(index) > BITMAPMAX {
+        return Err(mlua::Error::runtime(format!(
+            "BitmapLoad:index {index} invalid!"
+        )));
+    }
+
+    let bitmap_ptr = env.mythroad.state.mr_bitmap + u32::from(index);
+    let mut bitmap = env.mem.read(bitmap_ptr);
+    if !bitmap.p.is_null() {
+        mr_free(env, bitmap.p.cast_void(), bitmap.buflen);
+        bitmap.p = MutPtr::null();
+        bitmap.buflen = 0;
+        env.mem.write(bitmap_ptr, bitmap);
+    }
+    if filename.starts_with('*') {
+        return Ok(());
+    }
+
+    let file_data = dsm::read_current_package_file(env, &filename).map_err(|_| {
+        mlua::Error::runtime(format!("BitmapLoad {index}:cannot read \"{filename}\"!"))
+    })?;
+    let bitmap_len = u32::from(width)
+        .checked_mul(u32::from(height))
+        .and_then(|pixels| pixels.checked_mul(std::mem::size_of::<u16>() as u32))
+        .ok_or_else(|| mlua::Error::runtime("BitmapLoad: bitmap size overflow"))?;
+
+    let pixels = if x == 0 && y == 0 && width == source_width {
+        file_data
+    } else {
+        let x =
+            u32::try_from(x).map_err(|_| mlua::Error::runtime("BitmapLoad: negative source x"))?;
+        let y =
+            u32::try_from(y).map_err(|_| mlua::Error::runtime("BitmapLoad: negative source y"))?;
+        let source_width = u32::from(source_width);
+        let right = x
+            .checked_add(u32::from(width))
+            .ok_or_else(|| mlua::Error::runtime("BitmapLoad: source x overflow"))?;
+        if right > source_width {
+            return Err(mlua::Error::runtime("BitmapLoad: source row overflow"));
+        }
+        let bottom = y
+            .checked_add(u32::from(height))
+            .ok_or_else(|| mlua::Error::runtime("BitmapLoad: source y overflow"))?;
+        let required_len = bottom
+            .checked_mul(source_width)
+            .and_then(|pixels| pixels.checked_mul(std::mem::size_of::<u16>() as u32))
+            .ok_or_else(|| mlua::Error::runtime("BitmapLoad: source size overflow"))?;
+        if required_len as usize > file_data.len() {
+            return Err(mlua::Error::runtime(format!(
+                "BitmapLoad {index} \"{filename}\":len err!"
+            )));
+        }
+
+        let row_len = usize::from(width) * std::mem::size_of::<u16>();
+        let source_stride = source_width as usize * std::mem::size_of::<u16>();
+        let source_x = x as usize * std::mem::size_of::<u16>();
+        let mut pixels = Vec::with_capacity(bitmap_len as usize);
+        for row in y..bottom {
+            let start = row as usize * source_stride + source_x;
+            pixels.extend_from_slice(&file_data[start..start + row_len]);
+        }
+        pixels
+    };
+
+    let pixel_len = u32::try_from(pixels.len())
+        .map_err(|_| mlua::Error::runtime("BitmapLoad: file too large"))?;
+    let pixel_ptr = mr_malloc(env, pixel_len).cast::<u8>();
+    if pixel_ptr.is_null() {
+        return Err(mlua::Error::runtime(format!(
+            "BitmapLoad {index} \"{filename}\":No memory!"
+        )));
+    }
+    env.mem
+        .bytes_at_mut(pixel_ptr, pixel_len)
+        .copy_from_slice(&pixels);
+
+    bitmap.w = width;
+    bitmap.h = height;
+    bitmap.buflen = pixel_len;
+    bitmap.p = pixel_ptr.cast();
+    env.mem.write(bitmap_ptr, bitmap);
+    Ok(())
 }
 
 fn lua_get_sys_info(
