@@ -352,6 +352,7 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     let globals = lua.globals();
     let loadfile = create_api(lua, context, lua_loadfile)?;
     globals.set("loadfile", loadfile.clone())?;
+    globals.set("_loadFile", loadfile.clone())?;
     let dofile = lua.create_function(move |_, filename: mlua::LuaString| {
         let mut result = loadfile.call::<MultiValue>(filename)?.into_iter();
         match result.next() {
@@ -365,7 +366,29 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
             }
         }
     })?;
-    globals.set("dofile", dofile)?;
+    globals.set("dofile", dofile.clone())?;
+    globals.set("_execFile", dofile)?;
+    for (alias, name) in [
+        ("_error", "error"),
+        ("_getTab", "getmetatable"),
+        ("_setTab", "setmetatable"),
+        ("_getEnv", "getfenv"),
+        ("_setEnv", "setfenv"),
+        ("_iPairs", "ipairs"),
+        ("_num", "tonumber"),
+        ("_str", "tostring"),
+        ("_next", "next"),
+        ("_loads", "loadstring"),
+        ("_assert", "assert"),
+        ("_rawEq", "rawequal"),
+        ("_pCall", "pcall"),
+        ("_pCallEx", "xpcall"),
+        ("_gc", "collectgarbage"),
+        ("_loadBuf", "loadstring"),
+    ] {
+        let function: Function = globals.get(name)?;
+        globals.set(alias, function)?;
+    }
 
     let file_table = lua.create_table()?;
     file_table.set("close", lua.create_function(file::close)?)?;
