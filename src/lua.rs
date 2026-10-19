@@ -382,6 +382,10 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     let bitmap_load = create_api(lua, context, lua_bitmap_load)?;
     globals.set("_bmpLoad", bitmap_load.clone())?;
     globals.set("BitmapLoad", bitmap_load)?;
+    globals.set("_bmpInfo", create_api(lua, context, lua_bitmap_info)?)?;
+    let bitmap_new = create_api(lua, context, lua_bitmap_new)?;
+    globals.set("_bmpNew", bitmap_new.clone())?;
+    globals.set("BitmapNew", bitmap_new)?;
     // SAFETY: lua_test_com1 follows the Lua C function calling convention and
     // accesses the current Environment only while with_lua keeps it active.
     let str_com = unsafe { lua.create_c_function(lua_test_com1) }?;
@@ -618,6 +622,66 @@ fn lua_bitmap_load(
     bitmap.h = height;
     bitmap.buflen = pixel_len;
     bitmap.p = pixel_ptr.cast();
+    env.mem.write(bitmap_ptr, bitmap);
+    Ok(())
+}
+
+fn lua_bitmap_info(
+    lua: &Lua,
+    env: &mut Environment,
+    arguments: MultiValue,
+) -> mlua::Result<(u32, u32, u16, u16, u32)> {
+    let index = mr_to_number(lua, &arguments, 1, 0)? as u16;
+    if u32::from(index) > BITMAPMAX {
+        return Err(mlua::Error::runtime(format!(
+            "MRF_BitmapInfo:index {index} invalid!"
+        )));
+    }
+
+    let bitmap = env
+        .mem
+        .read(env.mythroad.state.mr_bitmap + u32::from(index));
+    Ok((
+        bitmap.p.to_bits(),
+        bitmap.buflen,
+        bitmap.w,
+        bitmap.h,
+        bitmap.type_,
+    ))
+}
+
+fn lua_bitmap_new(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<()> {
+    let index = mr_to_number(lua, &arguments, 1, 0)? as u16;
+    let width = mr_to_number(lua, &arguments, 2, 0)? as u16;
+    let height = mr_to_number(lua, &arguments, 3, 0)? as u16;
+    if u32::from(index) > BITMAPMAX {
+        return Err(mlua::Error::runtime(format!(
+            "BitmapNew:index {index} invalid!"
+        )));
+    }
+
+    let bitmap_ptr = env.mythroad.state.mr_bitmap + u32::from(index);
+    let mut bitmap = env.mem.read(bitmap_ptr);
+    let bitmap_len = u32::from(width)
+        .checked_mul(u32::from(height))
+        .and_then(|pixels| pixels.checked_mul(std::mem::size_of::<u16>() as u32))
+        .ok_or_else(|| mlua::Error::runtime("BitmapNew: bitmap size overflow"))?;
+    if bitmap.buflen != bitmap_len {
+        if !bitmap.p.is_null() {
+            mr_free(env, bitmap.p.cast_void(), bitmap.buflen);
+            bitmap.p = MutPtr::null();
+        }
+        bitmap.p = mr_malloc(env, bitmap_len).cast();
+        if bitmap.p.is_null() {
+            return Err(mlua::Error::runtime(format!(
+                "BitmapNew {index} :No memory!"
+            )));
+        }
+        libc::string::memset(env, bitmap.p.cast_void(), 0, bitmap_len);
+    }
+    bitmap.buflen = bitmap_len;
+    bitmap.w = width;
+    bitmap.h = height;
     env.mem.write(bitmap_ptr, bitmap);
     Ok(())
 }
