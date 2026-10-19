@@ -1066,7 +1066,7 @@ fn mr_strtoul(
     libc::stdlib::strtoul(env, nptr, endptr, base)
 }
 
-fn mr_rand(env: &mut Environment) -> i32 {
+pub(crate) fn mr_rand(env: &mut Environment) -> i32 {
     log_dbg!("Mythroad: mr_rand()");
     libc::stdlib::rand(env)
 }

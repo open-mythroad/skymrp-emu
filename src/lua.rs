@@ -543,6 +543,39 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
         "_gc",
         lua.create_function(|lua, _threshold: Option<i32>| lua.gc_collect())?,
     )?;
+    let get_rand = create_api(lua, context, |_, env, limit: i32| {
+        Ok(crate::mythroad::mr_rand(env) % limit)
+    })?;
+    globals.set("_rand", get_rand.clone())?;
+    globals.set("GetRand", get_rand)?;
+    globals.set(
+        "_add",
+        lua.create_function(|_, (left, right): (i32, i32)| Ok(left.wrapping_add(right)))?,
+    )?;
+    globals.set(
+        "_sub",
+        lua.create_function(|_, (left, right): (i32, i32)| Ok(left.wrapping_sub(right)))?,
+    )?;
+    globals.set(
+        "_mul",
+        lua.create_function(|_, (left, right): (i32, i32)| Ok(left.wrapping_mul(right)))?,
+    )?;
+    globals.set(
+        "_div",
+        lua.create_function(|_, (left, right): (i32, i32)| {
+            if right == 0 {
+                return Err(mlua::Error::runtime("attempt to divide by zero"));
+            }
+            Ok(left.wrapping_div(right))
+        })?,
+    )?;
+    globals.set(
+        "_neg",
+        lua.create_function(|_, value: i32| Ok(value.wrapping_neg()))?,
+    )?;
+    let modulo = lua.create_function(|_, (left, right): (i32, i32)| Ok(left % right))?;
+    globals.set("_mod", modulo.clone())?;
+    globals.set("mod", modulo)?;
     globals.set(
         "_and",
         lua.create_function(|_, (left, right): (i32, i32)| Ok(left & right))?,
@@ -550,6 +583,10 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     globals.set(
         "_or",
         lua.create_function(|_, (left, right): (i32, i32)| Ok(left | right))?,
+    )?;
+    globals.set(
+        "_not",
+        lua.create_function(|_, value: i32| Ok(i32::from(value == 0)))?,
     )?;
     globals.set(
         "_xor",
