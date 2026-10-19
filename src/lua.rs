@@ -25,6 +25,7 @@ use std::slice;
 
 mod file;
 mod string_pack;
+mod sys;
 
 pub(crate) struct LuaContext {
     environment: Cell<Option<NonNull<Environment>>>,
@@ -301,6 +302,28 @@ where
     Ok(function)
 }
 
+fn push_result(lua: &Lua, succeeded: bool, filename: Option<&[u8]>) -> mlua::Result<MultiValue> {
+    if succeeded {
+        return Ok(MultiValue::from_vec(vec![Value::Boolean(true)]));
+    }
+
+    let error_number = MrResult::Failed as i32;
+    let error = match filename {
+        Some(filename) => {
+            let mut error = b"file err: ".to_vec();
+            error.extend_from_slice(filename.split(|&byte| byte == 0).next().unwrap_or_default());
+            error.extend_from_slice(format!(": {error_number}").as_bytes());
+            error
+        }
+        None => format!("file err:{error_number}").into_bytes(),
+    };
+    Ok(MultiValue::from_vec(vec![
+        Value::Nil,
+        Value::String(lua.create_string(error)?),
+        Value::Number(error_number as f64),
+    ]))
+}
+
 fn load_chunk(lua: &Lua, env: &mut Environment, filename: &str) -> Result<Function, String> {
     let data = dsm::read_current_package_file(env, filename)?;
     let data = convert_chunk(&data)?;
@@ -378,7 +401,44 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     globals.set("TestCom", test_com)?;
     globals.set("_platEx", create_api(lua, context, lua_plat_ex)?)?;
     globals.set("_plat", create_api(lua, context, lua_plat)?)?;
-    globals.set("GetSysInfo", create_api(lua, context, lua_get_sys_info)?)?;
+    let get_sys_info = create_api(lua, context, lua_get_sys_info)?;
+    globals.set("GetSysInfo", get_sys_info.clone())?;
+
+    let sys_table = lua.create_table()?;
+    let get_uptime = create_api(lua, context, sys::get_uptime)?;
+    sys_table.set("getUptime", get_uptime.clone())?;
+    sys_table.set("getuptime", get_uptime)?;
+    let remove = create_api(lua, context, sys::remove)?;
+    sys_table.set("rm", remove.clone())?;
+    sys_table.set("remove", remove)?;
+    sys_table.set("rename", create_api(lua, context, sys::rename)?)?;
+    let mkdir = create_api(lua, context, sys::mkdir)?;
+    sys_table.set("mkDir", mkdir.clone())?;
+    sys_table.set("mkdir", mkdir)?;
+    let rmdir = create_api(lua, context, sys::rmdir)?;
+    sys_table.set("rmDir", rmdir.clone())?;
+    sys_table.set("rmdir", rmdir)?;
+    let get_file_info = create_api(lua, context, sys::get_file_info)?;
+    sys_table.set("getFileInfo", get_file_info.clone())?;
+    sys_table.set("getfileinfo", get_file_info)?;
+    let get_file_len = create_api(lua, context, sys::get_file_len)?;
+    sys_table.set("getFileLen", get_file_len.clone())?;
+    sys_table.set("getfilelen", get_file_len)?;
+    let find_start = create_api(lua, context, sys::find_start)?;
+    sys_table.set("findStart", find_start.clone())?;
+    sys_table.set("findstart", find_start)?;
+    let find_next = create_api(lua, context, sys::find_next)?;
+    sys_table.set("findNext", find_next.clone())?;
+    sys_table.set("findnext", find_next)?;
+    let find_stop = create_api(lua, context, sys::find_stop)?;
+    sys_table.set("findStop", find_stop.clone())?;
+    sys_table.set("findstop", find_stop)?;
+    sys_table.set("getInfo", get_sys_info)?;
+    let datetime = lua.create_function(sys::datetime)?;
+    sys_table.set("datetime", datetime.clone())?;
+    globals.set("sys", sys_table)?;
+    globals.set("GetDatetime", datetime)?;
+
     let bitmap_load = create_api(lua, context, lua_bitmap_load)?;
     globals.set("_bmpLoad", bitmap_load.clone())?;
     globals.set("BitmapLoad", bitmap_load)?;

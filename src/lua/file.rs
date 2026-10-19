@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use super::{with_env, SharedLuaContext};
+use super::{push_result, with_env, SharedLuaContext};
 use crate::dsm;
 use crate::mythroad::MrResult;
 use crate::Environment;
@@ -259,28 +259,6 @@ fn write_bytes(env: &mut Environment, handle: u32, bytes: &[u8]) -> bool {
     let result = dsm::mr_write(env, handle, buffer.cast_const().cast_void(), length);
     env.mem.free(buffer.cast_void());
     result == length as i32
-}
-
-fn push_result(lua: &Lua, succeeded: bool, filename: Option<&[u8]>) -> mlua::Result<MultiValue> {
-    if succeeded {
-        return Ok(MultiValue::from_vec(vec![Value::Boolean(true)]));
-    }
-
-    let error_number = MrResult::Failed as i32;
-    let error = match filename {
-        Some(filename) => {
-            let mut error = b"file err: ".to_vec();
-            error.extend_from_slice(filename.split(|&byte| byte == 0).next().unwrap_or_default());
-            error.extend_from_slice(format!(": {error_number}").as_bytes());
-            error
-        }
-        None => format!("file err:{error_number}").into_bytes(),
-    };
-    Ok(MultiValue::from_vec(vec![
-        Value::Nil,
-        Value::String(lua.create_string(error)?),
-        Value::Number(error_number as f64),
-    ]))
 }
 
 #[cfg(test)]
