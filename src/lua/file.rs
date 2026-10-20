@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use super::{push_result, with_env, SharedLuaContext};
-use crate::dsm;
+use crate::dsm::{self, MR_FILE_RDONLY, MR_IS_FILE};
 use crate::mythroad::MrResult;
 use crate::Environment;
 
@@ -14,8 +14,6 @@ use mlua::{
 use std::cell::Cell;
 use std::rc::Rc;
 
-const MR_FILE_RDONLY: u32 = 1;
-const MR_IS_FILE: i32 = 1;
 const MR_FILE_STATE_OPEN: i32 = 0;
 const MR_FILE_STATE_CLOSED: i32 = 1;
 const MR_FILE_STATE_NIL: i32 = 2;

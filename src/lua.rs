@@ -383,6 +383,26 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     })?;
     globals.set("dofile", dofile.clone())?;
     globals.set("_execFile", dofile)?;
+    globals.set(
+        "LoadTable",
+        create_api(
+            lua,
+            context,
+            |_, env, (_permanents, filename): (Table, mlua::LuaString)| {
+                let filename = filename.as_bytes();
+                let filename_ptr = env.mem.alloc_and_write_cstr(&filename);
+                if dsm::mr_info(env, filename_ptr.cast_const()) == dsm::MR_IS_FILE {
+                    log!(
+                        "Mythroad: LoadTable ignored unsupported persistence file {}",
+                        encoding::gb_to_utf8_string(&filename)
+                    );
+                }
+                env.mem.free(filename_ptr.cast_void());
+                Ok(Value::Nil)
+            },
+        )?,
+    )?;
+    globals.set("SaveTable", lua.create_function(|_, _: MultiValue| Ok(0))?)?;
     for (alias, name) in [
         ("_error", "error"),
         ("_getTab", "getmetatable"),
