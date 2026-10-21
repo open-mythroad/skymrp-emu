@@ -361,6 +361,25 @@ pub(crate) fn measure_char(env: &mut Environment, ch: u16, font_size: u16) -> (i
     (Font::glyph_width(pixel_size, ch), pixel_size as i32)
 }
 
+pub(crate) fn measure_text(
+    env: &mut Environment,
+    big_endian_ucs2: &[u8],
+    font_size: u16,
+) -> (i32, i32) {
+    let mut width = 0;
+    let mut height = 0;
+    for pair in big_endian_ucs2.chunks_exact(2) {
+        let ch = u16::from_be_bytes([pair[0], pair[1]]);
+        if ch == 0 {
+            break;
+        }
+        let (char_width, char_height) = measure_char(env, ch, font_size);
+        width += char_width;
+        height = height.max(char_height);
+    }
+    (width, height)
+}
+
 pub(crate) fn draw_char(env: &mut Environment, x: i32, y: i32, ch: u16, color: u16) {
     let pixel_size = env.mythroad.font.current_pixel_size();
     if !env.mythroad.font.ensure_font_loaded(&env.fs, pixel_size) {

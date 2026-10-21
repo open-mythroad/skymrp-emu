@@ -330,7 +330,7 @@ pub(super) fn mr_get_screen_info(env: &mut Environment, screen_info: MutPtr<u32>
     MrResult::Success as i32
 }
 
-pub(super) fn disp_up_ex(env: &mut Environment, x: i16, y: i16, w: u16, h: u16) -> i32 {
+pub(crate) fn disp_up_ex(env: &mut Environment, x: i16, y: i16, w: u16, h: u16) -> i32 {
     log_dbg!("Mythroad: _DispUpEx(x={x}, y={y}, w={w}, h={h})");
 
     if env.mythroad.state.mr_state.get(&env.mem) == MrRunState::Run as u32 {
@@ -365,7 +365,56 @@ fn make_rgb565(r: u32, g: u32, b: u32) -> u16 {
     (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)) as u16
 }
 
-pub(super) fn draw_bitmap(
+pub(crate) fn draw_line(
+    env: &mut Environment,
+    mut x1: i16,
+    mut y1: i16,
+    mut x2: i16,
+    mut y2: i16,
+    r: u8,
+    g: u8,
+    b: u8,
+) {
+    let native_color = make_rgb565(u32::from(r), u32::from(g), u32::from(b));
+    let mut swap = false;
+
+    if (i32::from(x2) - i32::from(x1)).abs() < (i32::from(y2) - i32::from(y1)).abs() {
+        swap = true;
+        std::mem::swap(&mut x1, &mut y1);
+        std::mem::swap(&mut x2, &mut y2);
+    }
+    if x1 > x2 {
+        std::mem::swap(&mut x1, &mut x2);
+        std::mem::swap(&mut y1, &mut y2);
+    }
+
+    let dx = i32::from(x2) - i32::from(x1);
+    let mut c1 = (i32::from(y2) - i32::from(y1)) * 2;
+    let dy = if c1 < 0 {
+        c1 = -c1;
+        -1
+    } else {
+        1
+    };
+    let mut err = c1 - dx;
+    let c2 = err - dx;
+    let mut x = i32::from(x1);
+    let mut y = i32::from(y1);
+
+    while x <= i32::from(x2) {
+        let (draw_x, draw_y) = if swap { (y, x) } else { (x, y) };
+        draw_point(env, draw_x as i16, draw_y as i16, native_color);
+        x += 1;
+        if err < 0 {
+            err += c1;
+        } else {
+            y += dy;
+            err += c2;
+        }
+    }
+}
+
+pub(crate) fn draw_bitmap(
     env: &mut Environment,
     p: MutPtr<u16>,
     x: i16,
@@ -667,7 +716,7 @@ pub(super) fn draw_bitmap_ex(
     }
 }
 
-pub(super) fn draw_rect(
+pub(crate) fn draw_rect(
     env: &mut Environment,
     x: i32,
     y: i32,
@@ -742,7 +791,7 @@ pub(super) fn draw_rect(
     }
 }
 
-pub(super) fn draw_text(
+pub(crate) fn draw_text(
     env: &mut Environment,
     pc_text: ConstPtr<u8>,
     x: i32,
@@ -855,7 +904,7 @@ pub(super) fn bitmap_check(
     result
 }
 
-pub(super) fn mr_eff_set_con(
+pub(crate) fn mr_eff_set_con(
     env: &mut Environment,
     x: i16,
     y: i16,

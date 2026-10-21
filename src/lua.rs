@@ -5,8 +5,9 @@
  */
 use crate::mem::{ConstPtr, MutPtr, MutVoidPtr};
 use crate::mythroad::{
-    mr_exit, mr_free, mr_malloc, mr_timer_start, mr_timer_stop, MrResult, MrRunState, MrUserInfo,
-    BITMAPMAX,
+    disp_up_ex, draw_bitmap, draw_line, draw_rect, draw_text, mr_eff_set_con, mr_exit, mr_free,
+    mr_malloc, mr_timer_start, mr_timer_stop, MrResult, MrRunState, MrUserInfo, BITMAPMAX,
+    SPRITEMAX,
 };
 use crate::{dsm, encoding, font, mrp, Environment};
 
@@ -302,6 +303,50 @@ where
     Ok(function)
 }
 
+fn mr_to_number(
+    lua: &Lua,
+    arguments: &MultiValue,
+    index: usize,
+    default: i32,
+) -> mlua::Result<i32> {
+    let Some(value) = arguments.get(index - 1) else {
+        return Ok(default);
+    };
+    Ok(lua.coerce_number(value.clone())?.unwrap_or(0.0) as i32)
+}
+
+fn mr_opt_number(
+    lua: &Lua,
+    arguments: &MultiValue,
+    index: usize,
+    default: i32,
+) -> mlua::Result<i32> {
+    let Some(value) = arguments.get(index - 1) else {
+        return Ok(default);
+    };
+    if value.is_nil() {
+        return Ok(default);
+    }
+    lua.coerce_number(value.clone())?
+        .map(|value| value as i32)
+        .ok_or_else(|| mlua::Error::runtime(format!("bad argument #{index}: number expected")))
+}
+
+fn mr_to_boolean(arguments: &MultiValue, index: usize, default: bool) -> bool {
+    match arguments.get(index - 1) {
+        None => default,
+        Some(Value::Nil) => false,
+        Some(Value::Boolean(value)) => *value,
+        Some(_) => true,
+    }
+}
+
+fn mr_to_string(lua: &Lua, arguments: &MultiValue, index: usize) -> mlua::Result<mlua::LuaString> {
+    let value = arguments.get(index - 1).cloned().unwrap_or(Value::Nil);
+    lua.coerce_string(value)?
+        .ok_or_else(|| mlua::Error::runtime(format!("bad argument #{index}: string expected")))
+}
+
 fn push_result(lua: &Lua, succeeded: bool, filename: Option<&[u8]>) -> mlua::Result<MultiValue> {
     if succeeded {
         return Ok(MultiValue::from_vec(vec![Value::Boolean(true)]));
@@ -528,6 +573,30 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     let bitmap_new = create_api(lua, context, lua_bitmap_new)?;
     globals.set("_bmpNew", bitmap_new.clone())?;
     globals.set("BitmapNew", bitmap_new)?;
+    globals.set("SpriteSet", create_api(lua, context, lua_sprite_set)?)?;
+    globals.set("SpriteDraw", create_api(lua, context, lua_sprite_draw)?)?;
+    let bitmap_show = create_api(lua, context, lua_bitmap_show)?;
+    globals.set("_bmpShow", bitmap_show.clone())?;
+    globals.set("BitmapShow", bitmap_show)?;
+    let draw_text_api = create_api(lua, context, lua_draw_text)?;
+    globals.set("_drawText", draw_text_api.clone())?;
+    globals.set("DrawText", draw_text_api)?;
+    let draw_rect_api = create_api(lua, context, lua_draw_rect)?;
+    globals.set("_drawRect", draw_rect_api.clone())?;
+    globals.set("DrawRect", draw_rect_api)?;
+    let clear_screen = create_api(lua, context, lua_clear_screen)?;
+    globals.set("_clearScr", clear_screen.clone())?;
+    globals.set("ClearScreen", clear_screen)?;
+    let draw_line_api = create_api(lua, context, lua_draw_line)?;
+    globals.set("_drawLine", draw_line_api.clone())?;
+    globals.set("DrawLine", draw_line_api)?;
+    let eff_set_con = create_api(lua, context, lua_eff_set_con)?;
+    globals.set("_effSetCon", eff_set_con.clone())?;
+    globals.set("EffSetCon", eff_set_con)?;
+    globals.set("_textWidth", create_api(lua, context, lua_text_width)?)?;
+    let disp_up_ex_api = create_api(lua, context, lua_disp_up_ex)?;
+    globals.set("_dispUpEx", disp_up_ex_api.clone())?;
+    globals.set("DispUpEx", disp_up_ex_api)?;
     // SAFETY: lua_test_com1 follows the Lua C function calling convention and
     // accesses the current Environment only while with_lua keeps it active.
     let str_com = unsafe { lua.create_c_function(lua_test_com1) }?;
@@ -700,6 +769,270 @@ fn lua_plat(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Re
         mr_to_number(lua, &arguments, 1, 0)? as u32,
         mr_to_number(lua, &arguments, 2, 0)? as u32,
     ))
+}
+
+fn lua_sprite_set(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<()> {
+    let index = mr_to_number(lua, &arguments, 1, 0)? as u16;
+    let height = mr_to_number(lua, &arguments, 2, 0)? as u16;
+    if u32::from(index) >= SPRITEMAX {
+        return Err(mlua::Error::runtime(format!(
+            "SpriteSet:index {index} invalid!"
+        )));
+    }
+
+    let sprite = env.mythroad.state.mr_sprite + u32::from(index);
+    let mut value = env.mem.read(sprite);
+    value.h = height;
+    env.mem.write(sprite, value);
+    Ok(())
+}
+
+fn lua_bitmap_show(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<()> {
+    let index = mr_to_number(lua, &arguments, 1, 0)? as u16;
+    if u32::from(index) > BITMAPMAX {
+        return Err(mlua::Error::runtime(format!(
+            "BitmapShow:index {index} invalid!"
+        )));
+    }
+
+    let bitmap = env
+        .mem
+        .read(env.mythroad.state.mr_bitmap + u32::from(index));
+    if bitmap.p.is_null() {
+        return Err(mlua::Error::runtime(format!(
+            "BitmapShow {index}:bitmap is nil!"
+        )));
+    }
+
+    let x = mr_to_number(lua, &arguments, 2, 0)? as i16;
+    let y = mr_to_number(lua, &arguments, 3, 0)? as i16;
+    let rop = mr_opt_number(lua, &arguments, 4, 2)? as u16;
+    let sx = mr_opt_number(lua, &arguments, 5, 0)? as i16;
+    let sy = mr_opt_number(lua, &arguments, 6, 0)? as i16;
+    let width = mr_opt_number(lua, &arguments, 7, -1)?;
+    let height = mr_opt_number(lua, &arguments, 8, -1)?;
+    let width = if width == -1 { bitmap.w } else { width as u16 };
+    let height = if height == -1 {
+        bitmap.h
+    } else {
+        height as u16
+    };
+    let transcolor = env.mem.read(bitmap.p);
+    draw_bitmap(
+        env,
+        bitmap.p,
+        x,
+        y,
+        width,
+        height,
+        rop,
+        transcolor,
+        sx,
+        sy,
+        bitmap.w as i16,
+    );
+    Ok(())
+}
+
+fn lua_sprite_draw(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<()> {
+    let index = mr_to_number(lua, &arguments, 1, 0)? as u16;
+    let sprite_index = mr_to_number(lua, &arguments, 2, 0)? as u16;
+    let x = mr_to_number(lua, &arguments, 3, 0)? as i16;
+    let y = mr_to_number(lua, &arguments, 4, 0)? as i16;
+    let mode = mr_to_number(lua, &arguments, 5, 6)? as u16;
+    if u32::from(index) >= SPRITEMAX {
+        return Err(mlua::Error::runtime(format!(
+            "SpriteDraw:index {index} invalid!"
+        )));
+    }
+
+    let bitmap = env
+        .mem
+        .read(env.mythroad.state.mr_bitmap + u32::from(index));
+    if bitmap.p.is_null() {
+        return Err(mlua::Error::runtime(format!(
+            "SpriteDraw:Sprite {index} is nil!"
+        )));
+    }
+    let sprite = env
+        .mem
+        .read(env.mythroad.state.mr_sprite + u32::from(index));
+    let frame_pixels = u32::from(bitmap.w)
+        .checked_mul(u32::from(sprite.h))
+        .ok_or_else(|| mlua::Error::runtime("SpriteDraw: frame size overflow"))?;
+    let offset = u32::from(sprite_index)
+        .checked_mul(frame_pixels)
+        .ok_or_else(|| mlua::Error::runtime("SpriteDraw: frame offset overflow"))?;
+    let end = offset
+        .checked_add(frame_pixels)
+        .and_then(|pixels| pixels.checked_mul(std::mem::size_of::<u16>() as u32))
+        .ok_or_else(|| mlua::Error::runtime("SpriteDraw: frame size overflow"))?;
+    if end > bitmap.buflen {
+        return Err(mlua::Error::runtime(format!(
+            "SpriteDraw:index {sprite_index} out of range!"
+        )));
+    }
+
+    let transcolor = env.mem.read(bitmap.p);
+    draw_bitmap(
+        env,
+        bitmap.p + offset,
+        x,
+        y,
+        bitmap.w,
+        sprite.h,
+        mode,
+        transcolor,
+        0,
+        0,
+        bitmap.w as i16,
+    );
+    Ok(())
+}
+
+fn lua_draw_text(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<()> {
+    let text = mr_to_string(lua, &arguments, 1)?;
+    let x = mr_to_number(lua, &arguments, 2, 0)?;
+    let y = mr_to_number(lua, &arguments, 3, 0)?;
+    let r = mr_to_number(lua, &arguments, 4, 0)? as u8;
+    let g = mr_to_number(lua, &arguments, 5, 0)? as u8;
+    let b = mr_to_number(lua, &arguments, 6, 0)? as u8;
+    let is_unicode = mr_to_boolean(&arguments, 7, false);
+    let font_size = mr_opt_number(lua, &arguments, 8, font::FontSize::Medium as i32)? as u16;
+    let bytes = text.as_bytes();
+    let len = u32::try_from(bytes.len()).map_err(mlua::Error::external)?;
+    let text_ptr = env.mem.alloc(len + 2).cast::<u8>();
+    env.mem.bytes_at_mut(text_ptr, len).copy_from_slice(&bytes);
+    env.mem.write(text_ptr + len, 0u8);
+    env.mem.write(text_ptr + len + 1, 0u8);
+    draw_text(
+        env,
+        text_ptr.cast_const(),
+        x,
+        y,
+        r,
+        g,
+        b,
+        u32::from(is_unicode),
+        font_size,
+    );
+    env.mem.free(text_ptr.cast_void());
+    Ok(())
+}
+
+fn lua_text_width(
+    lua: &Lua,
+    env: &mut Environment,
+    arguments: MultiValue,
+) -> mlua::Result<(i32, i32)> {
+    let text = arguments.get(0).cloned().unwrap_or(Value::Nil);
+    let is_unicode = mr_to_boolean(&arguments, 2, false);
+    let font_size = mr_opt_number(lua, &arguments, 3, font::FontSize::Medium as i32)? as u16;
+
+    if let Value::String(text) = text {
+        if is_unicode {
+            return Ok(font::measure_text(env, &text.as_bytes(), font_size));
+        }
+
+        let text_ptr = env.mem.alloc_and_write_cstr(&text.as_bytes());
+        let converted = encoding::c2u(env, text_ptr.cast_const(), false);
+        env.mem.free(text_ptr.cast_void());
+        if converted.ptr.is_null() {
+            return Err(mlua::Error::runtime("TextWidth:c2u err! 1"));
+        }
+        let bytes = env
+            .mem
+            .bytes_at(converted.ptr.cast::<u8>().cast_const(), converted.size)
+            .to_vec();
+        mr_free(env, converted.ptr.cast_void(), converted.size);
+        return Ok(font::measure_text(env, &bytes, font_size));
+    }
+
+    let mut ch = lua.coerce_number(text)?.unwrap_or(0.0) as u16;
+    if !is_unicode && ch >= 128 {
+        let encoded = [(ch >> 8) as u8, ch as u8];
+        let text_ptr = env.mem.alloc_and_write_cstr(&encoded);
+        let converted = encoding::c2u(env, text_ptr.cast_const(), false);
+        env.mem.free(text_ptr.cast_void());
+        if converted.ptr.is_null() {
+            return Err(mlua::Error::runtime("TextWidth:c2u err! 2"));
+        }
+        let bytes = env
+            .mem
+            .bytes_at(converted.ptr.cast::<u8>().cast_const(), converted.size);
+        ch = u16::from_be_bytes([bytes[0], bytes[1]]);
+        mr_free(env, converted.ptr.cast_void(), converted.size);
+    }
+    Ok(font::measure_char(env, ch, font_size))
+}
+
+fn lua_draw_rect(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<()> {
+    draw_rect(
+        env,
+        mr_to_number(lua, &arguments, 1, 0)?,
+        mr_to_number(lua, &arguments, 2, 0)?,
+        mr_to_number(lua, &arguments, 3, 0)?,
+        mr_to_number(lua, &arguments, 4, 0)?,
+        mr_to_number(lua, &arguments, 5, 0)? as u8,
+        mr_to_number(lua, &arguments, 6, 0)? as u8,
+        mr_to_number(lua, &arguments, 7, 0)? as u8,
+    );
+    Ok(())
+}
+
+fn lua_clear_screen(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<()> {
+    let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
+    let screen_h = env.mythroad.state.mr_screen_h.get(&env.mem);
+    draw_rect(
+        env,
+        0,
+        0,
+        screen_w,
+        screen_h,
+        mr_to_number(lua, &arguments, 1, 0)? as u8,
+        mr_to_number(lua, &arguments, 2, 0)? as u8,
+        mr_to_number(lua, &arguments, 3, 0)? as u8,
+    );
+    Ok(())
+}
+
+fn lua_draw_line(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<()> {
+    draw_line(
+        env,
+        mr_to_number(lua, &arguments, 1, 0)? as i16,
+        mr_to_number(lua, &arguments, 2, 0)? as i16,
+        mr_to_number(lua, &arguments, 3, 0)? as i16,
+        mr_to_number(lua, &arguments, 4, 0)? as i16,
+        mr_to_number(lua, &arguments, 5, 0)? as u8,
+        mr_to_number(lua, &arguments, 6, 0)? as u8,
+        mr_to_number(lua, &arguments, 7, 0)? as u8,
+    );
+    Ok(())
+}
+
+fn lua_eff_set_con(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<()> {
+    mr_eff_set_con(
+        env,
+        mr_to_number(lua, &arguments, 1, 0)? as i16,
+        mr_to_number(lua, &arguments, 2, 0)? as i16,
+        mr_to_number(lua, &arguments, 3, 0)? as i16,
+        mr_to_number(lua, &arguments, 4, 0)? as i16,
+        mr_to_number(lua, &arguments, 5, 0)? as i16,
+        mr_to_number(lua, &arguments, 6, 0)? as i16,
+        mr_to_number(lua, &arguments, 7, 0)? as i16,
+    );
+    Ok(())
+}
+
+fn lua_disp_up_ex(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<()> {
+    disp_up_ex(
+        env,
+        mr_to_number(lua, &arguments, 1, 0)? as i16,
+        mr_to_number(lua, &arguments, 2, 0)? as i16,
+        mr_to_number(lua, &arguments, 3, 0)? as u16,
+        mr_to_number(lua, &arguments, 4, 0)? as u16,
+    );
+    Ok(())
 }
 
 fn lua_bitmap_load(
@@ -1127,4 +1460,33 @@ fn convert_chunk(mr_data: &[u8]) -> Result<Vec<u8>, String> {
 
     lunify::unify(mr_data, &lunify::Format::default(), &settings)
         .map_err(|err| format!("failed to convert Mythroad bytecode: {err:?}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mr_number_distinguishes_missing_and_nil() {
+        let lua = Lua::new();
+        let argument_count = lua
+            .create_function(|_, arguments: MultiValue| Ok(arguments.len()))
+            .unwrap();
+        lua.globals().set("argument_count", argument_count).unwrap();
+        assert_eq!(
+            lua.load("return argument_count(1), argument_count(1, nil)")
+                .eval::<(usize, usize)>()
+                .unwrap(),
+            (1, 2)
+        );
+
+        let missing = MultiValue::new();
+        let nil = MultiValue::from_vec(vec![Value::Nil]);
+        let number = MultiValue::from_vec(vec![Value::Integer(2)]);
+
+        assert_eq!(mr_to_number(&lua, &missing, 1, 6).unwrap(), 6);
+        assert_eq!(mr_to_number(&lua, &nil, 1, 6).unwrap(), 0);
+        assert_eq!(mr_to_number(&lua, &number, 1, 6).unwrap(), 2);
+        assert_eq!(mr_opt_number(&lua, &nil, 1, 6).unwrap(), 6);
+    }
 }

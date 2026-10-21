@@ -31,9 +31,12 @@ use self::fs::{
     mr_open, mr_read, mr_read_file, mr_remove, mr_rename, mr_rmdir, mr_seek, mr_write,
 };
 use graphics::{
-    bitmap_check, disp_up_ex, draw_bitmap, draw_bitmap_ex, draw_point, draw_rect, draw_text,
-    draw_text_ex, mr_draw_bitmap, mr_draw_region, mr_eff_set_con, mr_get_char_bitmap,
-    mr_get_screen_info, mr_plat_draw_char, mr_transbitmap_draw, MrBitmap, MrSprite, MrTile,
+    bitmap_check, draw_bitmap_ex, draw_point, draw_text_ex, mr_draw_bitmap, mr_draw_region,
+    mr_get_char_bitmap, mr_get_screen_info, mr_plat_draw_char, mr_transbitmap_draw, MrBitmap,
+    MrSprite, MrTile,
+};
+pub(crate) use graphics::{
+    disp_up_ex, draw_bitmap, draw_line, draw_rect, draw_text, mr_eff_set_con,
 };
 use network::{
     mr_close_network, mr_close_socket, mr_connect, mr_get_host_by_name, mr_init_network, mr_recv,
@@ -41,7 +44,7 @@ use network::{
 };
 
 pub(crate) const BITMAPMAX: GuestUSize = 30;
-const SPRITEMAX: GuestUSize = 10;
+pub(crate) const SPRITEMAX: GuestUSize = 10;
 const TILEMAX: GuestUSize = 3;
 const SOUNDMAX: GuestUSize = 5;
 const MR_EXIT_EVENT: i32 = 8;
