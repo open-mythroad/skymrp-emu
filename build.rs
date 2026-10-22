@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use chrono::Local;
 use std::path::{Path, PathBuf};
 
 fn rerun_if_changed(path: &Path) {
@@ -14,6 +15,11 @@ pub fn main() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
 
     rerun_if_changed(&package_root.join("Cargo.lock"));
+    rerun_if_changed(&package_root.join("src/dsm.rs"));
+    println!(
+        "cargo:rustc-env=SKYMRP_BUILD_TIME={}",
+        Local::now().format("%H:%M:%S %b %e %Y")
+    );
 
     if target_os == "emscripten" {
         println!("cargo:rustc-link-arg-cdylib=--no-entry");

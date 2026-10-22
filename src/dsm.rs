@@ -42,6 +42,7 @@ const MR_MALLOC_CACHE: u32 = 1012;
 const MR_MFREE_CACHE: u32 = 1013;
 const MR_MALLOC_SCRRAM: u32 = 1014;
 const MR_FREE_SCRRAM: u32 = 1015;
+const MR_GET_BUILD_TIME: u32 = 1116;
 const MR_CHARACTER_HEIGHT: u32 = 1201;
 const MR_SWITCHPATH: u32 = 1204;
 const MR_UCS2GB: u32 = 1207;
@@ -280,6 +281,18 @@ pub(crate) fn mr_plat_ex(
         }
         MR_MFREE_CACHE => MrResult::Success as i32,
         MR_MALLOC_SCRRAM | MR_FREE_SCRRAM => MrResult::Ignored as i32,
+        MR_GET_BUILD_TIME => {
+            if output.is_null() || output_len.is_null() {
+                return MrResult::Failed as i32;
+            }
+
+            env.mem.write(output, env.mythroad.state.dsm_build_time);
+            env.mem.write(
+                output_len,
+                i32::try_from(env!("SKYMRP_BUILD_TIME").len() + 1).unwrap(),
+            );
+            MrResult::Success as i32
+        }
         MR_CHARACTER_HEIGHT => {
             if output.is_null() || output_len.is_null() {
                 return MrResult::Failed as i32;

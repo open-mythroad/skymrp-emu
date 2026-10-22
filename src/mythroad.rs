@@ -629,6 +629,7 @@ pub struct State {
     pub mr_screen_h: GuestVar<i32>,
     pub mr_screen_bit: GuestVar<i32>,
     pub dsm_word_info: GuestVar<i32>,
+    pub dsm_build_time: MutPtr<u8>,
     pub dsm_switch_path_buf: MutPtr<u8>,
     pub dsm_disk_info: GuestVar<DsmDiskInfo>,
     pub mr_bitmap: MutPtr<MrBitmap>,
@@ -688,6 +689,7 @@ impl State {
         let mr_screen_h = GuestVar::new(mem, sysinfo.screen_height as i32);
         let mr_screen_bit = GuestVar::new(mem, sysinfo.screen_bits as i32);
         let dsm_word_info = GuestVar::new(mem, 0x1008_1010i32);
+        let dsm_build_time = mem.alloc_and_write_cstr(env!("SKYMRP_BUILD_TIME").as_bytes());
         let dsm_switch_path_buf =
             alloc_array(mem, (dsm::DSM_MAX_FILE_LEN + 10).try_into().unwrap());
         let dsm_disk_info = GuestVar::new(mem, DsmDiskInfo::default());
@@ -768,6 +770,7 @@ impl State {
             mr_screen_h,
             mr_screen_bit,
             dsm_word_info,
+            dsm_build_time,
             dsm_switch_path_buf,
             dsm_disk_info,
             mr_bitmap,

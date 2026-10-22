@@ -53,6 +53,7 @@ skymrp_sonivox_wrapper = { path = "src/audio/sonivox_wrapper" }
 skymrp_dynarmic_wrapper = { path = "src/cpu/dynarmic_wrapper" }
 
 [build-dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 cc = { workspace = true }
 cmake = { workspace = true }
 rusty-hook = { workspace = true }
