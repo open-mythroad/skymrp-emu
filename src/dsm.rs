@@ -1090,8 +1090,9 @@ pub(crate) fn test_com1(
         }
         #[cfg(feature = "lua")]
         601 if is_full_runtime => {
-            let filename = encoding::gb_to_utf8_string(env.mem.bytes_at(input1.cast_const(), len))
-                .into_owned();
+            let filename_bytes = env.mem.bytes_at(input1.cast_const(), len);
+            let filename_bytes = filename_bytes.split(|&byte| byte == 0).next().unwrap();
+            let filename = encoding::gb_to_utf8_string(filename_bytes).into_owned();
             match read_current_package_file(env, &filename) {
                 Ok(file_data) => crate::lua::mrp_pushlstring(env, l, &file_data),
                 Err(_) => crate::lua::mrp_pushnil(env, l),
