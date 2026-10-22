@@ -7,9 +7,9 @@ use crate::mem::{ConstPtr, MutPtr, MutVoidPtr};
 use crate::mythroad::{
     disp_up_ex, draw_bitmap, draw_line, draw_rect, draw_text, mr_eff_set_con, mr_exit, mr_free,
     mr_malloc, mr_timer_start, mr_timer_stop, MrResult, MrRunState, MrUserInfo, BITMAPMAX,
-    SPRITEMAX,
+    MR_FILE_MAX_LEN, SPRITEMAX,
 };
-use crate::{dsm, encoding, font, mrp, Environment};
+use crate::{dsm, encoding, font, libc, mrp, Environment};
 
 use lunify::lua50::Dialect;
 use mlua::{
@@ -428,6 +428,94 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     })?;
     globals.set("dofile", dofile.clone())?;
     globals.set("_execFile", dofile)?;
+    let load_pack = create_api(lua, context, |lua, env, pack_name: mlua::LuaString| {
+        let old_pack_name = env
+            .mem
+            .cstr_at(env.mythroad.state.pack_filename.cast_const())
+            .to_vec();
+        let pack_name = env.mem.alloc_and_write_cstr(&pack_name.as_bytes());
+        libc::string::memset(
+            env,
+            env.mythroad.state.pack_filename.cast_void(),
+            0,
+            MR_FILE_MAX_LEN,
+        );
+        libc::string::strncpy(
+            env,
+            env.mythroad.state.pack_filename,
+            pack_name.cast_const(),
+            MR_FILE_MAX_LEN - 1,
+        );
+        env.mem.free(pack_name.cast_void());
+        env.package_cache = None;
+        lua.create_string(old_pack_name)
+    })?;
+    globals.set("_loadPack", load_pack.clone())?;
+    globals.set("LoadPack", load_pack)?;
+    let run_file = create_api(lua, context, |lua, env, arguments: MultiValue| {
+        let pack_name = mr_to_string(lua, &arguments, 1)?;
+        let start_filename = mr_to_string(lua, &arguments, 2)?;
+        let parameter = match arguments.get(2) {
+            None | Some(Value::Nil) => Vec::new(),
+            Some(_) => mr_to_string(lua, &arguments, 3)?.as_bytes().to_vec(),
+        };
+
+        let pack_name = env.mem.alloc_and_write_cstr(&pack_name.as_bytes());
+        let start_filename = env.mem.alloc_and_write_cstr(&start_filename.as_bytes());
+        let parameter = env.mem.alloc_and_write_cstr(&parameter);
+        libc::string::memset(
+            env,
+            env.mythroad.state.pack_filename.cast_void(),
+            0,
+            MR_FILE_MAX_LEN,
+        );
+        libc::string::strncpy(
+            env,
+            env.mythroad.state.pack_filename,
+            pack_name.cast_const(),
+            MR_FILE_MAX_LEN - 1,
+        );
+        libc::string::memset(
+            env,
+            env.mythroad.state.start_filename.cast_void(),
+            0,
+            MR_FILE_MAX_LEN,
+        );
+        libc::string::strncpy(
+            env,
+            env.mythroad.state.start_filename,
+            start_filename.cast_const(),
+            MR_FILE_MAX_LEN - 1,
+        );
+        libc::string::memset(
+            env,
+            env.mythroad.state.start_file_parameter.cast_void(),
+            0,
+            MR_FILE_MAX_LEN,
+        );
+        libc::string::strncpy(
+            env,
+            env.mythroad.state.start_file_parameter,
+            parameter.cast_const(),
+            MR_FILE_MAX_LEN - 1,
+        );
+        env.mem.free(pack_name.cast_void());
+        env.mem.free(start_filename.cast_void());
+        env.mem.free(parameter.cast_void());
+        env.package_cache = None;
+        env.mythroad
+            .state
+            .mr_timer_p
+            .set(&mut env.mem, env.mythroad.restart_timer_name);
+        mr_timer_start(env, 100);
+        env.mythroad
+            .state
+            .mr_state
+            .set(&mut env.mem, MrRunState::Restart as u32);
+        Ok(())
+    })?;
+    globals.set("_runFile", run_file.clone())?;
+    globals.set("RunFile", run_file)?;
     globals.set(
         "LoadTable",
         create_api(
