@@ -1589,12 +1589,12 @@ fn mr_do_ext(env: &mut Environment, filename: &str) -> i32 {
                 return MrResult::Failed as i32;
             }
 
-            mr_test_com_c(env, 801, addr, 0x7cd, 6);
+            mr_test_com_c(env, 801, addr, mrp::MR_VERSION_MINI, 6);
 
             let app_info = env.mythroad.state.app_info.ptr().cast_void();
             mr_test_com_c(env, 801, app_info, guest_size_of::<MrAppInfo>(), 8);
 
-            mr_test_com_c(env, 801, addr, 0x7cd, 0);
+            mr_test_com_c(env, 801, addr, mrp::MR_VERSION_MINI, 0);
 
             MrResult::Success as i32
         }
