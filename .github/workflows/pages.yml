@@ -42,7 +42,7 @@ jobs:
       - name: Build
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
-          cargo build -p skymrp_web --target wasm32-unknown-emscripten --release
+          cargo build -p skymrp_web --target wasm32-unknown-emscripten --release --features skymrp/lua
 
       - name: Prepare Pages artifact
         run: |

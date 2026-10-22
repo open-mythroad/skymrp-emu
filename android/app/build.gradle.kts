@@ -145,7 +145,7 @@ cargoNdk {
         "--lib",
         "--no-default-features",
         "--features",
-        "sdl2/bundled"
+        "sdl2/bundled,lua"
     )
 }
 
