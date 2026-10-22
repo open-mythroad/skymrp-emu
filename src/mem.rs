@@ -6,6 +6,7 @@
 mod allocator;
 
 use crate::mem::allocator::VMAllocator;
+use crate::mmio::Mmio;
 pub use allocator::{HeapAllocator, VMAllocError};
 
 pub type GuestUSize = u32;
@@ -219,6 +220,7 @@ pub const PAGE_SIZE: GuestUSize = 4096;
 
 pub struct Memory {
     bytes: *mut Bytes,
+    mmio: Mmio,
     heap_allocator: Option<HeapAllocator>,
     vm_allocator: VMAllocator,
 }
@@ -244,6 +246,7 @@ impl Memory {
         let vm_allocator = VMAllocator::new(0, Self::STACK_LOW_END);
         Memory {
             bytes,
+            mmio: Mmio::new(),
             vm_allocator,
             heap_allocator: None,
         }
@@ -410,7 +413,14 @@ impl Memory {
         T: SafeRead,
     {
         let size = std::mem::size_of::<T>().try_into().unwrap();
-        let slice = self.bytes_at(ptr.cast(), size);
+        let address = ptr.to_bits();
+        let slice = if address < LINEAR_MEMORY_SIZE {
+            self.bytes_at(ptr.cast(), size)
+        } else if let Some(slice) = self.mmio.bytes_at(address, size) {
+            slice
+        } else {
+            self.bytes_at(ptr.cast(), size)
+        };
         let ptr: *const T = slice.as_ptr().cast();
         unsafe { ptr.read_unaligned() }
     }
@@ -420,9 +430,20 @@ impl Memory {
     {
         let size = std::mem::size_of::<T>().try_into().unwrap();
         assert!(size > 0);
-        let slice = self.bytes_at_mut(ptr.cast(), size);
+        let address = ptr.to_bits();
+        let slice = if address < LINEAR_MEMORY_SIZE {
+            self.bytes_at_mut(ptr.cast(), size)
+        } else if let Some(slice) = self.mmio.bytes_at_mut(address, size) {
+            slice
+        } else {
+            self.bytes_at_mut(ptr.cast(), size)
+        };
         let ptr: *mut T = slice.as_mut_ptr().cast();
         unsafe { ptr.write_unaligned(value) }
+    }
+
+    pub fn mmio_mut(&mut self) -> &mut Mmio {
+        &mut self.mmio
     }
 
     /// C-style `memmove`.

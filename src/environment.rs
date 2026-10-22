@@ -192,6 +192,12 @@ impl Environment {
                 _ => {}
             }
 
+            match event {
+                Event::KeyDown(key) => self.mem.mmio_mut().set_keypad_key_state(key as u32, true),
+                Event::KeyUp(key) => self.mem.mmio_mut().set_keypad_key_state(key as u32, false),
+                _ => {}
+            }
+
             if self.mythroad.editbox.is_some() {
                 let result = self.handle_editbox_event(&event);
                 match result {

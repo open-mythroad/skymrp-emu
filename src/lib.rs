@@ -21,6 +21,7 @@ mod libc;
 mod lua;
 mod md5;
 mod mem;
+mod mmio;
 mod mrp;
 mod mythroad;
 mod options;
