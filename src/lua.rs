@@ -405,6 +405,15 @@ fn lua_test_com(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua
 }
 
 fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
+    register_base_apis(lua, context)?;
+    register_file_apis(lua, context)?;
+    register_string_apis(lua, context)?;
+    register_system_apis(lua, context)?;
+    register_graphics_apis(lua, context)?;
+    register_runtime_apis(lua, context)
+}
+
+fn register_base_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     let globals = lua.globals();
     let loadfile = create_api(lua, context, lua_loadfile)?;
     globals.set("loadfile", loadfile.clone())?;
@@ -554,6 +563,11 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
         globals.set(alias, function)?;
     }
 
+    Ok(())
+}
+
+fn register_file_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
+    let globals = lua.globals();
     let file_table = lua.create_table()?;
     file_table.set("close", lua.create_function(file::close)?)?;
     file_table.set(
@@ -566,6 +580,12 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     file_table.set("state", lua.create_function(file::state)?)?;
     file_table.set("readAll", create_api(lua, context, file::read_all)?)?;
     globals.set("file", file_table)?;
+
+    Ok(())
+}
+
+fn register_string_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
+    let globals = lua.globals();
     let string_table: Table = globals.get("string")?;
     string_table.set("pack", lua.create_function(string::pack)?)?;
     string_table.set("unpack", lua.create_function(string::unpack)?)?;
@@ -596,6 +616,12 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     string_table.set("pupdate", create_api(lua, context, string::pupdate)?)?;
     string_table.set("new", lua.create_function(string::new)?)?;
     string_table.set("set", lua.create_function(string::set)?)?;
+
+    Ok(())
+}
+
+fn register_system_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
+    let globals = lua.globals();
     let test_com = create_api(lua, context, lua_test_com)?;
     globals.set("_com", test_com.clone())?;
     globals.set("TestCom", test_com)?;
@@ -640,6 +666,17 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     globals.set("sys", sys_table)?;
     globals.set("GetDatetime", datetime)?;
 
+    // SAFETY: lua_test_com1 follows the Lua C function calling convention and
+    // accesses the current Environment only while with_lua keeps it active.
+    let str_com = unsafe { lua.create_c_function(lua_test_com1) }?;
+    globals.set("_strCom", str_com.clone())?;
+    globals.set("TestCom1", str_com)?;
+
+    Ok(())
+}
+
+fn register_graphics_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
+    let globals = lua.globals();
     let bitmap_load = create_api(lua, context, lua_bitmap_load)?;
     globals.set("_bmpLoad", bitmap_load.clone())?;
     globals.set("BitmapLoad", bitmap_load)?;
@@ -671,12 +708,12 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     let disp_up_ex_api = create_api(lua, context, lua_disp_up_ex)?;
     globals.set("_dispUpEx", disp_up_ex_api.clone())?;
     globals.set("DispUpEx", disp_up_ex_api)?;
-    // SAFETY: lua_test_com1 follows the Lua C function calling convention and
-    // accesses the current Environment only while with_lua keeps it active.
-    let str_com = unsafe { lua.create_c_function(lua_test_com1) }?;
-    globals.set("_strCom", str_com.clone())?;
-    globals.set("TestCom1", str_com)?;
 
+    Ok(())
+}
+
+fn register_runtime_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
+    let globals = lua.globals();
     globals.set(
         "_t",
         lua.create_function(|_, value: Value| {
