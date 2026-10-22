@@ -5,6 +5,10 @@
  */
 use mlua::{Lua, LuaString, MultiValue, Value, Variadic};
 
+use crate::mem::{MutPtr, LINEAR_MEMORY_SIZE};
+use crate::mythroad::mr_free;
+use crate::{encoding, Environment};
+
 #[derive(Clone, Copy)]
 enum Endian {
     Little,
@@ -112,6 +116,56 @@ fn align_position(position: usize, alignment: usize) -> mlua::Result<usize> {
         .checked_add(alignment - 1)
         .map(|position| position & !(alignment - 1))
         .ok_or_else(|| mlua::Error::runtime("packed data is too large"))
+}
+
+fn c_string_len(bytes: &[u8]) -> usize {
+    bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len())
+}
+
+fn wide_string_len(bytes: &[u8]) -> usize {
+    bytes
+        .chunks_exact(2)
+        .position(|unit| unit == [0, 0])
+        .map(|units| units * 2)
+        .unwrap_or(bytes.len())
+}
+
+pub(super) fn clen(_: &Lua, value: LuaString) -> mlua::Result<usize> {
+    Ok(c_string_len(&value.as_bytes()))
+}
+
+pub(super) fn wlen(_: &Lua, value: LuaString) -> mlua::Result<usize> {
+    Ok(wide_string_len(&value.as_bytes()))
+}
+
+pub(super) fn cstr(lua: &Lua, value: LuaString) -> mlua::Result<LuaString> {
+    let bytes = value.as_bytes();
+    lua.create_string(&bytes[..c_string_len(&bytes)])
+}
+
+pub(super) fn wstr(lua: &Lua, value: LuaString) -> mlua::Result<LuaString> {
+    let bytes = value.as_bytes();
+    lua.create_string(&bytes[..wide_string_len(&bytes)])
+}
+
+pub(super) fn pack_len(_: &Lua, format: LuaString) -> mlua::Result<usize> {
+    let format_bytes = format.as_bytes();
+    let mut format = PackFormat::new(format_bytes.as_ref())?;
+    let mut total_size = 0usize;
+
+    while let Some(field) = format.next_field()? {
+        if field.size == 0 {
+            return Err(mlua::Error::runtime("meet size 0, check 'c' , 's' or 'p'"));
+        }
+        total_size = align_position(total_size, field.alignment)?
+            .checked_add(field.size)
+            .ok_or_else(|| mlua::Error::runtime("packed data is too large"))?;
+    }
+
+    Ok(total_size)
 }
 
 pub(super) fn pack(
@@ -263,6 +317,154 @@ pub(super) fn unpack(
     Ok(MultiValue::from_vec(values))
 }
 
+pub(super) fn c2u(lua: &Lua, env: &mut Environment, value: LuaString) -> mlua::Result<LuaString> {
+    let input = env.mem.alloc_and_write_cstr(&value.as_bytes());
+    let converted = encoding::c2u(env, input.cast_const(), false);
+    env.mem.free(input.cast_void());
+    if converted.ptr.is_null() {
+        return Err(mlua::Error::runtime("Gb2312toUnicode failed"));
+    }
+
+    let output = lua.create_string(env.mem.bytes_at(converted.ptr.cast(), converted.size))?;
+    mr_free(env, converted.ptr.cast_void(), converted.size);
+    Ok(output)
+}
+
+pub(super) fn u2c(lua: &Lua, value: LuaString) -> mlua::Result<LuaString> {
+    let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len() / 2);
+    for pair in bytes.chunks_exact(2) {
+        if pair == [0, 0] || pair[0] != 0 {
+            break;
+        }
+        output.push(pair[1]);
+    }
+    lua.create_string(output)
+}
+
+fn relative_index(index: i32, len: usize) -> Option<usize> {
+    let index = if index < 0 {
+        i64::try_from(len).ok()?.checked_add(i64::from(index))?
+    } else {
+        i64::from(index).checked_sub(1)?
+    };
+    usize::try_from(index).ok()
+}
+
+fn update_range(
+    destination_len: usize,
+    source_len: usize,
+    offset: Option<i32>,
+    start: Option<i32>,
+    end: Option<i32>,
+) -> mlua::Result<(usize, usize, usize)> {
+    let offset = relative_index(offset.unwrap_or(1), destination_len)
+        .filter(|offset| *offset <= destination_len)
+        .ok_or_else(|| mlua::Error::runtime("update overflow"))?;
+    let start = relative_index(start.unwrap_or(1), source_len)
+        .filter(|start| *start <= source_len)
+        .ok_or_else(|| mlua::Error::runtime("update overflow"))?;
+    let end = relative_index(
+        end.unwrap_or_else(|| i32::try_from(source_len).unwrap_or(i32::MAX)),
+        source_len,
+    )
+    .filter(|end| *end < source_len)
+    .ok_or_else(|| mlua::Error::runtime("update overflow"))?;
+    if start > end {
+        return Err(mlua::Error::runtime("update overflow"));
+    }
+
+    let count = (end - start + 1).min(destination_len - offset);
+    Ok((offset, start, count))
+}
+
+pub(super) fn update(
+    _: &Lua,
+    (destination, source, offset, start, end): (
+        LuaString,
+        LuaString,
+        Option<i32>,
+        Option<i32>,
+        Option<i32>,
+    ),
+) -> mlua::Result<()> {
+    let destination = destination.as_bytes();
+    let source = source.as_bytes();
+    let (offset, start, count) = update_range(destination.len(), source.len(), offset, start, end)?;
+
+    // Mythroad intentionally exposes mutable Lua strings through this API.
+    unsafe {
+        std::ptr::copy(
+            source.as_ptr().add(start),
+            destination.as_ptr().cast_mut().add(offset),
+            count,
+        );
+    }
+    Ok(())
+}
+
+pub(super) fn pupdate(
+    _: &Lua,
+    env: &mut Environment,
+    (destination, destination_len, source, source_len, offset, start, end): (
+        u32,
+        u32,
+        u32,
+        u32,
+        Option<i32>,
+        Option<i32>,
+        Option<i32>,
+    ),
+) -> mlua::Result<()> {
+    let destination_len = usize::try_from(destination_len).map_err(mlua::Error::external)?;
+    let source_len = usize::try_from(source_len).map_err(mlua::Error::external)?;
+    let (offset, start, count) = update_range(destination_len, source_len, offset, start, end)?;
+    let count_u32 = u32::try_from(count).map_err(mlua::Error::external)?;
+    let destination = destination
+        .checked_add(u32::try_from(offset).map_err(mlua::Error::external)?)
+        .filter(|address| {
+            address
+                .checked_add(count_u32)
+                .is_some_and(|end| end <= LINEAR_MEMORY_SIZE)
+        })
+        .ok_or_else(|| mlua::Error::runtime("update overflow"))?;
+    let source = source
+        .checked_add(u32::try_from(start).map_err(mlua::Error::external)?)
+        .filter(|address| {
+            address
+                .checked_add(count_u32)
+                .is_some_and(|end| end <= LINEAR_MEMORY_SIZE)
+        })
+        .ok_or_else(|| mlua::Error::runtime("update overflow"))?;
+
+    let bytes = env
+        .mem
+        .bytes_at(MutPtr::<u8>::from_bits(source).cast_const(), count_u32)
+        .to_vec();
+    env.mem
+        .bytes_at_mut(MutPtr::from_bits(destination), count_u32)
+        .copy_from_slice(&bytes);
+    Ok(())
+}
+
+pub(super) fn new(lua: &Lua, len: u32) -> mlua::Result<LuaString> {
+    let len = usize::try_from(len).map_err(mlua::Error::external)?;
+    lua.create_string(vec![0; len])
+}
+
+pub(super) fn set(_: &Lua, (value, offset, byte): (LuaString, i32, i32)) -> mlua::Result<()> {
+    let bytes = value.as_bytes();
+    let offset = relative_index(offset, bytes.len())
+        .filter(|offset| *offset < bytes.len())
+        .ok_or_else(|| mlua::Error::runtime("set overflow"))?;
+
+    // This mirrors Mythroad's mutable-string extension.
+    unsafe {
+        bytes.as_ptr().cast_mut().add(offset).write(byte as u8);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,6 +478,33 @@ mod tests {
             .unwrap();
         string
             .set("unpack", lua.create_function(unpack).unwrap())
+            .unwrap();
+        string
+            .set("packLen", lua.create_function(pack_len).unwrap())
+            .unwrap();
+        string
+            .set("clen", lua.create_function(clen).unwrap())
+            .unwrap();
+        string
+            .set("wlen", lua.create_function(wlen).unwrap())
+            .unwrap();
+        string
+            .set("cstr", lua.create_function(cstr).unwrap())
+            .unwrap();
+        string
+            .set("wstr", lua.create_function(wstr).unwrap())
+            .unwrap();
+        string
+            .set("u2c", lua.create_function(u2c).unwrap())
+            .unwrap();
+        string
+            .set("update", lua.create_function(update).unwrap())
+            .unwrap();
+        string
+            .set("new", lua.create_function(new).unwrap())
+            .unwrap();
+        string
+            .set("set", lua.create_function(set).unwrap())
             .unwrap();
         lua
     }
@@ -330,6 +559,46 @@ mod tests {
                 assert(not pcall(string.unpack, "p", "abc"))
                 assert(not pcall(string.unpack, "@3I", "\0\0\0\0"))
                 assert(not pcall(string.pack, "q", 1))
+                "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    #[test]
+    fn pack_len_matches_mythroad_layout() {
+        string_lua()
+            .load(
+                r#"
+                assert(string.packLen("<bBhHiI") == 14)
+                assert(string.packLen(">@4bI") == 8)
+                assert(string.packLen("@4B I") == 8)
+                assert(not pcall(string.packLen, "s"))
+                "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    #[test]
+    fn mutable_string_extensions_match_mythroad_indices() {
+        string_lua()
+            .load(
+                r#"
+                local value = string.new(5)
+                string.set(value, 1, 65)
+                string.set(value, -1, 69)
+                string.update(value, "BCD", 2)
+                assert(string.byte(value, 1) == 65)
+                assert(string.byte(value, 2) == 66)
+                assert(string.byte(value, 3) == 67)
+                assert(string.byte(value, 4) == 68)
+                assert(string.byte(value, 5) == 69)
+                assert(string.clen("a\0b") == 1)
+                assert(string.wlen("\0A\0B\0\0") == 4)
+                assert(string.cstr("a\0b") == "a")
+                assert(string.wstr("\0A\0B\0\0") == "\0A\0B")
+                assert(string.u2c("\0A\0B\0\0") == "AB")
                 "#,
             )
             .exec()

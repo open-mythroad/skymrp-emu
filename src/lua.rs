@@ -25,7 +25,7 @@ use std::rc::Rc;
 use std::slice;
 
 mod file;
-mod string_pack;
+mod string;
 mod sys;
 
 pub(crate) struct LuaContext {
@@ -378,21 +378,6 @@ fn load_chunk(lua: &Lua, env: &mut Environment, filename: &str) -> Result<Functi
         .map_err(|err| err.to_string())
 }
 
-fn c_string_len(bytes: &[u8]) -> usize {
-    bytes
-        .iter()
-        .position(|&byte| byte == 0)
-        .unwrap_or(bytes.len())
-}
-
-fn wide_string_len(bytes: &[u8]) -> usize {
-    bytes
-        .chunks_exact(2)
-        .position(|unit| unit == [0, 0])
-        .map(|index| index * 2)
-        .unwrap_or(bytes.len())
-}
-
 fn lua_loadfile(
     lua: &Lua,
     env: &mut Environment,
@@ -571,32 +556,13 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     file_table.set("readAll", create_api(lua, context, file::read_all)?)?;
     globals.set("file", file_table)?;
     let string_table: Table = globals.get("string")?;
-    string_table.set("pack", lua.create_function(string_pack::pack)?)?;
-    string_table.set("unpack", lua.create_function(string_pack::unpack)?)?;
-    string_table.set(
-        "clen",
-        lua.create_function(|_, value: mlua::LuaString| Ok(c_string_len(&value.as_bytes())))?,
-    )?;
-    string_table.set(
-        "wlen",
-        lua.create_function(|_, value: mlua::LuaString| Ok(wide_string_len(&value.as_bytes())))?,
-    )?;
-    string_table.set(
-        "cstr",
-        lua.create_function(|lua, value: mlua::LuaString| {
-            let bytes = value.as_bytes();
-            let len = c_string_len(&bytes);
-            lua.create_string(&bytes[..len])
-        })?,
-    )?;
-    string_table.set(
-        "wstr",
-        lua.create_function(|lua, value: mlua::LuaString| {
-            let bytes = value.as_bytes();
-            let len = wide_string_len(&bytes);
-            lua.create_string(&bytes[..len])
-        })?,
-    )?;
+    string_table.set("pack", lua.create_function(string::pack)?)?;
+    string_table.set("unpack", lua.create_function(string::unpack)?)?;
+    string_table.set("packLen", lua.create_function(string::pack_len)?)?;
+    string_table.set("clen", lua.create_function(string::clen)?)?;
+    string_table.set("wlen", lua.create_function(string::wlen)?)?;
+    string_table.set("cstr", lua.create_function(string::cstr)?)?;
+    string_table.set("wstr", lua.create_function(string::wstr)?)?;
     string_table.set(
         "subV",
         create_api(lua, context, {
@@ -609,6 +575,16 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
             }
         })?,
     )?;
+    let find_ex: Function = string_table.get("gmatch")?;
+    string_table.set("findEx", find_ex)?;
+    let sub_ex: Function = string_table.get("gsub")?;
+    string_table.set("subEx", sub_ex)?;
+    string_table.set("c2u", create_api(lua, context, string::c2u)?)?;
+    string_table.set("u2c", lua.create_function(string::u2c)?)?;
+    string_table.set("update", lua.create_function(string::update)?)?;
+    string_table.set("pupdate", create_api(lua, context, string::pupdate)?)?;
+    string_table.set("new", lua.create_function(string::new)?)?;
+    string_table.set("set", lua.create_function(string::set)?)?;
     let test_com = create_api(lua, context, |_, env, (input0, input1): (u32, u32)| {
         Ok(dsm::test_com(env, 0, input0, input1))
     })?;
