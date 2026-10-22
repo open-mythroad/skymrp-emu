@@ -25,6 +25,7 @@ use std::rc::Rc;
 use std::slice;
 
 mod file;
+mod network;
 mod string;
 mod sys;
 
@@ -393,6 +394,16 @@ fn lua_loadfile(
     }
 }
 
+fn lua_test_com(lua: &Lua, env: &mut Environment, arguments: MultiValue) -> mlua::Result<Value> {
+    let input0 = mr_to_number(lua, &arguments, 1, 0)? as u32;
+    if input0 == 402 {
+        return network::init(lua);
+    }
+
+    let input1 = mr_to_number(lua, &arguments, 2, 0)? as u32;
+    Ok(Value::Integer(dsm::test_com(env, 0, input0, input1).into()))
+}
+
 fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     let globals = lua.globals();
     let loadfile = create_api(lua, context, lua_loadfile)?;
@@ -585,11 +596,10 @@ fn register_apis(lua: &Lua, context: &SharedLuaContext) -> mlua::Result<()> {
     string_table.set("pupdate", create_api(lua, context, string::pupdate)?)?;
     string_table.set("new", lua.create_function(string::new)?)?;
     string_table.set("set", lua.create_function(string::set)?)?;
-    let test_com = create_api(lua, context, |_, env, (input0, input1): (u32, u32)| {
-        Ok(dsm::test_com(env, 0, input0, input1))
-    })?;
+    let test_com = create_api(lua, context, lua_test_com)?;
     globals.set("_com", test_com.clone())?;
     globals.set("TestCom", test_com)?;
+    globals.set("_closeNet", create_api(lua, context, network::close)?)?;
     globals.set("_platEx", create_api(lua, context, lua_plat_ex)?)?;
     globals.set("_plat", create_api(lua, context, lua_plat)?)?;
     let get_sys_info = create_api(lua, context, lua_get_sys_info)?;
