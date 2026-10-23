@@ -6,6 +6,8 @@
 #[macro_use]
 mod log;
 mod abi;
+#[cfg(target_os = "android")]
+mod android;
 mod audio;
 mod cpu;
 mod dsm;

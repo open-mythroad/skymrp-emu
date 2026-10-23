@@ -116,7 +116,7 @@ class LauncherActivity : ComponentActivity() {
         File(Environment.getExternalStorageDirectory(), "mythroad")
     }
     private val mrpFileScanner by lazy {
-        MrpFileScanner(mythroadDirectory)
+        MrpFileScanner(mythroadDirectory, NativeMrpMetadataReader)
     }
 
     private val allFilesAccessLauncher = registerForActivityResult(
