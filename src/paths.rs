@@ -10,9 +10,6 @@ const COOKIE_MRP_PATH: &str = "mythroad/cookie.mrp";
 #[cfg(target_os = "android")]
 const USER_DATA_PATH_ENV: &str = "SKYMRP_USER_DATA_PATH";
 
-#[cfg(target_os = "android")]
-const USER_DATA_URI: &str = "content://org.skymrp.android.provider/root/root";
-
 fn user_data_base_path() -> Result<PathBuf, String> {
     #[cfg(target_os = "android")]
     {
@@ -40,25 +37,18 @@ pub fn ensure_mythroad_dir() -> Result<(), String> {
         .map_err(|e| format!("Could not create {}: {e}", directory.display()))
 }
 
+#[cfg(not(target_os = "android"))]
 pub fn url_for_opening_user_data_dir() -> Result<String, String> {
-    #[cfg(target_os = "android")]
-    {
-        Ok(USER_DATA_URI.to_owned())
-    }
-
-    #[cfg(not(target_os = "android"))]
-    {
-        let path = user_data_base_path()?
-            .canonicalize()
-            .map_err(|e| format!("Could not resolve user data directory: {e}"))?;
-        let path = path
-            .to_str()
-            .ok_or_else(|| "User data directory path is not UTF-8".to_owned())?;
-        let path = if cfg!(target_os = "windows") {
-            path.strip_prefix(r"\\?\").unwrap_or(path)
-        } else {
-            path
-        };
-        Ok(format!("file://{path}"))
-    }
+    let path = user_data_base_path()?
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve user data directory: {e}"))?;
+    let path = path
+        .to_str()
+        .ok_or_else(|| "User data directory path is not UTF-8".to_owned())?;
+    let path = if cfg!(target_os = "windows") {
+        path.strip_prefix(r"\\?\").unwrap_or(path)
+    } else {
+        path
+    };
+    Ok(format!("file://{path}"))
 }

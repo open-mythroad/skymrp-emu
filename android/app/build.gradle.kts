@@ -17,14 +17,9 @@ plugins {
 android {
     ndkVersion = "25.2.9519653"
     compileSdk = 31
-    buildFeatures {
-        buildConfig = true
-    }
     defaultConfig {
         resValue("string", "app_name", "SkyMRP")
-        buildConfigField("String", "APP_NAME", "\"SkyMRP\"")
         manifestPlaceholders["icon"] = "@drawable/icon"
-        buildConfigField("int", "APP_ICON", "R.drawable.icon")
         versionName = "0.3.1"
 
         minSdk = 21

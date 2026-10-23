@@ -103,17 +103,6 @@
             -->
         </activity>
 
-        <provider
-            android:name="org.skymrp.android.DocumentsProvider"
-            android:authorities="${applicationId}.provider"
-            android:exported="true"
-            android:grantUriPermissions="true"
-            android:icon="${icon}"
-            android:permission="android.permission.MANAGE_DOCUMENTS">
-            <intent-filter>
-                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
-            </intent-filter>
-        </provider>
     </application>
 
 </manifest>

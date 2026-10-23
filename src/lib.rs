@@ -89,6 +89,7 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         } else {
             echo!("MRP file not found: {}", cookie_path.display());
 
+            #[cfg(not(target_os = "android"))]
             let buttons = [
                 sdl2::messagebox::ButtonData {
                     flags: sdl2::messagebox::MessageBoxButtonFlag::RETURNKEY_DEFAULT,
@@ -101,6 +102,12 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
                     text: "Close",
                 },
             ];
+            #[cfg(target_os = "android")]
+            let buttons = [sdl2::messagebox::ButtonData {
+                flags: sdl2::messagebox::MessageBoxButtonFlag::RETURNKEY_DEFAULT,
+                button_id: 1,
+                text: "Close",
+            }];
             let clicked_button = sdl2::messagebox::show_message_box(
                 sdl2::messagebox::MessageBoxFlag::WARNING,
                 &buttons,
@@ -116,6 +123,7 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
                 )
             })?;
 
+            #[cfg(not(target_os = "android"))]
             if matches!(
                 clicked_button,
                 sdl2::messagebox::ClickedButton::CustomButton(button) if button.button_id == 0
@@ -124,6 +132,8 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
                 sdl2::url::open_url(&url)
                     .map_err(|e| format!("Could not open SkyMRP folder: {e}"))?;
             }
+            #[cfg(target_os = "android")]
+            let _ = clicked_button;
             return Ok(());
         }
     };
