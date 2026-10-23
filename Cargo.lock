@@ -608,7 +608,7 @@ checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
 name = "skymrp"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "arm32_cpu",
  "cc",
@@ -630,7 +630,7 @@ dependencies = [
 
 [[package]]
 name = "skymrp_dynarmic_wrapper"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "cc",
  "cmake",
@@ -638,14 +638,14 @@ dependencies = [
 
 [[package]]
 name = "skymrp_sonivox_wrapper"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "cmake",
 ]
 
 [[package]]
 name = "skymrp_web"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "skymrp",
 ]

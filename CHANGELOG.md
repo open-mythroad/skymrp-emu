@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.0
+
+- Enabled the experimental `lua` feature in release builds.
+- Expanded Mythroad Lua support for files, strings, graphics, bitmaps, system APIs,
+  package loading, and application lifecycle.
+- The Full VM is not yet a complete implementation of the Mythroad Lua runtime and
+  APIs. Compatibility may vary, and some applications may be unstable.
+
+### Android
+
+Enhanced the Android app experience with:
+
+- An MRP launcher for searching and browsing apps, importing packages, renaming or
+  deleting files, and creating home screen shortcuts.
+- Quick launcher access through the `*#*#220807#*#*` Android secret code.
+- Configurable screen resolutions and virtual keypad layouts.
+- A choice between the Mini VM and experimental Full VM runtimes.
+
 ## v0.3.1
 
 - Added WebAssembly support for running MRP apps in web browsers.
