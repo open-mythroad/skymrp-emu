@@ -49,28 +49,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-internal const val SETTINGS_PREFERENCES = "skymrp_settings"
-internal const val FULL_VM_ENABLED = "full_vm_enabled"
-internal const val SCREEN_RESOLUTION = "screen_resolution"
-internal const val DEFAULT_SCREEN_RESOLUTION = "240x320"
-
 private data class ScreenResolution(
-    val width: Int,
-    val height: Int,
+    val value: String,
 ) {
-    val value = "${width}x${height}"
-    val label = "$width \u00d7 $height"
+    val label = value.replace("x", " \u00d7 ")
 }
 
-private val screenResolutions = listOf(
-    ScreenResolution(128, 160),
-    ScreenResolution(176, 220),
-    ScreenResolution(240, 320),
-    ScreenResolution(240, 400),
-    ScreenResolution(320, 240),
-    ScreenResolution(320, 480),
-    ScreenResolution(480, 800),
-)
+private val screenResolutions =
+    EmulatorSettings.SCREEN_RESOLUTIONS.map(::ScreenResolution)
 
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,28 +70,28 @@ class SettingsActivity : ComponentActivity() {
                 val context = LocalContext.current
                 val preferences = remember(context) {
                     context.getSharedPreferences(
-                        SETTINGS_PREFERENCES,
+                        EmulatorSettings.PREFERENCES,
                         Context.MODE_PRIVATE,
                     )
                 }
                 var fullVmEnabled by remember {
                     mutableStateOf(
-                        preferences.getBoolean(FULL_VM_ENABLED, false),
+                        preferences.getBoolean(EmulatorSettings.FULL_VM_ENABLED, false),
                     )
                 }
                 var screenResolution by remember {
                     mutableStateOf(
                         preferences.getString(
-                            SCREEN_RESOLUTION,
-                            DEFAULT_SCREEN_RESOLUTION,
-                        ) ?: DEFAULT_SCREEN_RESOLUTION,
+                            EmulatorSettings.SCREEN_RESOLUTION,
+                            EmulatorSettings.DEFAULT_SCREEN_RESOLUTION,
+                        ) ?: EmulatorSettings.DEFAULT_SCREEN_RESOLUTION,
                     )
                 }
                 var resolutionMenuExpanded by remember { mutableStateOf(false) }
                 val onFullVmEnabledChange: (Boolean) -> Unit = { enabled ->
                     fullVmEnabled = enabled
                     preferences.edit()
-                        .putBoolean(FULL_VM_ENABLED, enabled)
+                        .putBoolean(EmulatorSettings.FULL_VM_ENABLED, enabled)
                         .apply()
                 }
 
@@ -231,7 +217,7 @@ class SettingsActivity : ComponentActivity() {
                                                 screenResolution = resolution.value
                                                 preferences.edit()
                                                     .putString(
-                                                        SCREEN_RESOLUTION,
+                                                        EmulatorSettings.SCREEN_RESOLUTION,
                                                         resolution.value,
                                                     )
                                                     .apply()

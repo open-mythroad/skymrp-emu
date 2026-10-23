@@ -254,7 +254,7 @@ class LauncherActivity : ComponentActivity() {
                             query = ""
                         } else {
                             val preferences = getSharedPreferences(
-                                SETTINGS_PREFERENCES,
+                                EmulatorSettings.PREFERENCES,
                                 MODE_PRIVATE,
                             )
                             startActivity(
@@ -264,13 +264,23 @@ class LauncherActivity : ComponentActivity() {
                                     putExtra(
                                         MainActivity.EXTRA_SCREEN_RESOLUTION,
                                         preferences.getString(
-                                            SCREEN_RESOLUTION,
-                                            DEFAULT_SCREEN_RESOLUTION,
-                                        ) ?: DEFAULT_SCREEN_RESOLUTION,
+                                            EmulatorSettings.SCREEN_RESOLUTION,
+                                            EmulatorSettings.DEFAULT_SCREEN_RESOLUTION,
+                                        ) ?: EmulatorSettings.DEFAULT_SCREEN_RESOLUTION,
                                     )
                                     putExtra(
                                         MainActivity.EXTRA_FULL_VM_ENABLED,
-                                        preferences.getBoolean(FULL_VM_ENABLED, false),
+                                        preferences.getBoolean(
+                                            EmulatorSettings.FULL_VM_ENABLED,
+                                            false,
+                                        ),
+                                    )
+                                    putExtra(
+                                        MainActivity.EXTRA_KEYPAD_MODE,
+                                        preferences.getString(
+                                            EmulatorSettings.KEYPAD_MODE,
+                                            EmulatorSettings.DEFAULT_KEYPAD_MODE,
+                                        ) ?: EmulatorSettings.DEFAULT_KEYPAD_MODE,
                                     )
                                 },
                             )

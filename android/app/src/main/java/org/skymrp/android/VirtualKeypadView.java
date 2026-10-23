@@ -22,11 +22,32 @@ import org.libsdl.app.SDLActivity;
 final class VirtualKeypadView extends View {
     private static final int PHONE_COLUMN_COUNT = 3;
     private static final int COMPACT_COLUMN_COUNT = 6;
-    private static final int TABLET_MIN_WIDTH_DP = 600;
-    private static final float COMPACT_MIN_ASPECT_RATIO = 1.5f;
     private static final float COMPACT_MAX_KEY_WIDTH_DP = 96;
     private static final float COMPACT_MAX_KEY_HEIGHT_DP = 56;
     private static final float COMPACT_GROUP_GAP_DP = 16;
+    private static final float FULL_HEIGHT_DP = 336;
+    private static final float COMPACT_HEIGHT_DP = 240;
+
+    enum LayoutMode {
+        FULL("full"),
+        COMPACT("compact"),
+        NONE("none");
+
+        final String value;
+
+        LayoutMode(String value) {
+            this.value = value;
+        }
+
+        static LayoutMode fromValue(String value) {
+            for (LayoutMode mode : values()) {
+                if (mode.value.equals(value)) {
+                    return mode;
+                }
+            }
+            return COMPACT;
+        }
+    }
 
     private static final Key[] KEYS = {
         new Key("=", KeyEvent.KEYCODE_LEFT_BRACKET),
@@ -58,6 +79,7 @@ final class VirtualKeypadView extends View {
     private final int[] pressCounts = new int[KEYS.length];
     private final SparseIntArray pointerKeys = new SparseIntArray();
     private final float density;
+    private LayoutMode layoutMode = LayoutMode.COMPACT;
 
     VirtualKeypadView(Context context) {
         this(context, null);
@@ -83,11 +105,7 @@ final class VirtualKeypadView extends View {
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
 
-        boolean tabletLayout =
-            getResources().getConfiguration().smallestScreenWidthDp
-                >= TABLET_MIN_WIDTH_DP;
-        boolean compactLayout =
-            tabletLayout || width / (float) height >= COMPACT_MIN_ASPECT_RATIO;
+        boolean compactLayout = layoutMode == LayoutMode.COMPACT;
         int columnCount = compactLayout ? COMPACT_COLUMN_COUNT : PHONE_COLUMN_COUNT;
         int rowCount = compactLayout ? 4 : 7;
         float gap = dp(5);
@@ -137,6 +155,22 @@ final class VirtualKeypadView extends View {
         }
 
         textPaint.setTextSize(Math.min(dp(18), keyHeight * 0.32f));
+    }
+
+    void setLayoutMode(LayoutMode mode) {
+        if (layoutMode == mode) {
+            return;
+        }
+        releaseAllKeys();
+        layoutMode = mode;
+        requestLayout();
+    }
+
+    int getPreferredHeight() {
+        float height = layoutMode == LayoutMode.COMPACT
+            ? COMPACT_HEIGHT_DP
+            : FULL_HEIGHT_DP;
+        return Math.round(dp(height));
     }
 
     @Override

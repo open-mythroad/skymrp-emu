@@ -62,6 +62,7 @@
 
     <application
         android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
         android:hardwareAccelerated="true"
         android:icon="${icon}"
         android:label="@string/app_name"
