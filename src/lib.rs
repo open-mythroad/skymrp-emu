@@ -6,6 +6,8 @@
 #[macro_use]
 mod log;
 mod abi;
+#[cfg(target_os = "android")]
+mod android;
 mod audio;
 mod cpu;
 mod dsm;
@@ -31,6 +33,8 @@ mod syscall;
 mod window;
 
 use environment::Environment;
+#[cfg(target_os = "android")]
+use std::ffi::CStr;
 use std::path::PathBuf;
 
 /// This is the true entry point on Android (SDLActivity calls it after
@@ -38,10 +42,30 @@ use std::path::PathBuf;
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "C" fn SDL_main(
-    _argc: std::ffi::c_int,
-    _argv: *const *const std::ffi::c_char,
+    argc: std::ffi::c_int,
+    argv: *const *const std::ffi::c_char,
 ) -> std::ffi::c_int {
-    match main([String::new()].into_iter()) {
+    let args = if argc > 0 && !argv.is_null() {
+        let raw_args = unsafe { std::slice::from_raw_parts(argv, argc as usize) };
+        raw_args
+            .iter()
+            .filter_map(|arg| {
+                if arg.is_null() {
+                    None
+                } else {
+                    Some(
+                        unsafe { CStr::from_ptr(*arg) }
+                            .to_string_lossy()
+                            .into_owned(),
+                    )
+                }
+            })
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+
+    match main(args.into_iter()) {
         Ok(_) => echo!("skymrp finished"),
         Err(e) => echo!("skymrp error: {e:?}"),
     }
@@ -83,12 +107,16 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         mrp_path
     } else {
         paths::ensure_mythroad_dir()?;
-        let cookie_path = paths::cookie_mrp_path()?;
-        if cookie_path.is_file() {
+        let [dsm_gm_path, cookie_path] = paths::default_mrp_paths()?;
+        if dsm_gm_path.is_file() {
+            dsm_gm_path
+        } else if cookie_path.is_file() {
             cookie_path
         } else {
-            echo!("MRP file not found: {}", cookie_path.display());
+            let expected_paths = format!("{} / {}", dsm_gm_path.display(), cookie_path.display());
+            echo!("MRP file not found: {expected_paths}");
 
+            #[cfg(not(target_os = "android"))]
             let buttons = [
                 sdl2::messagebox::ButtonData {
                     flags: sdl2::messagebox::MessageBoxButtonFlag::RETURNKEY_DEFAULT,
@@ -101,21 +129,23 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
                     text: "Close",
                 },
             ];
+            #[cfg(target_os = "android")]
+            let buttons = [sdl2::messagebox::ButtonData {
+                flags: sdl2::messagebox::MessageBoxButtonFlag::RETURNKEY_DEFAULT,
+                button_id: 1,
+                text: "Close",
+            }];
             let clicked_button = sdl2::messagebox::show_message_box(
                 sdl2::messagebox::MessageBoxFlag::WARNING,
                 &buttons,
                 "MRP File Not Found",
-                "Place cookie.mrp in the mythroad folder.\n",
+                "Place dsm_gm.mrp / cookie.mrp in the mythroad folder.\n",
                 None,
                 None,
             )
-            .map_err(|e| {
-                format!(
-                    "Message box for {} could not be shown: {e}",
-                    cookie_path.display()
-                )
-            })?;
+            .map_err(|e| format!("Message box for {expected_paths} could not be shown: {e}"))?;
 
+            #[cfg(not(target_os = "android"))]
             if matches!(
                 clicked_button,
                 sdl2::messagebox::ClickedButton::CustomButton(button) if button.button_id == 0
@@ -124,6 +154,8 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
                 sdl2::url::open_url(&url)
                     .map_err(|e| format!("Could not open SkyMRP folder: {e}"))?;
             }
+            #[cfg(target_os = "android")]
+            let _ = clicked_button;
             return Ok(());
         }
     };

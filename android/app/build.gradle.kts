@@ -12,19 +12,18 @@ plugins {
     id("com.android.application") version("8.10.1")
     id("com.github.willir.rust.cargo-ndk-android") version("0.3.4")
     id("org.jetbrains.kotlin.android") version("2.0.21")
+    id("org.jetbrains.kotlin.plugin.compose") version("2.0.21")
 }
 
 android {
     ndkVersion = "25.2.9519653"
-    compileSdk = 31
+    compileSdk = 35
     buildFeatures {
-        buildConfig = true
+        compose = true
     }
     defaultConfig {
         resValue("string", "app_name", "SkyMRP")
-        buildConfigField("String", "APP_NAME", "\"SkyMRP\"")
         manifestPlaceholders["icon"] = "@drawable/icon"
-        buildConfigField("int", "APP_ICON", "R.drawable.icon")
         versionName = "0.3.1"
 
         minSdk = 21
@@ -153,4 +152,9 @@ dependencies {
     implementation(fileTree("libs") {
         include("*.jar")
     })
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.material:material:1.7.6")
+    implementation("androidx.compose.material:material-icons-core:1.7.6")
+    implementation("androidx.compose.ui:ui-tooling-preview:1.7.6")
+    debugImplementation("androidx.compose.ui:ui-tooling:1.7.6")
 }

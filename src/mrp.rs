@@ -8,6 +8,8 @@ use crate::fs::{GuestPath, GuestPathBuf};
 use crate::gzip;
 use crate::mem::{Memory, MutPtr};
 use std::collections::HashMap;
+use std::io::Read;
+use std::path::Path;
 
 pub const MR_START_FILE_NAME: &str = "start.mr";
 pub const START_FILE_NAME: &str = "cfunction.ext";
@@ -18,10 +20,17 @@ pub const MRP_SIGNATURE: &str = "\x1bMRP";
 const MRP_MAGIC: &[u8; 4] = b"MRPG";
 const MRP_HEADER_SIZE: usize = 16;
 const LEGACY_MRP_HEADER_SIZE: usize = 8;
+const MRP_DISPLAY_NAME_OFFSET: usize = 28;
+const MRP_DISPLAY_NAME_SIZE: usize = 24;
+const MRP_VENDOR_OFFSET: usize = 88;
+const MRP_VENDOR_SIZE: usize = 40;
+const MRP_DESCRIPTION_OFFSET: usize = 128;
+const MRP_DESCRIPTION_SIZE: usize = 64;
 const MRP_APP_ID_OFFSET: usize = 192;
 const MRP_APP_VERSION_OFFSET: usize = 196;
 const MRP_RAM_OFFSET: usize = 228;
 const MRP_RAM_CHECK_OFFSET: usize = 230;
+const MRP_METADATA_SIZE: usize = MRP_RAM_CHECK_OFFSET + 2;
 
 #[derive(Debug)]
 pub struct PackageCache {
@@ -45,6 +54,16 @@ pub struct MrpEntry {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MrpAppInfo {
+    pub id: u32,
+    pub version: u32,
+    pub ram: u32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MrpMetadata {
+    pub name: String,
+    pub vendor: String,
+    pub description: String,
     pub id: u32,
     pub version: u32,
     pub ram: u32,
@@ -108,8 +127,20 @@ pub fn find_entry(data: &[u8], name: &str) -> Result<Option<MrpEntry>, String> {
 }
 
 pub fn read_app_info(data: &[u8]) -> Result<MrpAppInfo, String> {
+    let metadata = read_metadata(data)?;
+    Ok(MrpAppInfo {
+        id: metadata.id,
+        version: metadata.version,
+        ram: metadata.ram,
+    })
+}
+
+pub fn read_metadata(data: &[u8]) -> Result<MrpMetadata, String> {
     MrpHeader::parse(data)?;
 
+    let name = read_gbk_field(data, MRP_DISPLAY_NAME_OFFSET, MRP_DISPLAY_NAME_SIZE);
+    let vendor = read_gbk_field(data, MRP_VENDOR_OFFSET, MRP_VENDOR_SIZE);
+    let description = read_gbk_field(data, MRP_DESCRIPTION_OFFSET, MRP_DESCRIPTION_SIZE);
     let id = read_u32_be(data, MRP_APP_ID_OFFSET).unwrap_or_default();
     let version = read_u32_be(data, MRP_APP_VERSION_OFFSET).unwrap_or_default();
     let ram = match (
@@ -131,7 +162,25 @@ pub fn read_app_info(data: &[u8]) -> Result<MrpAppInfo, String> {
         _ => 0,
     };
 
-    Ok(MrpAppInfo { id, version, ram })
+    Ok(MrpMetadata {
+        name,
+        vendor,
+        description,
+        id,
+        version,
+        ram,
+    })
+}
+
+pub fn read_metadata_from_file(path: &Path) -> Result<MrpMetadata, String> {
+    let mut file = std::fs::File::open(path)
+        .map_err(|error| format!("Could not open MRP file {}: {error}", path.display()))?;
+    let mut data = Vec::with_capacity(MRP_METADATA_SIZE);
+    file.by_ref()
+        .take(MRP_METADATA_SIZE as u64)
+        .read_to_end(&mut data)
+        .map_err(|error| format!("Could not read MRP file {}: {error}", path.display()))?;
+    read_metadata(&data)
 }
 
 pub fn parse_entries(data: &[u8]) -> Result<HashMap<String, MrpEntry>, String> {
@@ -343,4 +392,57 @@ fn read_u32_be(data: &[u8], offset: usize) -> Result<u32, String> {
     Ok(u32::from_be_bytes(bytes.try_into().expect(
         "slice length was checked before converting to u32",
     )))
+}
+
+fn read_gbk_field(data: &[u8], offset: usize, size: usize) -> String {
+    let Some(field) = data.get(offset..offset + size) else {
+        return String::new();
+    };
+    let bytes = field.split(|byte| *byte == 0).next().unwrap_or(field);
+    encoding::gb_to_utf8_string(bytes).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_metadata_and_projects_app_info() {
+        let mut data = vec![0; MRP_METADATA_SIZE];
+        data[0..4].copy_from_slice(MRP_MAGIC);
+        data[4..8].copy_from_slice(&(MRP_METADATA_SIZE as u32).to_le_bytes());
+        data[MRP_DISPLAY_NAME_OFFSET..MRP_DISPLAY_NAME_OFFSET + 10].copy_from_slice(b"HelloWorld");
+        data[MRP_VENDOR_OFFSET..MRP_VENDOR_OFFSET + 8]
+            .copy_from_slice(&[0xba, 0xbc, 0xd6, 0xdd, 0xcb, 0xb9, 0xbf, 0xad]);
+        data[MRP_DESCRIPTION_OFFSET..MRP_DESCRIPTION_OFFSET + 12].copy_from_slice(b"Classic game");
+        data[MRP_APP_ID_OFFSET..MRP_APP_ID_OFFSET + 4].copy_from_slice(&310_013_u32.to_be_bytes());
+        data[MRP_APP_VERSION_OFFSET..MRP_APP_VERSION_OFFSET + 4]
+            .copy_from_slice(&1_001_u32.to_be_bytes());
+
+        let metadata = read_metadata(&data).unwrap();
+        assert_eq!(metadata.name, "HelloWorld");
+        assert_eq!(metadata.vendor, "杭州斯凯");
+        assert_eq!(metadata.description, "Classic game");
+        assert_eq!(metadata.id, 310_013);
+        assert_eq!(metadata.version, 1_001);
+
+        let app_info = read_app_info(&data).unwrap();
+        assert_eq!(app_info.id, metadata.id);
+        assert_eq!(app_info.version, metadata.version);
+        assert_eq!(app_info.ram, metadata.ram);
+    }
+
+    #[test]
+    fn missing_extended_fields_keep_default_values() {
+        let mut data = vec![0; MRP_HEADER_SIZE];
+        data[0..4].copy_from_slice(MRP_MAGIC);
+
+        let metadata = read_metadata(&data).unwrap();
+        assert_eq!(metadata.name, "");
+        assert_eq!(metadata.vendor, "");
+        assert_eq!(metadata.description, "");
+        assert_eq!(metadata.id, 0);
+        assert_eq!(metadata.version, 0);
+        assert_eq!(metadata.ram, 0);
+    }
 }

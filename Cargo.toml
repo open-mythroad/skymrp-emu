@@ -52,6 +52,9 @@ skymrp_sonivox_wrapper = { path = "src/audio/sonivox_wrapper" }
 [target.'cfg(any(target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
 skymrp_dynarmic_wrapper = { path = "src/cpu/dynarmic_wrapper" }
 
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
 [build-dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 cc = { workspace = true }
