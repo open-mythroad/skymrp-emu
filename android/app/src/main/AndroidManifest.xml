@@ -111,6 +111,18 @@
             -->
         </activity>
 
+        <receiver
+            android:name="org.skymrp.android.SecretCodeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SECRET_CODE" />
+                <action android:name="android.telephony.action.SECRET_CODE" />
+                <data
+                    android:host="220807"
+                    android:scheme="android_secret_code" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

@@ -107,11 +107,14 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         mrp_path
     } else {
         paths::ensure_mythroad_dir()?;
-        let cookie_path = paths::cookie_mrp_path()?;
-        if cookie_path.is_file() {
+        let [dsm_gm_path, cookie_path] = paths::default_mrp_paths()?;
+        if dsm_gm_path.is_file() {
+            dsm_gm_path
+        } else if cookie_path.is_file() {
             cookie_path
         } else {
-            echo!("MRP file not found: {}", cookie_path.display());
+            let expected_paths = format!("{} / {}", dsm_gm_path.display(), cookie_path.display());
+            echo!("MRP file not found: {expected_paths}");
 
             #[cfg(not(target_os = "android"))]
             let buttons = [
@@ -136,16 +139,11 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
                 sdl2::messagebox::MessageBoxFlag::WARNING,
                 &buttons,
                 "MRP File Not Found",
-                "Place cookie.mrp in the mythroad folder.\n",
+                "Place dsm_gm.mrp / cookie.mrp in the mythroad folder.\n",
                 None,
                 None,
             )
-            .map_err(|e| {
-                format!(
-                    "Message box for {} could not be shown: {e}",
-                    cookie_path.display()
-                )
-            })?;
+            .map_err(|e| format!("Message box for {expected_paths} could not be shown: {e}"))?;
 
             #[cfg(not(target_os = "android"))]
             if matches!(
