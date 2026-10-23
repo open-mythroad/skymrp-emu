@@ -146,7 +146,9 @@ impl Environment {
     #[cfg(not(target_os = "emscripten"))]
     fn run_event_loop(&mut self) {
         loop {
-            self.event_loop_tick();
+            if !self.event_loop_tick() {
+                return;
+            }
 
             let mr_state = self.mythroad.state.mr_state.get(&self.mem);
             if mr_state == mythroad::MrRunState::Stop as u32 {
@@ -172,15 +174,15 @@ impl Environment {
     #[cfg(target_os = "emscripten")]
     extern "C" fn web_loop(arg: *mut std::ffi::c_void) {
         let env = unsafe { &mut *arg.cast::<Environment>() };
-        env.event_loop_tick();
+        let _ = env.event_loop_tick();
     }
 
-    fn event_loop_tick(&mut self) {
+    fn event_loop_tick(&mut self) -> bool {
         self.window.poll_for_events(self.mythroad.editbox.is_some());
 
         while let Some(event) = self.window.pop_event() {
             match event {
-                Event::Quit => panic!("User requested quit, exiting..."),
+                Event::Quit => return false,
                 Event::AppWillEnterBackground => {
                     dsm::mr_pause_app(self);
                     continue;
@@ -242,6 +244,7 @@ impl Environment {
         }
 
         dsm::mr_timer(self);
+        true
     }
 
     fn handle_editbox_event(&mut self, event: &Event) -> editbox::EditResult {

@@ -31,6 +31,8 @@ mod syscall;
 mod window;
 
 use environment::Environment;
+#[cfg(target_os = "android")]
+use std::ffi::CStr;
 use std::path::PathBuf;
 
 /// This is the true entry point on Android (SDLActivity calls it after
@@ -38,10 +40,30 @@ use std::path::PathBuf;
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "C" fn SDL_main(
-    _argc: std::ffi::c_int,
-    _argv: *const *const std::ffi::c_char,
+    argc: std::ffi::c_int,
+    argv: *const *const std::ffi::c_char,
 ) -> std::ffi::c_int {
-    match main([String::new()].into_iter()) {
+    let args = if argc > 0 && !argv.is_null() {
+        let raw_args = unsafe { std::slice::from_raw_parts(argv, argc as usize) };
+        raw_args
+            .iter()
+            .filter_map(|arg| {
+                if arg.is_null() {
+                    None
+                } else {
+                    Some(
+                        unsafe { CStr::from_ptr(*arg) }
+                            .to_string_lossy()
+                            .into_owned(),
+                    )
+                }
+            })
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+
+    match main(args.into_iter()) {
         Ok(_) => echo!("skymrp finished"),
         Err(e) => echo!("skymrp error: {e:?}"),
     }

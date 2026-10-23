@@ -8,11 +8,15 @@
  */
 package org.skymrp.android;
 
+import android.app.ActionBar;
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Environment;
+import android.util.TypedValue;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManager;
+import android.widget.FrameLayout;
 import android.widget.RelativeLayout;
 
 import org.libsdl.app.SDLActivity;
@@ -22,11 +26,21 @@ import org.libsdl.app.SDLActivity;
  */
 
 public class MainActivity extends SDLActivity {
-    private static final int MRP_SCREEN_WIDTH = 240;
-    private static final int MRP_SCREEN_HEIGHT = 320;
+    public static final String EXTRA_MRP_PATH = "org.skymrp.android.extra.MRP_PATH";
+    public static final String EXTRA_MRP_TITLE = "org.skymrp.android.extra.MRP_TITLE";
+    public static final String EXTRA_SCREEN_RESOLUTION =
+        "org.skymrp.android.extra.SCREEN_RESOLUTION";
+    public static final String EXTRA_FULL_VM_ENABLED =
+        "org.skymrp.android.extra.FULL_VM_ENABLED";
+
+    private static final int DEFAULT_SCREEN_WIDTH = 240;
+    private static final int DEFAULT_SCREEN_HEIGHT = 320;
     private static final int COMMAND_SET_VIRTUAL_KEYPAD_VISIBLE = COMMAND_USER;
 
     private VirtualKeypadView virtualKeypad;
+    private CharSequence mrpTitle;
+    private int screenWidth = DEFAULT_SCREEN_WIDTH;
+    private int screenHeight = DEFAULT_SCREEN_HEIGHT;
 
     @Override
     protected String[] getLibraries() {
@@ -38,13 +52,24 @@ public class MainActivity extends SDLActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        Intent intent = getIntent();
+        mrpTitle = intent.getStringExtra(EXTRA_MRP_TITLE);
+        parseScreenResolution(intent.getStringExtra(EXTRA_SCREEN_RESOLUTION));
+
         super.onCreate(savedInstanceState);
 
         setUserDataPath();
+        ActionBar actionBar = getActionBar();
+        if (actionBar != null) {
+            actionBar.setDisplayHomeAsUpEnabled(true);
+            setTitle(mrpTitle);
+        }
 
         if (mLayout == null || mSurface == null) {
             return;
         }
+
+        insetLayoutBelowActionBar();
 
         virtualKeypad = new VirtualKeypadView(this);
         virtualKeypad.setId(View.generateViewId());
@@ -72,7 +97,7 @@ public class MainActivity extends SDLActivity {
                 0,
                 layoutHeight
                     - Math.round(
-                        layoutWidth * MRP_SCREEN_HEIGHT / (float) MRP_SCREEN_WIDTH
+                        layoutWidth * screenHeight / (float) screenWidth
                     )
             );
             ViewGroup.LayoutParams params = virtualKeypad.getLayoutParams();
@@ -81,7 +106,54 @@ public class MainActivity extends SDLActivity {
                 virtualKeypad.setLayoutParams(params);
             }
         });
-        hideSystemBars();
+    }
+
+    @Override
+    public void setTitle(CharSequence title) {
+        super.setTitle(mrpTitle != null ? mrpTitle : title);
+    }
+
+    private void insetLayoutBelowActionBar() {
+        TypedValue actionBarSize = new TypedValue();
+        if (!getTheme().resolveAttribute(android.R.attr.actionBarSize, actionBarSize, true)) {
+            return;
+        }
+        int topMargin = TypedValue.complexToDimensionPixelSize(
+            actionBarSize.data,
+            getResources().getDisplayMetrics()
+        );
+
+        ViewGroup.LayoutParams layoutParams = mLayout.getLayoutParams();
+        if (layoutParams instanceof FrameLayout.LayoutParams) {
+            FrameLayout.LayoutParams frameParams = (FrameLayout.LayoutParams) layoutParams;
+            frameParams.topMargin = topMargin;
+            mLayout.setLayoutParams(frameParams);
+        }
+    }
+
+    @Override
+    protected String[] getArguments() {
+        Intent intent = getIntent();
+        String mrpPath = intent.getStringExtra(EXTRA_MRP_PATH);
+        String resolution = intent.getStringExtra(EXTRA_SCREEN_RESOLUTION);
+        if (resolution == null) {
+            resolution = DEFAULT_SCREEN_WIDTH + "x" + DEFAULT_SCREEN_HEIGHT;
+        }
+        String runtime = intent.getBooleanExtra(EXTRA_FULL_VM_ENABLED, false)
+            ? "full"
+            : "mini";
+
+        if (mrpPath == null) {
+            return new String[]{
+                "--screen-size=" + resolution,
+                "--runtime=" + runtime
+            };
+        }
+        return new String[]{
+            mrpPath,
+            "--screen-size=" + resolution,
+            "--runtime=" + runtime
+        };
     }
 
     @SuppressWarnings("deprecation")
@@ -101,11 +173,18 @@ public class MainActivity extends SDLActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) {
-            hideSystemBars();
-        } else {
+        if (!hasFocus) {
             releaseVirtualKeys();
         }
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == android.R.id.home) {
+            finish();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
     }
 
     @Override
@@ -125,15 +204,23 @@ public class MainActivity extends SDLActivity {
         return true;
     }
 
-    private void hideSystemBars() {
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        getWindow().getDecorView().setSystemUiVisibility(
-            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                | View.SYSTEM_UI_FLAG_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        );
+    private void parseScreenResolution(String resolution) {
+        if (resolution == null) {
+            return;
+        }
+        String[] dimensions = resolution.split("x", 2);
+        if (dimensions.length != 2) {
+            return;
+        }
+        try {
+            int width = Integer.parseInt(dimensions[0]);
+            int height = Integer.parseInt(dimensions[1]);
+            if (width > 0 && height > 0) {
+                screenWidth = width;
+                screenHeight = height;
+            }
+        } catch (NumberFormatException ignored) {
+        }
     }
 
     private void releaseVirtualKeys() {

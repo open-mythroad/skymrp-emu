@@ -252,6 +252,28 @@ class LauncherActivity : ComponentActivity() {
                         if (item.isDirectory) {
                             currentDirectory = File(item.path)
                             query = ""
+                        } else {
+                            val preferences = getSharedPreferences(
+                                SETTINGS_PREFERENCES,
+                                MODE_PRIVATE,
+                            )
+                            startActivity(
+                                Intent(this, MainActivity::class.java).apply {
+                                    putExtra(MainActivity.EXTRA_MRP_PATH, item.path)
+                                    putExtra(MainActivity.EXTRA_MRP_TITLE, item.name)
+                                    putExtra(
+                                        MainActivity.EXTRA_SCREEN_RESOLUTION,
+                                        preferences.getString(
+                                            SCREEN_RESOLUTION,
+                                            DEFAULT_SCREEN_RESOLUTION,
+                                        ) ?: DEFAULT_SCREEN_RESOLUTION,
+                                    )
+                                    putExtra(
+                                        MainActivity.EXTRA_FULL_VM_ENABLED,
+                                        preferences.getBoolean(FULL_VM_ENABLED, false),
+                                    )
+                                },
+                            )
                         }
                     },
                     onExit = ::finishAndRemoveTask,
