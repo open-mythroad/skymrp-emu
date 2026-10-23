@@ -66,6 +66,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.primarySurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -426,6 +427,28 @@ private fun LauncherScreen(
                                 expanded = moreMenuExpanded,
                                 onDismissRequest = { moreMenuExpanded = false },
                             ) {
+                                DropdownMenuItem(
+                                    contentPadding = PaddingValues(
+                                        start = 8.dp,
+                                        end = 24.dp,
+                                    ),
+                                    onClick = {
+                                        moreMenuExpanded = false
+                                        searchActive = false
+                                        onQueryChange("")
+                                        keyboardController?.hide()
+                                        context.startActivity(
+                                            Intent(context, SettingsActivity::class.java),
+                                        )
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Settings,
+                                        contentDescription = null,
+                                    )
+                                    Spacer(Modifier.width(16.dp))
+                                    Text("Settings")
+                                }
                                 DropdownMenuItem(
                                     contentPadding = PaddingValues(
                                         start = 8.dp,

@@ -82,6 +82,12 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name="org.skymrp.android.SettingsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+
+        <activity
             android:name="org.skymrp.android.LauncherActivity"
             android:exported="true"
             android:screenOrientation="portrait"
