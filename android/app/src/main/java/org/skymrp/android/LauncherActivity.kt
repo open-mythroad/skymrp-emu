@@ -12,11 +12,15 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.provider.Settings
+import android.widget.Toast
 import java.io.File
 import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -24,6 +28,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -47,6 +52,7 @@ import androidx.compose.material.AlertDialog
 import androidx.compose.material.Divider
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.FloatingActionButton
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.IconToggleButton
@@ -62,6 +68,7 @@ import androidx.compose.material.darkColors
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ExitToApp
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
@@ -122,6 +129,36 @@ class LauncherActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions(),
     ) {
         storageRefreshToken++
+    }
+
+    private val importMrpLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) {
+            return@registerForActivityResult
+        }
+        lifecycleScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    importMrp(uri)
+                }
+            }.onSuccess { importedName ->
+                if (importedName != null) {
+                    storageRefreshToken++
+                    Toast.makeText(
+                        this@LauncherActivity,
+                        "Imported $importedName",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }.onFailure { error ->
+                Toast.makeText(
+                    this@LauncherActivity,
+                    error.message ?: "Could not import MRP file",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -208,6 +245,9 @@ class LauncherActivity : ComponentActivity() {
                         .getPackageInfo(packageName, 0)
                         .versionName
                         .orEmpty(),
+                    onImport = {
+                        importMrpLauncher.launch(arrayOf("*/*"))
+                    },
                     onItemClick = { item ->
                         if (item.isDirectory) {
                             currentDirectory = File(item.path)
@@ -263,6 +303,94 @@ class LauncherActivity : ComponentActivity() {
         }
     }
 
+    private fun importMrp(uri: Uri): String? {
+        val displayName = queryDisplayName(uri)
+            ?: uri.lastPathSegment?.substringAfterLast('/')
+            ?: throw IllegalArgumentException("Could not determine file name")
+        val fileName = File(displayName).name
+        if (!fileName.endsWith(".mrp", ignoreCase = true)) {
+            throw IllegalArgumentException("Select an MRP file")
+        }
+
+        val sourceFile = resolveSourceFile(uri)
+        if (sourceFile != null && isWithinMythroad(sourceFile)) {
+            return null
+        }
+
+        if (!mythroadDirectory.isDirectory && !mythroadDirectory.mkdirs()) {
+            throw IllegalStateException("Could not create mythroad directory")
+        }
+
+        val temporaryFile = File.createTempFile("mrp-import-", ".tmp", cacheDir)
+        try {
+            val input = contentResolver.openInputStream(uri)
+                ?: throw IllegalStateException("Could not open selected file")
+            input.use { source ->
+                temporaryFile.outputStream().use(source::copyTo)
+            }
+            temporaryFile.copyTo(
+                target = File(mythroadDirectory, fileName),
+                overwrite = true,
+            )
+        } finally {
+            temporaryFile.delete()
+        }
+        return fileName
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        return contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                cursor.getString(0)
+            } else {
+                null
+            }
+        }
+    }
+
+    private fun resolveSourceFile(uri: Uri): File? {
+        if (uri.scheme == "file") {
+            return uri.path?.let(::File)
+        }
+        if (!DocumentsContract.isDocumentUri(this, uri)) {
+            return null
+        }
+
+        val documentId = DocumentsContract.getDocumentId(uri)
+        if (documentId.startsWith("raw:")) {
+            return File(documentId.removePrefix("raw:"))
+        }
+        if (uri.authority != "com.android.externalstorage.documents") {
+            return null
+        }
+
+        val separator = documentId.indexOf(':')
+        if (separator < 0 || !documentId.substring(0, separator).equals(
+                "primary",
+                ignoreCase = true,
+            )
+        ) {
+            return null
+        }
+        return File(
+            Environment.getExternalStorageDirectory(),
+            documentId.substring(separator + 1),
+        )
+    }
+
+    private fun isWithinMythroad(file: File): Boolean {
+        val root = mythroadDirectory.canonicalFile
+        val candidate = file.canonicalFile
+        return candidate == root ||
+            candidate.path.startsWith(root.path + File.separator)
+    }
+
     override fun onResume() {
         super.onResume()
         storageRefreshToken++
@@ -289,6 +417,7 @@ private fun LauncherScreen(
     canNavigateUp: Boolean,
     onNavigateUp: () -> Unit,
     versionName: String,
+    onImport: () -> Unit,
     onItemClick: (MrpListItem) -> Unit,
     onExit: () -> Unit,
 ) {
@@ -322,6 +451,18 @@ private fun LauncherScreen(
 
     Scaffold(
         modifier = Modifier.navigationBarsPadding(),
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = onImport,
+                backgroundColor = MaterialTheme.colors.primary,
+                contentColor = MaterialTheme.colors.onPrimary,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = "Import MRP",
+                )
+            }
+        },
         topBar = {
             Column(
                 modifier = Modifier
@@ -702,6 +843,7 @@ private fun LauncherScreenPreview() {
             canNavigateUp = false,
             onNavigateUp = {},
             versionName = "0.3.1",
+            onImport = {},
             onItemClick = {},
             onExit = {},
         )
