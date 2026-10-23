@@ -66,7 +66,6 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.primarySurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -292,7 +291,29 @@ private fun LauncherScreen(
     onItemClick: (MrpListItem) -> Unit,
     onExit: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val uriHandler = LocalUriHandler.current
+    val searchFocusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
+    val currentYear = remember {
+        Calendar.getInstance().get(Calendar.YEAR).coerceAtLeast(COPYRIGHT_START_YEAR)
+    }
+    val copyrightYears = if (currentYear == COPYRIGHT_START_YEAR) {
+        "$COPYRIGHT_START_YEAR"
+    } else {
+        "$COPYRIGHT_START_YEAR-$currentYear"
+    }
+    var searchActive by remember { mutableStateOf(false) }
+    var moreMenuExpanded by remember { mutableStateOf(false) }
+    var aboutVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(searchActive) {
+        if (searchActive) {
+            searchFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
 
     LaunchedEffect(listResetToken) {
         listState.scrollToItem(0)
@@ -300,6 +321,153 @@ private fun LauncherScreen(
 
     Scaffold(
         modifier = Modifier.navigationBarsPadding(),
+        topBar = {
+            Column(
+                modifier = Modifier
+                    .background(MaterialTheme.colors.primarySurface)
+                    .statusBarsPadding(),
+            ) {
+                TopAppBar(
+                    navigationIcon = if (canNavigateUp) {
+                        {
+                            IconButton(onClick = onNavigateUp) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                    contentDescription = "Navigate up",
+                                )
+                            }
+                        }
+                    } else {
+                        null
+                    },
+                    title = {
+                        if (searchActive) {
+                            TextField(
+                                value = query,
+                                onValueChange = onQueryChange,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(searchFocusRequester),
+                                placeholder = { Text("Search...") },
+                                singleLine = true,
+                                colors = TextFieldDefaults.textFieldColors(
+                                    backgroundColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                ),
+                            )
+                        } else {
+                            Text(
+                                text = title,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    },
+                    actions = {
+                        IconToggleButton(
+                            checked = scanMode == MrpScanMode.FOLDER,
+                            onCheckedChange = { checked ->
+                                onScanModeChange(
+                                    if (checked) {
+                                        MrpScanMode.FOLDER
+                                    } else {
+                                        MrpScanMode.PARSED
+                                    },
+                                )
+                            },
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_folder_outlined),
+                                contentDescription = if (scanMode == MrpScanMode.FOLDER) {
+                                    "Show all MRP files"
+                                } else {
+                                    "Browse folders"
+                                },
+                                tint = if (scanMode == MrpScanMode.FOLDER) {
+                                    MaterialTheme.colors.primary
+                                } else {
+                                    LocalContentColor.current.copy(
+                                        alpha = LocalContentAlpha.current,
+                                    )
+                                },
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                searchActive = !searchActive
+                                if (!searchActive) {
+                                    onQueryChange("")
+                                    keyboardController?.hide()
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = if (searchActive) {
+                                    Icons.Outlined.Close
+                                } else {
+                                    Icons.Outlined.Search
+                                },
+                                contentDescription = if (searchActive) {
+                                    "Close search"
+                                } else {
+                                    "Search"
+                                },
+                            )
+                        }
+                        Column {
+                            IconButton(onClick = { moreMenuExpanded = true }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.MoreVert,
+                                    contentDescription = "More options",
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = moreMenuExpanded,
+                                onDismissRequest = { moreMenuExpanded = false },
+                            ) {
+                                DropdownMenuItem(
+                                    contentPadding = PaddingValues(
+                                        start = 8.dp,
+                                        end = 24.dp,
+                                    ),
+                                    onClick = {
+                                        moreMenuExpanded = false
+                                        aboutVisible = true
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Info,
+                                        contentDescription = null,
+                                    )
+                                    Spacer(Modifier.width(16.dp))
+                                    Text("About")
+                                }
+                                DropdownMenuItem(
+                                    contentPadding = PaddingValues(
+                                        start = 8.dp,
+                                        end = 24.dp,
+                                    ),
+                                    onClick = {
+                                        moreMenuExpanded = false
+                                        onExit()
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector =
+                                            Icons.AutoMirrored.Outlined.ExitToApp,
+                                        contentDescription = null,
+                                    )
+                                    Spacer(Modifier.width(16.dp))
+                                    Text("Exit")
+                                }
+                            }
+                        }
+                    },
+                    elevation = 0.dp,
+                )
+            }
+        },
     ) { contentPadding ->
         if (items.isEmpty()) {
             androidx.compose.foundation.layout.Box(
@@ -339,6 +507,48 @@ private fun LauncherScreen(
                 }
             }
         }
+    }
+
+    if (aboutVisible) {
+        AlertDialog(
+            onDismissRequest = { aboutVisible = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.icon),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text("SkyMRP")
+                }
+            },
+            text = {
+                Column {
+                    Text("Version: $versionName")
+                    Spacer(Modifier.height(4.dp))
+                    Row {
+                        Text("GitHub: ")
+                        Text(
+                            text = "open-mythroad/skymrp-emu",
+                            modifier = Modifier.clickable {
+                                uriHandler.openUri(
+                                    "https://github.com/open-mythroad/skymrp-emu",
+                                )
+                            },
+                            color = MaterialTheme.colors.primary,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Copyright $copyrightYears arctan95")
+                }
+            },
+            buttons = {},
+        )
     }
 }
 
