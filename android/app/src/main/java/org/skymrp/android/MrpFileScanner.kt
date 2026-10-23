@@ -13,6 +13,7 @@ internal data class MrpListItem(
     val name: String,
     val path: String,
     val vendor: String,
+    val description: String = "",
     val version: Long,
     val isDirectory: Boolean = false,
     val parentPath: String = "",
@@ -26,6 +27,7 @@ internal enum class MrpScanMode {
 internal data class MrpMetadata(
     val name: String = "",
     val vendor: String = "",
+    val description: String = "",
     val version: Long = 0,
 )
 
@@ -212,6 +214,7 @@ internal class MrpFileScanner(
             name = metadata?.name?.takeIf(String::isNotBlank) ?: name,
             path = absolutePath,
             vendor = metadata?.vendor.orEmpty(),
+            description = metadata?.description.orEmpty(),
             version = metadata?.version ?: 0,
             isDirectory = isDirectory,
             parentPath = relativeParent,

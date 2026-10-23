@@ -6,8 +6,11 @@
 package org.skymrp.android
 
 import android.Manifest
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.Icon as ShortcutIcon
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -18,6 +21,7 @@ import android.provider.Settings
 import android.widget.Toast
 import java.io.File
 import java.util.Calendar
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -29,9 +33,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -40,6 +49,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -61,6 +71,7 @@ import androidx.compose.material.LocalContentColor
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Scaffold
 import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.TextField
 import androidx.compose.material.TextFieldDefaults
 import androidx.compose.material.TopAppBar
@@ -86,7 +97,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
@@ -94,7 +107,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 
 private val SkyMRPColors = darkColors(
     primary = Color(0xFFF9A825),
@@ -109,6 +124,9 @@ private val SkyMRPColors = darkColors(
 )
 
 private const val COPYRIGHT_START_YEAR = 2026
+private const val ACTION_LAUNCH_MRP = "org.skymrp.android.action.LAUNCH_MRP"
+private const val EXTRA_SHORTCUT_MRP_PATH = "org.skymrp.android.extra.SHORTCUT_MRP_PATH"
+private const val EXTRA_SHORTCUT_MRP_TITLE = "org.skymrp.android.extra.SHORTCUT_MRP_TITLE"
 
 class LauncherActivity : ComponentActivity() {
     private var storageRefreshToken by mutableStateOf(0)
@@ -166,6 +184,10 @@ class LauncherActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
+
+        if (savedInstanceState == null && launchMrpFromShortcut(intent)) {
+            return
+        }
 
         setContent {
             SkyMRPTheme {
@@ -253,39 +275,46 @@ class LauncherActivity : ComponentActivity() {
                             currentDirectory = File(item.path)
                             query = ""
                         } else {
-                            val preferences = getSharedPreferences(
-                                EmulatorSettings.PREFERENCES,
-                                MODE_PRIVATE,
-                            )
-                            startActivity(
-                                Intent(this, MainActivity::class.java).apply {
-                                    putExtra(MainActivity.EXTRA_MRP_PATH, item.path)
-                                    putExtra(MainActivity.EXTRA_MRP_TITLE, item.name)
-                                    putExtra(
-                                        MainActivity.EXTRA_SCREEN_RESOLUTION,
-                                        preferences.getString(
-                                            EmulatorSettings.SCREEN_RESOLUTION,
-                                            EmulatorSettings.DEFAULT_SCREEN_RESOLUTION,
-                                        ) ?: EmulatorSettings.DEFAULT_SCREEN_RESOLUTION,
-                                    )
-                                    putExtra(
-                                        MainActivity.EXTRA_FULL_VM_ENABLED,
-                                        preferences.getBoolean(
-                                            EmulatorSettings.FULL_VM_ENABLED,
-                                            false,
-                                        ),
-                                    )
-                                    putExtra(
-                                        MainActivity.EXTRA_KEYPAD_MODE,
-                                        preferences.getString(
-                                            EmulatorSettings.KEYPAD_MODE,
-                                            EmulatorSettings.DEFAULT_KEYPAD_MODE,
-                                        ) ?: EmulatorSettings.DEFAULT_KEYPAD_MODE,
-                                    )
-                                },
-                            )
+                            launchMrp(item.path, item.name)
                         }
                     },
+                    onRename = { item, newName ->
+                        lifecycleScope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    renameMrp(item.path, newName)
+                                }
+                            }.onSuccess {
+                                storageRefreshToken++
+                                Toast.makeText(
+                                    this@LauncherActivity,
+                                    "Renamed to $newName",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }.onFailure { error ->
+                                showOperationError(error, "Could not rename MRP file")
+                            }
+                        }
+                    },
+                    onDelete = { item ->
+                        lifecycleScope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    deleteMrp(item.path)
+                                }
+                            }.onSuccess {
+                                storageRefreshToken++
+                                Toast.makeText(
+                                    this@LauncherActivity,
+                                    "Deleted ${item.name}",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }.onFailure { error ->
+                                showOperationError(error, "Could not delete MRP file")
+                            }
+                        }
+                    },
+                    onAddShortcut = ::addMrpShortcut,
                     onExit = ::finishAndRemoveTask,
                 )
             }
@@ -294,6 +323,154 @@ class LauncherActivity : ComponentActivity() {
         if (savedInstanceState == null && !hasStorageAccess()) {
             requestStorageAccess()
         }
+    }
+
+    private fun launchMrpFromShortcut(shortcutIntent: Intent): Boolean {
+        if (shortcutIntent.action != ACTION_LAUNCH_MRP) {
+            return false
+        }
+        val path = shortcutIntent.getStringExtra(EXTRA_SHORTCUT_MRP_PATH)
+        val title = shortcutIntent.getStringExtra(EXTRA_SHORTCUT_MRP_TITLE)
+        if (path == null || !launchMrp(path, title)) {
+            Toast.makeText(
+                this,
+                "MRP file is no longer available",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return false
+        }
+        finish()
+        return true
+    }
+
+    private fun launchMrp(path: String, title: String?): Boolean {
+        val file = runCatching { resolveMrpFile(path) }.getOrNull() ?: return false
+        val preferences = getSharedPreferences(
+            EmulatorSettings.PREFERENCES,
+            MODE_PRIVATE,
+        )
+        startActivity(
+            Intent(this, MainActivity::class.java).apply {
+                putExtra(MainActivity.EXTRA_MRP_PATH, file.path)
+                putExtra(
+                    MainActivity.EXTRA_MRP_TITLE,
+                    title?.takeIf(String::isNotBlank) ?: file.name,
+                )
+                putExtra(
+                    MainActivity.EXTRA_SCREEN_RESOLUTION,
+                    preferences.getString(
+                        EmulatorSettings.SCREEN_RESOLUTION,
+                        EmulatorSettings.DEFAULT_SCREEN_RESOLUTION,
+                    ) ?: EmulatorSettings.DEFAULT_SCREEN_RESOLUTION,
+                )
+                putExtra(
+                    MainActivity.EXTRA_FULL_VM_ENABLED,
+                    preferences.getBoolean(
+                        EmulatorSettings.FULL_VM_ENABLED,
+                        false,
+                    ),
+                )
+                putExtra(
+                    MainActivity.EXTRA_KEYPAD_MODE,
+                    preferences.getString(
+                        EmulatorSettings.KEYPAD_MODE,
+                        EmulatorSettings.DEFAULT_KEYPAD_MODE,
+                    ) ?: EmulatorSettings.DEFAULT_KEYPAD_MODE,
+                )
+            },
+        )
+        return true
+    }
+
+    private fun renameMrp(path: String, newName: String) {
+        val source = resolveMrpFile(path)
+        val normalizedName = newName.trim()
+        require(normalizedName.isNotEmpty()) { "File name cannot be empty" }
+        require(File(normalizedName).name == normalizedName) { "Invalid file name" }
+        require(normalizedName.endsWith(".mrp", ignoreCase = true)) {
+            "File name must end with .mrp"
+        }
+        val destination = File(source.parentFile, normalizedName).canonicalFile
+        require(destination.parentFile == source.parentFile) { "Invalid file name" }
+        require(!destination.exists()) { "A file with that name already exists" }
+        check(source.renameTo(destination)) { "Could not rename MRP file" }
+    }
+
+    private fun deleteMrp(path: String) {
+        val file = resolveMrpFile(path)
+        check(file.delete()) { "Could not delete MRP file" }
+    }
+
+    private fun resolveMrpFile(path: String): File {
+        val root = mythroadDirectory.canonicalFile
+        val file = File(path).canonicalFile
+        require(file.path.startsWith(root.path + File.separator)) {
+            "MRP file is outside the mythroad directory"
+        }
+        require(file.isFile && file.extension.equals("mrp", ignoreCase = true)) {
+            "MRP file is no longer available"
+        }
+        return file
+    }
+
+    private fun addMrpShortcut(item: MrpListItem) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            Toast.makeText(
+                this,
+                "Home screen shortcuts require Android 8 or newer",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+
+        val file = runCatching { resolveMrpFile(item.path) }.getOrElse { error ->
+            showOperationError(error, "Could not add shortcut")
+            return
+        }
+        val shortcutManager = getSystemService(ShortcutManager::class.java)
+        if (!shortcutManager.isRequestPinShortcutSupported) {
+            Toast.makeText(
+                this,
+                "Home screen shortcuts are not supported",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+
+        val shortcutId = UUID.nameUUIDFromBytes(
+            file.path.toByteArray(Charsets.UTF_8),
+        ).toString()
+        val shortcutIntent = Intent(this, LauncherActivity::class.java).apply {
+            action = ACTION_LAUNCH_MRP
+            data = Uri.Builder()
+                .scheme("skymrp")
+                .authority("launch")
+                .appendPath(shortcutId)
+                .build()
+            putExtra(EXTRA_SHORTCUT_MRP_PATH, file.path)
+            putExtra(EXTRA_SHORTCUT_MRP_TITLE, item.name)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val shortcut = ShortcutInfo.Builder(this, shortcutId)
+            .setShortLabel(item.name)
+            .setIcon(ShortcutIcon.createWithResource(this, R.drawable.ic_mrp_app))
+            .setIntent(shortcutIntent)
+            .build()
+        if (!shortcutManager.requestPinShortcut(shortcut, null)) {
+            Toast.makeText(
+                this,
+                "Could not add shortcut",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
+    private fun showOperationError(error: Throwable, fallbackMessage: String) {
+        Toast.makeText(
+            this,
+            error.message ?: fallbackMessage,
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     private fun hasStorageAccess(): Boolean {
@@ -451,6 +628,9 @@ private fun LauncherScreen(
     versionName: String,
     onImport: () -> Unit,
     onItemClick: (MrpListItem) -> Unit,
+    onRename: (MrpListItem, String) -> Unit,
+    onDelete: (MrpListItem) -> Unit,
+    onAddShortcut: (MrpListItem) -> Unit,
     onExit: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -469,6 +649,10 @@ private fun LauncherScreen(
     var searchActive by remember { mutableStateOf(false) }
     var moreMenuExpanded by remember { mutableStateOf(false) }
     var aboutVisible by remember { mutableStateOf(false) }
+    var detailsItem by remember { mutableStateOf<MrpListItem?>(null) }
+    var renameItem by remember { mutableStateOf<MrpListItem?>(null) }
+    var renameName by remember { mutableStateOf("") }
+    var deleteItem by remember { mutableStateOf<MrpListItem?>(null) }
 
     LaunchedEffect(searchActive) {
         if (searchActive) {
@@ -694,7 +878,15 @@ private fun LauncherScreen(
                 ) { item ->
                     MrpListRow(
                         item = item,
+                        scanMode = scanMode,
                         onClick = { onItemClick(item) },
+                        onViewDetails = { detailsItem = item },
+                        onRename = {
+                            renameItem = item
+                            renameName = File(item.path).name
+                        },
+                        onDelete = { deleteItem = item },
+                        onAddShortcut = { onAddShortcut(item) },
                     )
                     Divider(
                         modifier = Modifier.padding(start = 72.dp),
@@ -746,74 +938,254 @@ private fun LauncherScreen(
             buttons = {},
         )
     }
+
+    detailsItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { detailsItem = null },
+            title = { Text("MRP details") },
+            text = {
+                Column {
+                    DetailField("Name", item.name)
+                    DetailField("File name", File(item.path).name)
+                    DetailField("Vendor", item.vendor.ifBlank { "Unknown" })
+                    DetailField(
+                        "Description",
+                        item.description.ifBlank { "Unknown" },
+                    )
+                    DetailField(
+                        "Version",
+                        item.version.takeIf { it > 0 }?.toString() ?: "Unknown",
+                    )
+                    DetailField("Path", item.path)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { detailsItem = null }) {
+                    Text("Close")
+                }
+            },
+        )
+    }
+
+    renameItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { renameItem = null },
+            title = { Text("Rename MRP") },
+            text = {
+                TextField(
+                    value = renameName,
+                    onValueChange = { renameName = it },
+                    label = { Text("File name") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = renameName.isNotBlank() &&
+                        renameName.endsWith(".mrp", ignoreCase = true),
+                    onClick = {
+                        onRename(item, renameName.trim())
+                        renameItem = null
+                    },
+                ) {
+                    Text("Rename")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameItem = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
+    deleteItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { deleteItem = null },
+            title = { Text("Delete MRP") },
+            text = { Text("Delete ${item.name} permanently?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete(item)
+                        deleteItem = null
+                    },
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteItem = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun MrpListRow(
     item: MrpListItem,
+    scanMode: MrpScanMode,
     onClick: () -> Unit,
+    onViewDetails: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    onAddShortcut: () -> Unit,
 ) {
-    Row(
+    var actionsExpanded by remember { mutableStateOf(false) }
+    var pressPosition by remember { mutableStateOf(Offset.Zero) }
+    val interactionModifier = if (item.isDirectory) {
+        Modifier.clickable(onClick = onClick)
+    } else {
+        Modifier
+            .pointerInput(item.path) {
+                awaitEachGesture {
+                    pressPosition = awaitFirstDown(
+                        requireUnconsumed = false,
+                    ).position
+                    do {
+                        val event = awaitPointerEvent()
+                    } while (event.changes.any { it.pressed })
+                }
+            }
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { actionsExpanded = true },
+            )
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .then(interactionModifier),
     ) {
-        if (item.isDirectory) {
-            Icon(
-                painter = painterResource(R.drawable.ic_folder),
-                contentDescription = null,
-                modifier = Modifier.size(40.dp),
-                tint = MaterialTheme.colors.primary,
-            )
-        } else {
-            Image(
-                painter = painterResource(R.drawable.ic_mrp_app),
-                contentDescription = null,
-                modifier = Modifier.size(40.dp),
-            )
-        }
-        Spacer(Modifier.width(16.dp))
-        Column(
-            modifier = Modifier.weight(1f),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = item.name,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (item.vendor.isNotBlank()) {
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    text = item.vendor,
-                    color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.body2,
+            if (item.isDirectory) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_folder),
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                    tint = MaterialTheme.colors.primary,
+                )
+            } else {
+                Image(
+                    painter = painterResource(R.drawable.ic_mrp_app),
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
                 )
             }
-            if (item.parentPath.isNotBlank()) {
-                Spacer(Modifier.height(3.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+            ) {
                 Text(
-                    text = item.parentPath,
-                    color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f),
+                    text = item.name,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                )
+                if (item.vendor.isNotBlank()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = item.vendor,
+                        color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.body2,
+                    )
+                }
+                if (item.parentPath.isNotBlank()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = item.parentPath,
+                        color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.body2,
+                    )
+                }
+            }
+            if (!item.isDirectory && item.version > 0) {
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = item.version.toString(),
+                    color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f),
                     style = MaterialTheme.typography.body2,
                 )
             }
         }
-        if (!item.isDirectory && item.version > 0) {
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = item.version.toString(),
-                color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f),
-                style = MaterialTheme.typography.body2,
-            )
+        if (!item.isDirectory) {
+            Box(
+                modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            pressPosition.x.roundToInt(),
+                            pressPosition.y.roundToInt(),
+                        )
+                    }
+                    .size(1.dp),
+            ) {
+                DropdownMenu(
+                    expanded = actionsExpanded,
+                    onDismissRequest = { actionsExpanded = false },
+                ) {
+                    if (scanMode == MrpScanMode.PARSED) {
+                        DropdownMenuItem(
+                            onClick = {
+                                actionsExpanded = false
+                                onViewDetails()
+                            },
+                        ) {
+                            Text("View details")
+                        }
+                    } else {
+                        DropdownMenuItem(
+                            onClick = {
+                                actionsExpanded = false
+                                onRename()
+                            },
+                        ) {
+                            Text("Rename")
+                        }
+                    }
+                    DropdownMenuItem(
+                        onClick = {
+                            actionsExpanded = false
+                            onAddShortcut()
+                        },
+                    ) {
+                        Text("Add shortcut")
+                    }
+                    DropdownMenuItem(
+                        onClick = {
+                            actionsExpanded = false
+                            onDelete()
+                        },
+                    ) {
+                        Text("Delete")
+                    }
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun DetailField(label: String, value: String) {
+    Text(
+        text = label,
+        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+        style = MaterialTheme.typography.caption,
+    )
+    Text(value)
+    Spacer(Modifier.height(8.dp))
 }
 
 @Preview(
@@ -839,6 +1211,7 @@ private fun LauncherScreenPreview() {
                     name = "蜀山剑侠传",
                     path = "/mythroad/gssjxz.mrp",
                     vendor = "杭州斯凯",
+                    description = "Classic role-playing game",
                     version = 1006,
                 ),
                 MrpListItem(
@@ -877,6 +1250,9 @@ private fun LauncherScreenPreview() {
             versionName = "0.3.1",
             onImport = {},
             onItemClick = {},
+            onRename = { _, _ -> },
+            onDelete = {},
+            onAddShortcut = {},
             onExit = {},
         )
     }

@@ -24,6 +24,8 @@ const MRP_DISPLAY_NAME_OFFSET: usize = 28;
 const MRP_DISPLAY_NAME_SIZE: usize = 24;
 const MRP_VENDOR_OFFSET: usize = 88;
 const MRP_VENDOR_SIZE: usize = 40;
+const MRP_DESCRIPTION_OFFSET: usize = 128;
+const MRP_DESCRIPTION_SIZE: usize = 64;
 const MRP_APP_ID_OFFSET: usize = 192;
 const MRP_APP_VERSION_OFFSET: usize = 196;
 const MRP_RAM_OFFSET: usize = 228;
@@ -61,6 +63,7 @@ pub struct MrpAppInfo {
 pub struct MrpMetadata {
     pub name: String,
     pub vendor: String,
+    pub description: String,
     pub id: u32,
     pub version: u32,
     pub ram: u32,
@@ -137,6 +140,7 @@ pub fn read_metadata(data: &[u8]) -> Result<MrpMetadata, String> {
 
     let name = read_gbk_field(data, MRP_DISPLAY_NAME_OFFSET, MRP_DISPLAY_NAME_SIZE);
     let vendor = read_gbk_field(data, MRP_VENDOR_OFFSET, MRP_VENDOR_SIZE);
+    let description = read_gbk_field(data, MRP_DESCRIPTION_OFFSET, MRP_DESCRIPTION_SIZE);
     let id = read_u32_be(data, MRP_APP_ID_OFFSET).unwrap_or_default();
     let version = read_u32_be(data, MRP_APP_VERSION_OFFSET).unwrap_or_default();
     let ram = match (
@@ -161,6 +165,7 @@ pub fn read_metadata(data: &[u8]) -> Result<MrpMetadata, String> {
     Ok(MrpMetadata {
         name,
         vendor,
+        description,
         id,
         version,
         ram,
@@ -409,6 +414,7 @@ mod tests {
         data[MRP_DISPLAY_NAME_OFFSET..MRP_DISPLAY_NAME_OFFSET + 10].copy_from_slice(b"HelloWorld");
         data[MRP_VENDOR_OFFSET..MRP_VENDOR_OFFSET + 8]
             .copy_from_slice(&[0xba, 0xbc, 0xd6, 0xdd, 0xcb, 0xb9, 0xbf, 0xad]);
+        data[MRP_DESCRIPTION_OFFSET..MRP_DESCRIPTION_OFFSET + 12].copy_from_slice(b"Classic game");
         data[MRP_APP_ID_OFFSET..MRP_APP_ID_OFFSET + 4].copy_from_slice(&310_013_u32.to_be_bytes());
         data[MRP_APP_VERSION_OFFSET..MRP_APP_VERSION_OFFSET + 4]
             .copy_from_slice(&1_001_u32.to_be_bytes());
@@ -416,6 +422,7 @@ mod tests {
         let metadata = read_metadata(&data).unwrap();
         assert_eq!(metadata.name, "HelloWorld");
         assert_eq!(metadata.vendor, "杭州斯凯");
+        assert_eq!(metadata.description, "Classic game");
         assert_eq!(metadata.id, 310_013);
         assert_eq!(metadata.version, 1_001);
 
@@ -433,6 +440,7 @@ mod tests {
         let metadata = read_metadata(&data).unwrap();
         assert_eq!(metadata.name, "");
         assert_eq!(metadata.vendor, "");
+        assert_eq!(metadata.description, "");
         assert_eq!(metadata.id, 0);
         assert_eq!(metadata.version, 0);
         assert_eq!(metadata.ram, 0);

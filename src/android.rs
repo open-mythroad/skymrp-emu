@@ -32,13 +32,18 @@ fn read_metadata(env: &mut JNIEnv<'_>, path: JString<'_>) -> Result<jobject, Str
         env.new_string(metadata.vendor)
             .map_err(|error| error.to_string())?,
     );
+    let description = JObject::from(
+        env.new_string(metadata.description)
+            .map_err(|error| error.to_string())?,
+    );
     let object = env
         .new_object(
             "org/skymrp/android/MrpMetadata",
-            "(Ljava/lang/String;Ljava/lang/String;J)V",
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J)V",
             &[
                 JValue::Object(&name),
                 JValue::Object(&vendor),
+                JValue::Object(&description),
                 JValue::Long(i64::from(metadata.version)),
             ],
         )
