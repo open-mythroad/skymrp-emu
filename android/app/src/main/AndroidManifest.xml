@@ -82,9 +82,10 @@
             android:screenOrientation="portrait" />
 
         <activity
-            android:name="org.skymrp.android.StoragePermissionActivity"
+            android:name="org.skymrp.android.LauncherActivity"
             android:exported="true"
-            android:screenOrientation="portrait">
+            android:screenOrientation="portrait"
+            android:theme="@android:style/Theme.Material.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
