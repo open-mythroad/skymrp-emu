@@ -22,15 +22,20 @@ import org.libsdl.app.SDLActivity;
 final class VirtualKeypadView extends View {
     private static final int PHONE_COLUMN_COUNT = 3;
     private static final int COMPACT_COLUMN_COUNT = 6;
+    private static final int FULL_ROW_COUNT = 7;
+    private static final int PHONE_ROW_COUNT = 5;
     private static final float COMPACT_MAX_KEY_WIDTH_DP = 96;
     private static final float COMPACT_MAX_KEY_HEIGHT_DP = 56;
     private static final float COMPACT_GROUP_GAP_DP = 16;
+    private static final float KEY_GAP_DP = 5;
+    private static final float VERTICAL_PADDING_DP = 7;
     private static final float FULL_HEIGHT_DP = 336;
     private static final float COMPACT_HEIGHT_DP = 240;
 
     enum LayoutMode {
         FULL("full"),
         COMPACT("compact"),
+        PHONE("phone"),
         NONE("none");
 
         final String value;
@@ -72,6 +77,13 @@ final class VirtualKeypadView extends View {
         new Key("0", KeyEvent.KEYCODE_0),
         new Key("#", KeyEvent.KEYCODE_EQUALS),
     };
+    private static final int[] PHONE_KEY_INDICES = {
+        0, 4, 2,
+        9, 10, 11,
+        12, 13, 14,
+        15, 16, 17,
+        18, 19, 20,
+    };
 
     private final Paint buttonPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -102,16 +114,26 @@ final class VirtualKeypadView extends View {
     }
 
     @Override
-    protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
-        super.onSizeChanged(width, height, oldWidth, oldHeight);
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        super.onLayout(changed, left, top, right, bottom);
+        int width = right - left;
+        int height = bottom - top;
+
+        for (RectF bounds : keyBounds) {
+            bounds.setEmpty();
+        }
+        if (width <= 0 || height <= 0) {
+            return;
+        }
 
         boolean compactLayout = layoutMode == LayoutMode.COMPACT;
+        boolean phoneLayout = layoutMode == LayoutMode.PHONE;
         int columnCount = compactLayout ? COMPACT_COLUMN_COUNT : PHONE_COLUMN_COUNT;
-        int rowCount = compactLayout ? 4 : 7;
-        float gap = dp(5);
+        int rowCount = compactLayout ? 4 : phoneLayout ? PHONE_ROW_COUNT : FULL_ROW_COUNT;
+        float gap = dp(KEY_GAP_DP);
         float groupGap = compactLayout ? dp(COMPACT_GROUP_GAP_DP) : gap;
         float horizontalPadding = dp(8);
-        float verticalPadding = dp(7);
+        float verticalPadding = dp(VERTICAL_PADDING_DP);
         float availableKeyWidth =
             (
                 width
@@ -132,26 +154,47 @@ final class VirtualKeypadView extends View {
         float gridLeft = (width - gridWidth) / 2;
         float gridTop = (height - gridHeight) / 2;
 
-        for (int index = 0; index < KEYS.length; index++) {
-            int row;
-            int column;
-            if (compactLayout && index >= 9) {
-                int numericIndex = index - 9;
-                row = numericIndex / PHONE_COLUMN_COUNT;
-                column = PHONE_COLUMN_COUNT + numericIndex % PHONE_COLUMN_COUNT;
-            } else {
-                row = index / PHONE_COLUMN_COUNT;
-                column = index % PHONE_COLUMN_COUNT;
+        if (phoneLayout) {
+            for (int slot = 0; slot < PHONE_KEY_INDICES.length; slot++) {
+                int index = PHONE_KEY_INDICES[slot];
+                int row = slot / PHONE_COLUMN_COUNT;
+                int column = slot % PHONE_COLUMN_COUNT;
+                float keyLeft = gridLeft + column * (keyWidth + gap);
+                float keyTop = gridTop + row * (keyHeight + gap);
+                keyBounds[index].set(
+                    keyLeft,
+                    keyTop,
+                    keyLeft + keyWidth,
+                    keyTop + keyHeight
+                );
             }
-            float left = gridLeft + column * (keyWidth + gap);
-            if (compactLayout && column >= PHONE_COLUMN_COUNT) {
-                left += groupGap - gap;
+        } else {
+            for (int index = 0; index < KEYS.length; index++) {
+                int row;
+                int column;
+                if (compactLayout && index >= 9) {
+                    int numericIndex = index - 9;
+                    row = numericIndex / PHONE_COLUMN_COUNT;
+                    column = PHONE_COLUMN_COUNT + numericIndex % PHONE_COLUMN_COUNT;
+                } else {
+                    row = index / PHONE_COLUMN_COUNT;
+                    column = index % PHONE_COLUMN_COUNT;
+                }
+                float keyLeft = gridLeft + column * (keyWidth + gap);
+                if (compactLayout && column >= PHONE_COLUMN_COUNT) {
+                    keyLeft += groupGap - gap;
+                }
+                float keyTop = gridTop + row * (keyHeight + gap);
+                if (compactLayout && index < 9) {
+                    keyTop += (keyHeight + gap) / 2;
+                }
+                keyBounds[index].set(
+                    keyLeft,
+                    keyTop,
+                    keyLeft + keyWidth,
+                    keyTop + keyHeight
+                );
             }
-            float top = gridTop + row * (keyHeight + gap);
-            if (compactLayout && index < 9) {
-                top += (keyHeight + gap) / 2;
-            }
-            keyBounds[index].set(left, top, left + keyWidth, top + keyHeight);
         }
 
         textPaint.setTextSize(Math.min(dp(18), keyHeight * 0.32f));
@@ -164,12 +207,29 @@ final class VirtualKeypadView extends View {
         releaseAllKeys();
         layoutMode = mode;
         requestLayout();
+        invalidate();
     }
 
     int getPreferredHeight() {
-        float height = layoutMode == LayoutMode.COMPACT
-            ? COMPACT_HEIGHT_DP
-            : FULL_HEIGHT_DP;
+        float height;
+        if (layoutMode == LayoutMode.COMPACT) {
+            height = COMPACT_HEIGHT_DP;
+        } else if (layoutMode == LayoutMode.PHONE) {
+            float fullKeyHeight =
+                (
+                    FULL_HEIGHT_DP
+                        - VERTICAL_PADDING_DP * 2
+                        - KEY_GAP_DP * (FULL_ROW_COUNT - 1)
+                ) / FULL_ROW_COUNT;
+            height =
+                VERTICAL_PADDING_DP * 2
+                    + fullKeyHeight * PHONE_ROW_COUNT
+                    + KEY_GAP_DP * (PHONE_ROW_COUNT - 1);
+        } else if (layoutMode == LayoutMode.FULL) {
+            height = FULL_HEIGHT_DP;
+        } else {
+            height = 0;
+        }
         return Math.round(dp(height));
     }
 
@@ -180,6 +240,9 @@ final class VirtualKeypadView extends View {
         Paint.FontMetrics metrics = textPaint.getFontMetrics();
         for (int index = 0; index < KEYS.length; index++) {
             RectF bounds = keyBounds[index];
+            if (bounds.isEmpty()) {
+                continue;
+            }
             boolean pressed = pressCounts[index] > 0;
             buttonPaint.setColor(pressed ? Color.rgb(55, 115, 205) : keyColor(index));
             canvas.drawRoundRect(bounds, dp(5), dp(5), buttonPaint);

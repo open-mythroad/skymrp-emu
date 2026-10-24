@@ -141,9 +141,10 @@ public class MainActivity extends SDLActivity {
         VirtualKeypadView.LayoutMode[] modes = {
             VirtualKeypadView.LayoutMode.FULL,
             VirtualKeypadView.LayoutMode.COMPACT,
+            VirtualKeypadView.LayoutMode.PHONE,
             VirtualKeypadView.LayoutMode.NONE,
         };
-        String[] labels = {"Full", "Compact", "None"};
+        String[] labels = {"Full", "Compact", "Phone", "None"};
         int selected = 0;
         for (int index = 0; index < modes.length; index++) {
             if (modes[index] == keypadMode) {
