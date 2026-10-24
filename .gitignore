@@ -14,3 +14,8 @@ local.properties
 android/app/src/main/jniLibs
 android/build
 android/app/build
+android/key.properties
+android/release.jks
+key.properties
+**/*.keystore
+**/*.jks
