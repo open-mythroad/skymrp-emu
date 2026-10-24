@@ -5,6 +5,7 @@
  */
 use crate::options::Options;
 use sdl2::controller::{Button as ControllerButton, GameController};
+use sdl2::event::WindowEvent;
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::rect::Rect;
@@ -50,6 +51,7 @@ pub enum Event {
     Quit,
     AppWillEnterBackground,
     AppDidEnterForeground,
+    Redraw,
     KeyDown(MrKey),
     KeyUp(MrKey),
     TextKeyDown {
@@ -220,11 +222,20 @@ impl Window {
             self.texture_size = Some((guest_screen_width, guest_screen_height));
         }
 
+        let texture = self.texture.as_mut().unwrap();
+        texture.update(None, framebuffer, pitch).unwrap();
+        self.redraw();
+    }
+
+    pub fn redraw(&mut self) {
+        if self.texture.is_none() {
+            return;
+        }
+
         let viewport = self.viewport();
         let dst = Rect::new(viewport.0 as i32, viewport.1 as i32, viewport.2, viewport.3);
 
-        let texture = self.texture.as_mut().unwrap();
-        texture.update(None, framebuffer, pitch).unwrap();
+        let texture = self.texture.as_ref().unwrap();
         self.canvas.clear();
         self.canvas.copy(texture, None, Some(dst)).unwrap();
         self.canvas.present();
@@ -241,6 +252,15 @@ impl Window {
                 }
                 E::AppDidEnterForeground { .. } => {
                     self.event_queue.push_back(Event::AppDidEnterForeground);
+                }
+                E::Window {
+                    win_event:
+                        WindowEvent::SizeChanged(_, _)
+                        | WindowEvent::Resized(_, _)
+                        | WindowEvent::Exposed,
+                    ..
+                } => {
+                    self.event_queue.push_back(Event::Redraw);
                 }
                 E::KeyDown {
                     keycode: Some(keycode),

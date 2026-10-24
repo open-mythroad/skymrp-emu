@@ -191,6 +191,10 @@ impl Environment {
                     dsm::mr_resume_app(self);
                     continue;
                 }
+                Event::Redraw => {
+                    self.window.redraw();
+                    continue;
+                }
                 _ => {}
             }
 
@@ -217,7 +221,10 @@ impl Environment {
             }
 
             match event {
-                Event::Quit | Event::AppWillEnterBackground | Event::AppDidEnterForeground => {
+                Event::Quit
+                | Event::AppWillEnterBackground
+                | Event::AppDidEnterForeground
+                | Event::Redraw => {
                     unreachable!()
                 }
                 Event::KeyDown(key) => {
