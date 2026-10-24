@@ -7,6 +7,13 @@
  * has a different license. Please see vendor/SDL/LICENSE.txt for details.
  */
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
+import java.util.Properties
+
+val signingPropertiesFile = rootProject.file("key.properties")
+val signingProperties = Properties()
+if (signingPropertiesFile.isFile) {
+    signingPropertiesFile.inputStream().use(signingProperties::load)
+}
 
 plugins {
     id("com.android.application") version("8.10.1")
@@ -51,9 +58,21 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+    signingConfigs {
+        if (signingPropertiesFile.isFile) {
+            create("release") {
+                storeFile = rootProject.file(signingProperties.getProperty("storeFile"))
+                storePassword = signingProperties.getProperty("storePassword")
+                keyAlias = signingProperties.getProperty("keyAlias")
+                keyPassword = signingProperties.getProperty("keyPassword")
+            }
+        }
+    }
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfigs.findByName("release")?.let {
+                signingConfig = it
+            }
             isMinifyEnabled = false
             isDebuggable = true // allow use of ADB to manage files, etc
         }

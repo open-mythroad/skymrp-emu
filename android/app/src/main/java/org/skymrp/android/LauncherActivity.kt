@@ -199,8 +199,12 @@ class LauncherActivity : ComponentActivity() {
                 var scanMode by remember { mutableStateOf(MrpScanMode.PARSED) }
                 var items by remember { mutableStateOf(emptyList<MrpListItem>()) }
                 var listResetToken by remember { mutableStateOf(0) }
+                var displayedListScope by remember {
+                    mutableStateOf<Triple<String, String, MrpScanMode>?>(null)
+                }
                 val hasStorageAccess = hasStorageAccess()
                 val canNavigateUp = currentDirectory != mythroadDirectory
+                val listScope = Triple(currentDirectory.path, query, scanMode)
 
                 LaunchedEffect(
                     currentDirectory,
@@ -224,7 +228,10 @@ class LauncherActivity : ComponentActivity() {
                         }
                     }
                     items = scannedItems
-                    listResetToken++
+                    if (displayedListScope != listScope) {
+                        displayedListScope = listScope
+                        listResetToken++
+                    }
                 }
 
                 BackHandler(enabled = canNavigateUp) {
