@@ -15,11 +15,12 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.Menu;
-import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.PopupMenu;
 import android.widget.RelativeLayout;
 
 import org.libsdl.app.SDLActivity;
@@ -49,6 +50,8 @@ public class MainActivity extends SDLActivity {
     private boolean statusBarEnabled;
     private boolean keypadVisible = true;
     private Object menuBackCallback;
+    private View runtimeMenuAnchor;
+    private boolean runtimeMenuVisible;
 
     @Override
     protected String[] getLibraries() {
@@ -97,6 +100,14 @@ public class MainActivity extends SDLActivity {
 
         mLayout.addView(virtualKeypad, keypadParams);
 
+        runtimeMenuAnchor = new View(this);
+        runtimeMenuAnchor.setAlpha(0);
+        RelativeLayout.LayoutParams menuAnchorParams =
+            new RelativeLayout.LayoutParams(dp(1), dp(1));
+        menuAnchorParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+        menuAnchorParams.addRule(RelativeLayout.ALIGN_PARENT_END);
+        mLayout.addView(runtimeMenuAnchor, menuAnchorParams);
+
         RelativeLayout.LayoutParams surfaceParams = new RelativeLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
@@ -113,15 +124,6 @@ public class MainActivity extends SDLActivity {
     @Override
     public void setTitle(CharSequence title) {
         super.setTitle(mrpTitle != null ? mrpTitle : title);
-    }
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        menu.add(Menu.NONE, MENU_KEYPAD, Menu.NONE, "Switch keypad")
-            .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
-        menu.add(Menu.NONE, MENU_EXIT, Menu.NONE, "Exit")
-            .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
-        return true;
     }
 
     private void showKeypadDialog() {
@@ -182,8 +184,27 @@ public class MainActivity extends SDLActivity {
     }
 
     private void showRuntimeMenu() {
+        if (runtimeMenuVisible) {
+            return;
+        }
         releaseVirtualKeys();
-        openOptionsMenu();
+        PopupMenu runtimeMenu = new PopupMenu(this, runtimeMenuAnchor, Gravity.END);
+        runtimeMenu.getMenu().add(Menu.NONE, MENU_KEYPAD, Menu.NONE, "Switch keypad");
+        runtimeMenu.getMenu().add(Menu.NONE, MENU_EXIT, Menu.NONE, "Exit");
+        runtimeMenu.setOnMenuItemClickListener(item -> {
+                if (item.getItemId() == MENU_KEYPAD) {
+                    showKeypadDialog();
+                    return true;
+                }
+                if (item.getItemId() == MENU_EXIT) {
+                    finish();
+                    return true;
+                }
+                return false;
+            });
+        runtimeMenu.setOnDismissListener(menu -> runtimeMenuVisible = false);
+        runtimeMenuVisible = true;
+        runtimeMenu.show();
     }
 
     private int dp(float value) {
@@ -258,19 +279,6 @@ public class MainActivity extends SDLActivity {
     @Override
     public void onBackPressed() {
         showRuntimeMenu();
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == MENU_KEYPAD) {
-            showKeypadDialog();
-            return true;
-        }
-        if (item.getItemId() == MENU_EXIT) {
-            finish();
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
     }
 
     @Override
