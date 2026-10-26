@@ -10,9 +10,11 @@ final class EmulatorSettings {
     static final String FULL_VM_ENABLED = "full_vm_enabled";
     static final String SCREEN_RESOLUTION = "screen_resolution";
     static final String KEYPAD_MODE = "keypad_mode";
+    static final String STATUS_BAR_ENABLED = "status_bar_enabled";
 
     static final String DEFAULT_SCREEN_RESOLUTION = "240x320";
     static final String DEFAULT_KEYPAD_MODE = "compact";
+    static final boolean DEFAULT_STATUS_BAR_ENABLED = true;
 
     static final String[] SCREEN_RESOLUTIONS = {
         "128x160",

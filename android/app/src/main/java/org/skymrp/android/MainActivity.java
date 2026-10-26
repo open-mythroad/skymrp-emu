@@ -8,11 +8,9 @@
  */
 package org.skymrp.android;
 
-import android.app.ActionBar;
 import android.app.AlertDialog;
 import android.content.Intent;
-import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -21,8 +19,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
-import android.widget.ImageButton;
+import android.view.WindowManager;
 import android.widget.RelativeLayout;
 
 import org.libsdl.app.SDLActivity;
@@ -43,17 +40,15 @@ public class MainActivity extends SDLActivity {
 
     private static final int COMMAND_SET_VIRTUAL_KEYPAD_VISIBLE = COMMAND_USER;
     private static final int MENU_KEYPAD = 1;
-    private static final int MENU_FULLSCREEN = 2;
+    private static final int MENU_EXIT = 2;
     private static final float MIN_SURFACE_HEIGHT_DP = 160;
 
     private VirtualKeypadView virtualKeypad;
     private VirtualKeypadView.LayoutMode keypadMode = VirtualKeypadView.LayoutMode.COMPACT;
     private CharSequence mrpTitle;
+    private boolean statusBarEnabled;
     private boolean keypadVisible = true;
-    private boolean fullscreen;
-    private int normalSystemUiVisibility;
-    private Object fullscreenBackCallback;
-    private ImageButton exitFullscreenButton;
+    private Object menuBackCallback;
 
     @Override
     protected String[] getLibraries() {
@@ -70,21 +65,25 @@ public class MainActivity extends SDLActivity {
         keypadMode = VirtualKeypadView.LayoutMode.fromValue(
             intent.getStringExtra(EXTRA_KEYPAD_MODE)
         );
+        SharedPreferences preferences = getSharedPreferences(
+            EmulatorSettings.PREFERENCES,
+            MODE_PRIVATE
+        );
+        statusBarEnabled = preferences.getBoolean(
+            EmulatorSettings.STATUS_BAR_ENABLED,
+            EmulatorSettings.DEFAULT_STATUS_BAR_ENABLED
+        );
 
         super.onCreate(savedInstanceState);
 
         setUserDataPath();
-        ActionBar actionBar = getActionBar();
-        if (actionBar != null) {
-            actionBar.setDisplayHomeAsUpEnabled(true);
-            setTitle(mrpTitle);
-        }
 
         if (mLayout == null || mSurface == null) {
             return;
         }
 
-        insetLayoutBelowActionBar();
+        applyWindowSettings();
+        updateMenuBackCallback();
 
         virtualKeypad = new VirtualKeypadView(this);
         virtualKeypad.setLayoutMode(keypadMode);
@@ -116,23 +115,11 @@ public class MainActivity extends SDLActivity {
         super.setTitle(mrpTitle != null ? mrpTitle : title);
     }
 
-    private void insetLayoutBelowActionBar() {
-        TypedValue actionBarSize = new TypedValue();
-        if (getTheme().resolveAttribute(android.R.attr.actionBarSize, actionBarSize, true)) {
-            setLayoutTopMargin(
-                TypedValue.complexToDimensionPixelSize(
-                    actionBarSize.data,
-                    getResources().getDisplayMetrics()
-                )
-            );
-        }
-    }
-
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        menu.add(Menu.NONE, MENU_FULLSCREEN, Menu.NONE, "Enter fullscreen")
-            .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         menu.add(Menu.NONE, MENU_KEYPAD, Menu.NONE, "Switch keypad")
+            .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+        menu.add(Menu.NONE, MENU_EXIT, Menu.NONE, "Exit")
             .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         return true;
     }
@@ -177,104 +164,26 @@ public class MainActivity extends SDLActivity {
         updateKeypadLayout(mLayout.getHeight());
     }
 
-    @SuppressWarnings("deprecation")
-    private void enterFullscreen() {
-        if (!fullscreen) {
-            normalSystemUiVisibility = getWindow()
-                .getDecorView()
-                .getSystemUiVisibility();
+    private void updateMenuBackCallback() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            && menuBackCallback == null) {
+            menuBackCallback = MenuBackCallbackApi33.register(this);
         }
-        fullscreen = true;
+    }
+
+    private void applyWindowSettings() {
+        if (statusBarEnabled) {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        }
+    }
+
+    private void showRuntimeMenu() {
         releaseVirtualKeys();
-        ActionBar actionBar = getActionBar();
-        if (actionBar != null) {
-            actionBar.hide();
-        }
-        setLayoutTopMargin(0);
-        getWindow().getDecorView().setSystemUiVisibility(
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                | View.SYSTEM_UI_FLAG_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        );
-        updateKeypadLayout(mLayout.getHeight());
-        addExitFullscreenButton();
-        registerFullscreenBackCallback();
-    }
-
-    @SuppressWarnings("deprecation")
-    private void exitFullscreen() {
-        fullscreen = false;
-        unregisterFullscreenBackCallback();
-        removeExitFullscreenButton();
-        getWindow().getDecorView().setSystemUiVisibility(normalSystemUiVisibility);
-        ActionBar actionBar = getActionBar();
-        if (actionBar != null) {
-            actionBar.show();
-        }
-        insetLayoutBelowActionBar();
-        updateKeypadLayout(mLayout.getHeight());
-    }
-
-    private void addExitFullscreenButton() {
-        if (exitFullscreenButton != null) {
-            return;
-        }
-        exitFullscreenButton = new ImageButton(this);
-        exitFullscreenButton.setImageResource(android.R.drawable.ic_menu_revert);
-        exitFullscreenButton.setColorFilter(Color.WHITE);
-        exitFullscreenButton.setContentDescription("Exit fullscreen");
-        exitFullscreenButton.setPadding(dp(12), dp(12), dp(12), dp(12));
-        exitFullscreenButton.setElevation(dp(4));
-        exitFullscreenButton.setOnClickListener(view -> exitFullscreen());
-
-        GradientDrawable background = new GradientDrawable();
-        background.setColor(0x99000000);
-        background.setShape(GradientDrawable.OVAL);
-        exitFullscreenButton.setBackground(background);
-
-        RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(dp(48), dp(48));
-        params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
-        params.addRule(RelativeLayout.ALIGN_PARENT_END);
-        params.setMargins(0, dp(8), dp(8), 0);
-        mLayout.addView(exitFullscreenButton, params);
-    }
-
-    private void removeExitFullscreenButton() {
-        if (exitFullscreenButton == null) {
-            return;
-        }
-        mLayout.removeView(exitFullscreenButton);
-        exitFullscreenButton = null;
-    }
-
-    private void registerFullscreenBackCallback() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-            && fullscreenBackCallback == null) {
-            fullscreenBackCallback = FullscreenBackCallbackApi33.register(this);
-        }
-    }
-
-    private void unregisterFullscreenBackCallback() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-            && fullscreenBackCallback != null) {
-            FullscreenBackCallbackApi33.unregister(this, fullscreenBackCallback);
-            fullscreenBackCallback = null;
-        }
-    }
-
-    private void setLayoutTopMargin(int topMargin) {
-        ViewGroup.LayoutParams layoutParams = mLayout.getLayoutParams();
-        if (layoutParams instanceof FrameLayout.LayoutParams) {
-            FrameLayout.LayoutParams frameParams = (FrameLayout.LayoutParams) layoutParams;
-            if (frameParams.topMargin == topMargin) {
-                return;
-            }
-            frameParams.topMargin = topMargin;
-            mLayout.setLayoutParams(frameParams);
-        }
+        openOptionsMenu();
     }
 
     private int dp(float value) {
@@ -327,36 +236,38 @@ public class MainActivity extends SDLActivity {
     }
 
     @Override
+    protected void onDestroy() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            && menuBackCallback != null) {
+            MenuBackCallbackApi33.unregister(this, menuBackCallback);
+            menuBackCallback = null;
+        }
+        super.onDestroy();
+    }
+
+    @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (!hasFocus) {
             releaseVirtualKeys();
-        } else if (fullscreen) {
-            enterFullscreen();
+        } else {
+            applyWindowSettings();
         }
     }
 
     @Override
     public void onBackPressed() {
-        if (fullscreen) {
-            exitFullscreen();
-            return;
-        }
-        super.onBackPressed();
+        showRuntimeMenu();
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == android.R.id.home) {
-            finish();
-            return true;
-        }
         if (item.getItemId() == MENU_KEYPAD) {
             showKeypadDialog();
             return true;
         }
-        if (item.getItemId() == MENU_FULLSCREEN) {
-            enterFullscreen();
+        if (item.getItemId() == MENU_EXIT) {
+            finish();
             return true;
         }
         return super.onOptionsItemSelected(item);
@@ -382,8 +293,7 @@ public class MainActivity extends SDLActivity {
 
     private void updateVirtualKeypadVisibility() {
         boolean visible =
-            !fullscreen
-                && keypadMode != VirtualKeypadView.LayoutMode.NONE
+            keypadMode != VirtualKeypadView.LayoutMode.NONE
                 && keypadVisible;
         virtualKeypad.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
     }
@@ -394,7 +304,7 @@ public class MainActivity extends SDLActivity {
             layoutHeight - dp(MIN_SURFACE_HEIGHT_DP)
         );
         int actualKeypadHeight =
-            fullscreen || keypadMode == VirtualKeypadView.LayoutMode.NONE
+            keypadMode == VirtualKeypadView.LayoutMode.NONE
             ? 0
             : Math.min(virtualKeypad.getPreferredHeight(), availableKeypadHeight);
         ViewGroup.LayoutParams params = virtualKeypad.getLayoutParams();
@@ -411,12 +321,12 @@ public class MainActivity extends SDLActivity {
         }
     }
 
-    private static final class FullscreenBackCallbackApi33 {
-        private FullscreenBackCallbackApi33() {
+    private static final class MenuBackCallbackApi33 {
+        private MenuBackCallbackApi33() {
         }
 
         static Object register(MainActivity activity) {
-            android.window.OnBackInvokedCallback callback = activity::exitFullscreen;
+            android.window.OnBackInvokedCallback callback = activity::showRuntimeMenu;
             activity.getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
                 callback

@@ -87,11 +87,25 @@ class SettingsActivity : ComponentActivity() {
                         ) ?: EmulatorSettings.DEFAULT_SCREEN_RESOLUTION,
                     )
                 }
+                var statusBarEnabled by remember {
+                    mutableStateOf(
+                        preferences.getBoolean(
+                            EmulatorSettings.STATUS_BAR_ENABLED,
+                            EmulatorSettings.DEFAULT_STATUS_BAR_ENABLED,
+                        ),
+                    )
+                }
                 var resolutionMenuExpanded by remember { mutableStateOf(false) }
                 val onFullVmEnabledChange: (Boolean) -> Unit = { enabled ->
                     fullVmEnabled = enabled
                     preferences.edit()
                         .putBoolean(EmulatorSettings.FULL_VM_ENABLED, enabled)
+                        .apply()
+                }
+                val onStatusBarEnabledChange: (Boolean) -> Unit = { enabled ->
+                    statusBarEnabled = enabled
+                    preferences.edit()
+                        .putBoolean(EmulatorSettings.STATUS_BAR_ENABLED, enabled)
                         .apply()
                 }
 
@@ -238,6 +252,40 @@ class SettingsActivity : ComponentActivity() {
                                     }
                                 }
                             }
+                        }
+                        Text(
+                            text = "Display",
+                            modifier = Modifier.padding(
+                                start = 16.dp,
+                                top = 24.dp,
+                                end = 16.dp,
+                                bottom = 8.dp,
+                            ),
+                            color = MaterialTheme.colors.primary,
+                            fontWeight = FontWeight.Medium,
+                            style = MaterialTheme.typography.body2,
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 64.dp)
+                                .toggleable(
+                                    value = statusBarEnabled,
+                                    role = Role.Checkbox,
+                                    onValueChange = onStatusBarEnabledChange,
+                                )
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "Enable statusbar",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.body1,
+                            )
+                            Checkbox(
+                                checked = statusBarEnabled,
+                                onCheckedChange = null,
+                            )
                         }
                     }
                 }

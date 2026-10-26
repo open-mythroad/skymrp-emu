@@ -262,7 +262,12 @@ class LauncherActivity : ComponentActivity() {
                     query = query,
                     onQueryChange = { query = it },
                     scanMode = scanMode,
-                    onScanModeChange = { scanMode = it },
+                    onScanModeChange = { mode ->
+                        scanMode = mode
+                        if (mode == MrpScanMode.PARSED) {
+                            currentDirectory = mythroadDirectory
+                        }
+                    },
                     canNavigateUp = canNavigateUp,
                     onNavigateUp = {
                         currentDirectory.parentFile?.let { parent ->
