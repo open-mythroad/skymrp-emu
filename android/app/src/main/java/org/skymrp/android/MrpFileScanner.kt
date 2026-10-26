@@ -57,7 +57,7 @@ internal class MrpFileScanner(
                     search(directory, query)
                 }
             }
-            MrpScanMode.PARSED -> listParsed(directory, query)
+            MrpScanMode.PARSED -> listParsed(query)
         }
     }
 
@@ -121,34 +121,39 @@ internal class MrpFileScanner(
         return results.sortedWith(itemComparator)
     }
 
-    private fun listParsed(directory: File, query: String): List<MrpListItem> {
-        val canonicalDirectory = prepareDirectory(directory) ?: return emptyList()
+    private fun listParsed(query: String): List<MrpListItem> {
+        val canonicalRoot = prepareDirectory(rootDirectory) ?: return emptyList()
         val normalizedQuery = query.trim()
         val results = mutableListOf<MrpListItem>()
-        val pendingDirectories = ArrayDeque<File>()
-        val visitedDirectories = mutableSetOf<String>()
-        pendingDirectories.add(canonicalDirectory)
-
-        while (pendingDirectories.isNotEmpty()) {
-            val currentDirectory = pendingDirectories.removeFirst()
-            if (!visitedDirectories.add(currentDirectory.path)) {
-                continue
+        val scanDirectories = buildList {
+            add(canonicalRoot)
+            EmulatorSettings.SCREEN_RESOLUTIONS.forEach { resolution ->
+                val directory = canonicalFileOrNull(
+                    File(canonicalRoot, "app${resolution.replace("x", "")}"),
+                )
+                if (
+                    directory != null &&
+                    directory.isDirectory &&
+                    isWithinRoot(directory)
+                ) {
+                    add(directory)
+                }
             }
+        }
 
-            currentDirectory.listFiles()?.forEach { file ->
+        scanDirectories.forEach { scanDirectory ->
+            scanDirectory.listFiles()?.forEach { file ->
                 val canonicalFile = canonicalFileOrNull(file) ?: return@forEach
                 if (!isWithinRoot(canonicalFile)) {
                     return@forEach
                 }
 
-                if (canonicalFile.isDirectory) {
-                    pendingDirectories.add(canonicalFile)
-                } else if (
+                if (
                     canonicalFile.isFile &&
                     canonicalFile.extension.equals("mrp", ignoreCase = true)
                 ) {
                     val item = canonicalFile.toListItem(
-                        searchRoot = canonicalDirectory,
+                        searchRoot = canonicalRoot,
                         readMetadata = true,
                     )
                     if (
