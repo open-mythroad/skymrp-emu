@@ -31,7 +31,7 @@ android {
     defaultConfig {
         resValue("string", "app_name", "SkyMRP")
         manifestPlaceholders["icon"] = "@drawable/icon"
-        versionName = "0.3.1"
+        versionName = "0.4.0"
 
         minSdk = 21
         targetSdk = 31
