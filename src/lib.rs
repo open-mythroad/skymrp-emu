@@ -45,6 +45,22 @@ pub extern "C" fn SDL_main(
     argc: std::ffi::c_int,
     argv: *const *const std::ffi::c_char,
 ) -> std::ffi::c_int {
+    std::panic::set_hook(Box::new(|info| {
+        let payload = if let Some(message) = info.payload().downcast_ref::<&str>() {
+            message
+        } else if let Some(message) = info.payload().downcast_ref::<String>() {
+            message
+        } else {
+            "(non-string payload)"
+        };
+
+        if let Some(location) = info.location() {
+            echo!("Panic at {location}: {payload}");
+        } else {
+            echo!("Panic: {payload}");
+        }
+    }));
+
     let args = if argc > 0 && !argv.is_null() {
         let raw_args = unsafe { std::slice::from_raw_parts(argv, argc as usize) };
         raw_args
