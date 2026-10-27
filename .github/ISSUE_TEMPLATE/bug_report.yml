@@ -1,0 +1,64 @@
+name: Report a bug or compatibility problem
+description: Report a SkyMRP bug or a problem with a specific MRP app.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for SkyMRP bugs, crashes, and app-specific compatibility
+        problems.
+
+  - type: input
+    id: app
+    attributes:
+      label: App name
+      description: Leave this blank if the problem is not specific to an MRP app.
+      placeholder: App or game title
+
+  - type: input
+    id: app_version
+    attributes:
+      label: App version
+      description: Leave this blank if the version is unknown or not applicable.
+      placeholder: "1.0"
+
+  - type: input
+    id: skymrp_version
+    attributes:
+      label: SkyMRP version
+      placeholder: v0.4.0
+    validations:
+      required: true
+
+  - type: input
+    id: operating_system
+    attributes:
+      label: Operating system
+      placeholder: Windows 11
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is the problem?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: If SkyMRP crashed, please paste the log output
+      description: Paste terminal output or relevant Android logcat output.
+      render: text
+
+  - type: checkboxes
+    id: certification
+    attributes:
+      label: By submitting this issue, I certify that...
+      options:
+        - label: I searched the existing issues and did not find a duplicate.
+          required: true
+        - label: I will not upload or link copyrighted MRP packages or other unauthorized proprietary content.
+          required: true

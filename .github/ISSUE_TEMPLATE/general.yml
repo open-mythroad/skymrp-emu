@@ -1,0 +1,20 @@
+name: Request a feature or general improvement
+description: Suggest an emulator feature or general improvement.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: feature
+    attributes:
+      label: Describe the feature or improvement
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: certification
+    attributes:
+      label: By submitting this issue, I certify that...
+      options:
+        - label: I searched the existing issues and did not find a duplicate.
+          required: true
+        - label: I will not upload or link copyrighted MRP packages or other unauthorized proprietary content.
+          required: true
