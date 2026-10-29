@@ -312,7 +312,7 @@ class LauncherActivity : ComponentActivity() {
                         lifecycleScope.launch {
                             runCatching {
                                 withContext(Dispatchers.IO) {
-                                    deleteMrp(item.path)
+                                    deleteItem(item)
                                 }
                             }.onSuccess {
                                 storageRefreshToken++
@@ -322,7 +322,14 @@ class LauncherActivity : ComponentActivity() {
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             }.onFailure { error ->
-                                showOperationError(error, "Could not delete MRP file")
+                                showOperationError(
+                                    error,
+                                    if (item.isDirectory) {
+                                        "Could not delete folder"
+                                    } else {
+                                        "Could not delete MRP file"
+                                    },
+                                )
                             }
                         }
                     },
@@ -408,9 +415,20 @@ class LauncherActivity : ComponentActivity() {
         check(source.renameTo(destination)) { "Could not rename MRP file" }
     }
 
-    private fun deleteMrp(path: String) {
-        val file = resolveMrpFile(path)
-        check(file.delete()) { "Could not delete MRP file" }
+    private fun deleteItem(item: MrpListItem) {
+        if (!item.isDirectory) {
+            val file = resolveMrpFile(item.path)
+            check(file.delete()) { "Could not delete MRP file" }
+            return
+        }
+
+        val root = mythroadDirectory.canonicalFile
+        val directory = File(item.path).canonicalFile
+        require(directory.path.startsWith(root.path + File.separator)) {
+            "Folder is outside the mythroad directory"
+        }
+        require(directory.isDirectory) { "Folder is no longer available" }
+        check(directory.deleteRecursively()) { "Could not delete folder" }
     }
 
     private fun resolveMrpFile(path: String): File {
@@ -1014,8 +1032,18 @@ private fun LauncherScreen(
     deleteItem?.let { item ->
         AlertDialog(
             onDismissRequest = { deleteItem = null },
-            title = { Text("Delete MRP") },
-            text = { Text("Delete ${item.name} permanently?") },
+            title = {
+                Text(if (item.isDirectory) "Delete folder" else "Delete MRP")
+            },
+            text = {
+                Text(
+                    if (item.isDirectory) {
+                        "Delete ${item.name} and all of its contents permanently?"
+                    } else {
+                        "Delete ${item.name} permanently?"
+                    },
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -1048,7 +1076,9 @@ private fun MrpListRow(
 ) {
     var actionsExpanded by remember { mutableStateOf(false) }
     var pressPosition by remember { mutableStateOf(Offset.Zero) }
-    val interactionModifier = if (item.isDirectory) {
+    val hasActions = !item.isDirectory ||
+        (scanMode == MrpScanMode.FOLDER && item.name != "..")
+    val interactionModifier = if (!hasActions) {
         Modifier.clickable(onClick = onClick)
     } else {
         Modifier
@@ -1133,7 +1163,7 @@ private fun MrpListRow(
                 )
             }
         }
-        if (!item.isDirectory) {
+        if (hasActions) {
             Box(
                 modifier = Modifier
                     .offset {
@@ -1148,32 +1178,34 @@ private fun MrpListRow(
                     expanded = actionsExpanded,
                     onDismissRequest = { actionsExpanded = false },
                 ) {
-                    if (scanMode == MrpScanMode.PARSED) {
+                    if (!item.isDirectory) {
+                        if (scanMode == MrpScanMode.PARSED) {
+                            DropdownMenuItem(
+                                onClick = {
+                                    actionsExpanded = false
+                                    onViewDetails()
+                                },
+                            ) {
+                                Text("View details")
+                            }
+                        } else {
+                            DropdownMenuItem(
+                                onClick = {
+                                    actionsExpanded = false
+                                    onRename()
+                                },
+                            ) {
+                                Text("Rename")
+                            }
+                        }
                         DropdownMenuItem(
                             onClick = {
                                 actionsExpanded = false
-                                onViewDetails()
+                                onAddShortcut()
                             },
                         ) {
-                            Text("View details")
+                            Text("Add shortcut")
                         }
-                    } else {
-                        DropdownMenuItem(
-                            onClick = {
-                                actionsExpanded = false
-                                onRename()
-                            },
-                        ) {
-                            Text("Rename")
-                        }
-                    }
-                    DropdownMenuItem(
-                        onClick = {
-                            actionsExpanded = false
-                            onAddShortcut()
-                        },
-                    ) {
-                        Text("Add shortcut")
                     }
                     DropdownMenuItem(
                         onClick = {
