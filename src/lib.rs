@@ -16,6 +16,7 @@ mod encoding;
 mod environment;
 mod font;
 mod fs;
+mod gdb;
 mod gzip;
 mod haptics;
 mod libc;

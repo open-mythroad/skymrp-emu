@@ -1068,8 +1068,7 @@ pub(crate) fn test_com1(
         }
         7 | 8 => {}
         9 => {
-            env.cpu
-                .invalidate_cache_range(input1.to_bits(), len as usize);
+            env.cpu.invalidate_cache_range(input1.to_bits(), len);
             return 0;
         }
         #[cfg(feature = "lua")]
@@ -1117,8 +1116,7 @@ pub(crate) fn test_com1(
             let code = crate::lua::mr_l_optint(env, l, 3, 0) as u32;
             env.mem
                 .write(input1.cast(), env.syscall.function_table_ptr());
-            env.cpu
-                .invalidate_cache_range(input1.to_bits(), len as usize);
+            env.cpu.invalidate_cache_range(input1.to_bits(), len);
             env.mythroad.state.mr_c_function_load =
                 GuestFunction::from_addr_with_thumb_bit(input1.to_bits() + 8);
 
@@ -1874,8 +1872,7 @@ pub(crate) fn mr_test_com_c(
         800 => {
             env.mem
                 .write(input.cast(), env.syscall.function_table_ptr());
-            env.cpu
-                .invalidate_cache_range(input.to_bits(), len as usize);
+            env.cpu.invalidate_cache_range(input.to_bits(), len);
             env.mythroad.state.mr_c_function_load =
                 GuestFunction::from_addr_with_thumb_bit(input.to_bits() + 8);
 

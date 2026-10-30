@@ -29,6 +29,7 @@ namespace skymrp::cpu
     }
 
     const auto HaltReasonSvc = Dynarmic::HaltReason::UserDefined1;
+    const auto HaltReasonUndefinedInstruction = Dynarmic::HaltReason::UserDefined2;
 
     class Environment final : public Dynarmic::A32::UserCallbacks
     {
@@ -138,6 +139,9 @@ namespace skymrp::cpu
             if (exception == Dynarmic::A32::Exception::NoExecuteFault)
             {
                 cpu->HaltExecution(Dynarmic::HaltReason::MemoryAbort);
+            } else if (exception == Dynarmic::A32::Exception::UndefinedInstruction)
+            {
+                cpu->HaltExecution(HaltReasonUndefinedInstruction);
             }
             else
             {
@@ -180,24 +184,34 @@ namespace skymrp::cpu
         std::uint32_t cpsr() const { return cpu->Cpsr(); }
         void set_cpsr(std::uint32_t cpsr) { cpu->SetCpsr(cpsr); }
         void clear_cache() { cpu->ClearCache(); }
-        void invalidate_cache_range(std::uint32_t start_address, std::size_t length)
+        void invalidate_cache_range(std::uint32_t start_address, std::uint32_t size)
         {
-            cpu->InvalidateCacheRange(start_address, length);
+            cpu->InvalidateCacheRange(start_address, size);
         }
 
-        std::int32_t run(skymrp_Memory *mem, std::uint64_t *ticks)
+        std::int32_t run_or_step(skymrp_Memory *mem, std::uint64_t *ticks)
         {
             env.mem = mem;
-            env.ticks_remaining = *ticks;
-            Dynarmic::HaltReason hr = cpu->Run();
+            Dynarmic::HaltReason hr;
+            if (ticks) {
+                env.ticks_remaining = *ticks;
+                hr = cpu->Run();
+            }
+            else
+            {
+                hr = cpu->Step();
+            }
             std::int32_t res;
-            if (!hr)
+            if ((!hr && ticks) || (hr == Dynarmic::HaltReason::Step && !ticks))
             {
                 res = -1;
             }
             else if (Dynarmic::Has(hr, Dynarmic::HaltReason::MemoryAbort))
             {
                 res = -2;
+            } else if (Dynarmic::Has(hr, HaltReasonUndefinedInstruction))
+            {
+                res = -3;
             }
             else if (Dynarmic::Has(hr, HaltReasonSvc))
             {
@@ -209,7 +223,10 @@ namespace skymrp::cpu
                 abort();
             }
             env.mem = nullptr;
-            *ticks = env.ticks_remaining;
+            if (ticks)
+            {
+                *ticks = env.ticks_remaining;
+            }
             return res;
         }
     };
@@ -247,15 +264,15 @@ namespace skymrp::cpu
             cpu->clear_cache();
         }
         void skymrp_DynarmicWrapper_invalidate_cache_range(
-            DynarmicWrapper *cpu, std::uint32_t start_address, std::size_t length)
+            DynarmicWrapper *cpu, std::uint32_t start_address, std::uint32_t size)
         {
-            cpu->invalidate_cache_range(start_address, length);
+            cpu->invalidate_cache_range(start_address, size);
         }
 
-        std::int32_t skymrp_DynarmicWrapper_run(DynarmicWrapper *cpu, skymrp_Memory *mem,
+        std::int32_t skymrp_DynarmicWrapper_run_or_step(DynarmicWrapper *cpu, skymrp_Memory *mem,
                                                 std::uint64_t *ticks)
         {
-            return cpu->run(mem, ticks);
+            return cpu->run_or_step(mem, ticks);
         }
     }
 

@@ -5,9 +5,10 @@
  */
 use crate::window::Event;
 use crate::{
-    audio, cpu, dsm, editbox, fs, haptics, libc, mem, mrp, mythroad, options, stack, syscall,
+    audio, cpu, dsm, editbox, fs, gdb, haptics, libc, mem, mrp, mythroad, options, stack, syscall,
     window,
 };
+use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
 use std::path::PathBuf;
@@ -35,6 +36,7 @@ pub struct Environment {
     pub libc_state: libc::State,
     pub mythroad: mythroad::Mythroad,
     pub startup_time: Instant,
+    gdb_server: Option<gdb::GdbServer>,
 }
 
 impl Environment {
@@ -66,13 +68,8 @@ impl Environment {
         syscall.setup_stubs(&mut mem, &mythroad);
         let mut cpu = cpu::Cpu::new(options.cpu_backend);
         stack::prep_stack_for_start(&mut mem, &mut cpu);
-        let libc_state = Default::default();
 
-        log_dbg!("CPU emulation begins now.");
-
-        cpu.set_cpsr(cpu::Cpu::CPSR_USER_MODE);
-
-        Ok(Environment {
+        let mut env = Environment {
             options,
             window,
             mem,
@@ -81,10 +78,36 @@ impl Environment {
             package_cache: Some(package_cache),
             syscall,
             cpu,
-            libc_state,
+            libc_state: Default::default(),
             mythroad,
             startup_time: Instant::now(),
-        })
+            gdb_server: None,
+        };
+        env.cpu.set_cpsr(cpu::Cpu::CPSR_USER_MODE);
+
+        if let Some(addrs) = env.options.gdb_listen_addrs.take() {
+            let listener = TcpListener::bind(addrs.as_slice())
+                .map_err(|e| format!("Could not bind to {:?}: {}", addrs, e))?;
+            println!(
+                "Waiting for debugger connection on {}...",
+                addrs
+                    .into_iter()
+                    .map(|a| format!("{}", a))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            );
+            let (client, client_addr) = listener
+                .accept()
+                .map_err(|e| format!("Could not accept connection: {}", e))?;
+            println!("Debugger client connected on {}.", client_addr);
+            let mut gdb_server = gdb::GdbServer::new(client);
+            gdb_server.wait_for_debugger(None, &mut env.cpu, &mut env.mem);
+            env.gdb_server = Some(gdb_server);
+        }
+
+        println!("CPU emulation begins now.");
+
+        Ok(env)
     }
 
     fn stack_trace(&self) {
@@ -137,6 +160,40 @@ impl Environment {
                 std::panic::resume_unwind(e);
             }
         }
+    }
+
+    #[cold]
+    /// Let the debugger handle a CPU error, or panic if there's no debugger
+    /// connected. Returns [true] if the CPU should step and then resume
+    /// debugging, or [false] if it should resume normal execution.
+    fn debug_cpu_error(&mut self, error: cpu::CpuError) -> bool {
+        if matches!(error, cpu::CpuError::UndefinedInstruction) {
+            // Rewind the PC so that it's at the instruction where the error
+            // occurred, rather than the next instruction. This is necessary for
+            // GDB to detect its software breakpoints. For some reason this
+            // isn't correct for memory errors however.
+            let instruction_len = if (self.cpu.cpsr() & cpu::Cpu::CPSR_THUMB) != 0 {
+                2
+            } else {
+                4
+            };
+            let pc = self.cpu.reg(cpu::Cpu::PC);
+            self.cpu
+                .set_reg(cpu::Cpu::PC, pc.wrapping_sub(instruction_len));
+        }
+        if self.gdb_server.is_none() {
+            panic!("Error during CPU execution: {:?}", error);
+        }
+
+        eprintln!("Debuggable error during CPU execution: {:?}.", error);
+        // GDB doesn't seem to manage to produce a useful stack trace, so
+        // let's print our own.
+        self.stack_trace();
+        self.gdb_server.as_mut().unwrap().wait_for_debugger(
+            Some(error),
+            &mut self.cpu,
+            &mut self.mem,
+        )
     }
 
     pub fn run_call(&mut self) {
@@ -306,9 +363,15 @@ impl Environment {
         loop {
             self.window.poll_for_events(self.mythroad.editbox.is_some());
             let mut ticks = 1_000;
+            let mut step_and_debug = false;
 
             while ticks > 0 {
-                match self.cpu.run(&mut self.mem, &mut ticks) {
+                let state = if step_and_debug {
+                    self.cpu.run_or_step(&mut self.mem, None)
+                } else {
+                    self.cpu.run_or_step(&mut self.mem, Some(&mut ticks))
+                };
+                match state {
                     cpu::CpuState::Normal => (),
                     cpu::CpuState::Svc(svc) => {
                         // the program counter is pointing at the
@@ -335,6 +398,17 @@ impl Environment {
                         let f = self.syscall.get_svc_handler(&mut self.mem, svc_pc, svc);
                         f.call_from_guest(self);
                     }
+                    cpu::CpuState::Error(error) => {
+                        step_and_debug = self.debug_cpu_error(error);
+                        continue;
+                    }
+                }
+                if step_and_debug {
+                    step_and_debug = self.gdb_server.as_mut().unwrap().wait_for_debugger(
+                        None,
+                        &mut self.cpu,
+                        &mut self.mem,
+                    );
                 }
             }
         }

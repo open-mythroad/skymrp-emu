@@ -23,11 +23,11 @@ unsafe extern "C" {
     pub unsafe fn skymrp_DynarmicWrapper_invalidate_cache_range(
         cpu: *mut skymrp_DynarmicWrapper,
         start_address: u32,
-        length: usize,
+        size: u32,
     );
-    pub unsafe fn skymrp_DynarmicWrapper_run(
+    pub unsafe fn skymrp_DynarmicWrapper_run_or_step(
         cpu: *mut skymrp_DynarmicWrapper,
         mem: *mut skymrp_Memory,
-        ticks: *mut u64,
+        ticks: Option<&mut u64>,
     ) -> i32;
 }

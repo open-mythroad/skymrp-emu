@@ -117,10 +117,22 @@ impl Drop for Cpu {
 /// Why CPU execution ended.
 #[derive(Debug)]
 pub enum CpuState {
-    /// Execution halted due to using up all remaining ticks.
+    /// Execution halted due to using up all remaining ticks (normal execution)
+    /// or after the single instruction was executed (step execution).
     Normal,
     /// SVC instruction encountered.
     Svc(u32),
+    /// An error was encountered.
+    Error(CpuError),
+}
+
+/// A reason that can cause CPU execution to be interrupted.
+#[derive(Debug)]
+pub enum CpuError {
+    /// Memory error during execution (probably a null page access).
+    MemoryError,
+    /// Undefined instruction (perhaps from a GDB software breakpoint).
+    UndefinedInstruction,
 }
 
 impl Cpu {
@@ -215,31 +227,26 @@ impl Cpu {
         }
     }
 
-    fn invalidate_cache_range_inner(&mut self, start_address: u32, length: usize) {
+    fn invalidate_cache_range_inner(&mut self, start_address: u32, size: GuestUSize) {
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        let _ = (start_address, length);
+        let _ = (start_address, size);
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if let Backend::Dynarmic(dynarmic_wrapper) = self.backend {
             unsafe {
-                skymrp_DynarmicWrapper_invalidate_cache_range(
-                    dynarmic_wrapper,
-                    start_address,
-                    length,
-                )
+                skymrp_DynarmicWrapper_invalidate_cache_range(dynarmic_wrapper, start_address, size)
             }
         }
     }
 
-    pub fn invalidate_cache_range(&mut self, start_address: VAddr, length: usize) {
-        if length != 0 && start_address < LINEAR_MEMORY_SIZE {
-            let size = length.min(u32::MAX as usize) as u32;
+    pub fn invalidate_cache_range(&mut self, start_address: VAddr, size: GuestUSize) {
+        if size != 0 && start_address < LINEAR_MEMORY_SIZE {
             let end = start_address.saturating_add(size).min(LINEAR_MEMORY_SIZE);
             let first_page = (start_address / PAGE_SIZE) as usize;
             let last_page = ((end - 1) / PAGE_SIZE) as usize;
             self.executable_pages[first_page..=last_page].fill(true);
         }
 
-        self.invalidate_cache_range_inner(start_address, length);
+        self.invalidate_cache_range_inner(start_address, size);
     }
 
     /// Notify the CPU backend after host code writes guest memory.
@@ -258,7 +265,7 @@ impl Cpu {
         {
             let page_start = first_page as VAddr * PAGE_SIZE;
             let page_end = (last_page as VAddr + 1) * PAGE_SIZE;
-            self.invalidate_cache_range_inner(page_start, (page_end - page_start) as usize);
+            self.invalidate_cache_range_inner(page_start, page_end - page_start);
         }
     }
 
@@ -291,29 +298,35 @@ impl Cpu {
         (old_pc, old_lr)
     }
 
+    /// Start CPU execution.
+    ///
+    /// If `ticks` is [Some], it is used as an abstract time limit. The value
+    /// will be reduced proportionately with the amount of ticks expended.
+    ///
+    /// If `ticks` is [None], the CPU executes only a single instruction. This
+    /// is also known as "stepping".
+    ///
+    /// This will return either because the CPU ran out of time, or because
+    /// something else happened which requires attention from the host.
     #[must_use]
-    pub fn run(&mut self, mem: &mut Memory, ticks: &mut u64) -> CpuState {
+    pub fn run_or_step(&mut self, mem: &mut Memory, ticks: Option<&mut u64>) -> CpuState {
         match &mut self.backend {
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             Backend::Dynarmic(dynarmic_wrapper) => unsafe {
-                let res = skymrp_DynarmicWrapper_run(
+                let res = skymrp_DynarmicWrapper_run_or_step(
                     *dynarmic_wrapper,
                     mem as *mut Memory as *mut skymrp_Memory,
                     ticks,
                 );
                 match res {
-                    -1 => {
-                        assert!(*ticks == 0);
-                        CpuState::Normal
-                    }
-                    -2 => {
-                        panic!("Memory error during CPU execution!");
-                    }
-                    _ if res < -1 => panic!("Unexpected CPU execution result"),
+                    -1 => CpuState::Normal,
+                    -2 => CpuState::Error(CpuError::MemoryError),
+                    -3 => CpuState::Error(CpuError::UndefinedInstruction),
+                    _ if res < -2 => panic!("Unexpected CPU execution result"),
                     svc => CpuState::Svc(svc as u32),
                 }
             },
-            Backend::Interpreter(cpu) => cpu.run(mem, ticks),
+            Backend::Interpreter(cpu) => cpu.run_or_step(mem, ticks),
         }
     }
 }

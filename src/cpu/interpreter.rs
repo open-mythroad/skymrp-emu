@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use super::CpuState;
+use super::{CpuError, CpuState};
 use crate::mem::{ConstPtr, Memory, MutPtr};
 use arm32_cpu::{reg, Cpu as ArmCpu, Memory as ArmMemory, Mode};
 
@@ -66,19 +66,41 @@ impl InterpreterCpu {
     }
 
     #[must_use]
-    pub fn run(&mut self, mem: &mut Memory, ticks: &mut u64) -> CpuState {
+    pub fn run_or_step(&mut self, mem: &mut Memory, mut ticks: Option<&mut u64>) -> CpuState {
+        let stepping = ticks.is_none();
+
         loop {
             if let Some(svc) = self.svc(mem) {
                 return CpuState::Svc(svc);
             }
-            if *ticks == 0 {
-                return CpuState::Normal;
+
+            if let Some(ticks) = ticks.as_deref_mut() {
+                if *ticks == 0 {
+                    return CpuState::Normal;
+                }
             }
 
             let decoded = self.cpu.step(mem);
-            *ticks -= 1;
 
-            assert!(decoded, "Undefined instruction during CPU execution");
+            if let Some(ticks) = ticks.as_deref_mut() {
+                *ticks -= 1;
+            }
+
+            if !decoded {
+                let lr = self.cpu.reg_get(Mode::Undefined, reg::LR);
+                let spsr = self.cpu.reg_get(Mode::Undefined, reg::SPSR);
+                self.set_cpsr(spsr);
+                self.set_reg(reg::PC.into(), lr);
+                return CpuState::Error(CpuError::UndefinedInstruction);
+            }
+
+            if let Some(svc) = self.svc(mem) {
+                return CpuState::Svc(svc);
+            }
+
+            if stepping {
+                return CpuState::Normal;
+            }
         }
     }
 }

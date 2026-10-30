@@ -20,3 +20,16 @@ Runtime options:
     --runtime=mini|full
         Select the Mythroad runtime. Full requires the lua feature.
         The default is mini. Full runtime support is experimental.
+
+Debugging options:
+    --gdb=...
+        Starts skymrp in debugging mode, listening for GDB remote serial
+        protocol connections over TCP on the specified host and port.
+
+        You can then connect to skymrp with GDB and make use of its features
+        to inspect memory and registers, set up software breakpoints, and
+        continue or step execution.
+
+        The host and port should be separated by a colon. The host can be a
+        host name or an IP address. IPv6 addresses should be enclosed in square
+        brackets, e.g. --gdb=[::1]:9001 for IPv6 loopback device port 9001.

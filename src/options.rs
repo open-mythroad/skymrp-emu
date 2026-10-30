@@ -5,6 +5,7 @@
  */
 use crate::cpu::CpuBackend;
 use crate::font::FontSize;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::num::NonZeroU32;
 
 pub const OPTIONS_HELP: &str =
@@ -24,6 +25,7 @@ pub struct Options {
     pub font_size_override: Option<FontSize>,
     pub cpu_backend: CpuBackend,
     pub runtime_mode: RuntimeMode,
+    pub gdb_listen_addrs: Option<Vec<SocketAddr>>,
 }
 
 impl Default for Options {
@@ -38,6 +40,7 @@ impl Default for Options {
             cpu_backend: CpuBackend::Dynarmic,
             #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
             cpu_backend: CpuBackend::Interpreter,
+            gdb_listen_addrs: None,
         }
     }
 }
@@ -93,6 +96,13 @@ impl Options {
                 "full" => return Err("This build only supports the mini runtime".to_owned()),
                 _ => return Err(format!("Invalid runtime mode: {value}")),
             };
+        } else if let Some(address) = arg.strip_prefix("--gdb=") {
+            let addrs = address
+                .to_socket_addrs()
+                .map_err(|e| format!("Could not resolve GDB server listen address: {}", e))?
+                .collect();
+            println!("{:?}", addrs);
+            self.gdb_listen_addrs = Some(addrs);
         } else {
             return Ok(false);
         }
