@@ -6,6 +6,7 @@
 package org.skymrp.android
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.content.Intent
@@ -679,6 +680,7 @@ private fun LauncherScreen(
     var searchActive by remember { mutableStateOf(false) }
     var moreMenuExpanded by remember { mutableStateOf(false) }
     var aboutVisible by remember { mutableStateOf(false) }
+    var automaticUpdateRelease by remember { mutableStateOf<GitHubRelease?>(null) }
     var detailsItem by remember { mutableStateOf<MrpListItem?>(null) }
     var renameItem by remember { mutableStateOf<MrpListItem?>(null) }
     var renameName by remember { mutableStateOf("") }
@@ -693,6 +695,34 @@ private fun LauncherScreen(
 
     LaunchedEffect(listResetToken) {
         listState.scrollToItem(0)
+    }
+
+    LaunchedEffect(versionName) {
+        val preferences = context.getSharedPreferences(
+            EmulatorSettings.PREFERENCES,
+            Context.MODE_PRIVATE,
+        )
+        if (
+            preferences.getBoolean(
+                EmulatorSettings.AUTO_CHECK_UPDATES,
+                EmulatorSettings.DEFAULT_AUTO_CHECK_UPDATES,
+            )
+        ) {
+            val now = System.currentTimeMillis()
+            if (
+                now - preferences.getLong(EmulatorSettings.LAST_UPDATE_CHECK, 0L) >
+                UPDATE_CHECK_INTERVAL_MILLIS
+            ) {
+                preferences.edit()
+                    .putLong(EmulatorSettings.LAST_UPDATE_CHECK, now)
+                    .apply()
+                fetchLatestRelease().getOrNull()?.let { release ->
+                    if (isNewerVersion(release.tagName, versionName)) {
+                        automaticUpdateRelease = release
+                    }
+                }
+            }
+        }
     }
 
     Scaffold(
@@ -966,6 +996,19 @@ private fun LauncherScreen(
                 }
             },
             buttons = {},
+        )
+    }
+
+    automaticUpdateRelease?.let { release ->
+        UpdateAvailableDialog(
+            release = release,
+            onDismiss = { automaticUpdateRelease = null },
+            onViewRelease = {
+                runCatching {
+                    uriHandler.openUri(release.htmlUrl)
+                }
+                automaticUpdateRelease = null
+            },
         )
     }
 
