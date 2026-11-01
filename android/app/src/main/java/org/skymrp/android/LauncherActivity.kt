@@ -41,6 +41,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -70,6 +71,7 @@ import androidx.compose.material.IconButton
 import androidx.compose.material.IconToggleButton
 import androidx.compose.material.LocalContentAlpha
 import androidx.compose.material.LocalContentColor
+import androidx.compose.material.LocalTextStyle
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Scaffold
 import androidx.compose.material.Text
@@ -101,6 +103,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -779,19 +782,29 @@ private fun LauncherScreen(
                     },
                     title = {
                         if (searchActive) {
-                            TextField(
+                            val textColor = LocalContentColor.current.copy(
+                                alpha = LocalContentAlpha.current,
+                            )
+                            BasicTextField(
                                 value = query,
                                 onValueChange = onQueryChange,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .focusRequester(searchFocusRequester),
-                                placeholder = { Text("Search...") },
                                 singleLine = true,
-                                colors = TextFieldDefaults.textFieldColors(
-                                    backgroundColor = Color.Transparent,
-                                    focusedIndicatorColor = Color.Transparent,
-                                    unfocusedIndicatorColor = Color.Transparent,
-                                ),
+                                textStyle = LocalTextStyle.current.copy(color = textColor),
+                                cursorBrush = SolidColor(textColor),
+                                decorationBox = { innerTextField ->
+                                    Box(contentAlignment = Alignment.CenterStart) {
+                                        if (query.isEmpty()) {
+                                            Text(
+                                                text = "Search...",
+                                                color = textColor.copy(alpha = 0.6f),
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                },
                             )
                         } else {
                             Text(
