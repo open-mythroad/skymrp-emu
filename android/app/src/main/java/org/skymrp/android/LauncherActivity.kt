@@ -60,6 +60,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
+import androidx.compose.material.CircularProgressIndicator
 import androidx.compose.material.Divider
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
@@ -128,6 +129,14 @@ private const val COPYRIGHT_START_YEAR = 2026
 private const val ACTION_LAUNCH_MRP = "org.skymrp.android.action.LAUNCH_MRP"
 private const val EXTRA_SHORTCUT_MRP_PATH = "org.skymrp.android.extra.SHORTCUT_MRP_PATH"
 private const val EXTRA_SHORTCUT_MRP_TITLE = "org.skymrp.android.extra.SHORTCUT_MRP_TITLE"
+
+private data class MrpScanRequest(
+    val directoryPath: String,
+    val query: String,
+    val mode: MrpScanMode,
+    val refreshToken: Int,
+    val hasStorageAccess: Boolean,
+)
 
 class LauncherActivity : ComponentActivity() {
     private var storageRefreshToken by mutableStateOf(0)
@@ -203,17 +212,21 @@ class LauncherActivity : ComponentActivity() {
                 var displayedListScope by remember {
                     mutableStateOf<Triple<String, String, MrpScanMode>?>(null)
                 }
+                var completedScanRequest by remember {
+                    mutableStateOf<MrpScanRequest?>(null)
+                }
                 val hasStorageAccess = hasStorageAccess()
                 val canNavigateUp = currentDirectory != mythroadDirectory
                 val listScope = Triple(currentDirectory.path, query, scanMode)
+                val scanRequest = MrpScanRequest(
+                    directoryPath = currentDirectory.path,
+                    query = query,
+                    mode = scanMode,
+                    refreshToken = refreshToken,
+                    hasStorageAccess = hasStorageAccess,
+                )
 
-                LaunchedEffect(
-                    currentDirectory,
-                    query,
-                    scanMode,
-                    refreshToken,
-                    hasStorageAccess,
-                ) {
+                LaunchedEffect(scanRequest) {
                     if (query.isNotBlank()) {
                         delay(150)
                     }
@@ -233,6 +246,7 @@ class LauncherActivity : ComponentActivity() {
                         displayedListScope = listScope
                         listResetToken++
                     }
+                    completedScanRequest = scanRequest
                 }
 
                 BackHandler(enabled = canNavigateUp) {
@@ -242,7 +256,10 @@ class LauncherActivity : ComponentActivity() {
                     }
                 }
 
-                val visibleItems = if (canNavigateUp) {
+                val listScopeIsCurrent = displayedListScope == listScope
+                val visibleItems = if (!listScopeIsCurrent) {
+                    emptyList()
+                } else if (canNavigateUp) {
                     listOf(
                         MrpListItem(
                             name = "..",
@@ -258,6 +275,7 @@ class LauncherActivity : ComponentActivity() {
 
                 LauncherScreen(
                     items = visibleItems,
+                    isScanning = completedScanRequest != scanRequest || !listScopeIsCurrent,
                     listResetToken = listResetToken,
                     title = if (canNavigateUp) currentDirectory.name else "SkyMRP",
                     query = query,
@@ -648,6 +666,7 @@ internal fun SkyMRPTheme(content: @Composable () -> Unit) {
 @Composable
 private fun LauncherScreen(
     items: List<MrpListItem>,
+    isScanning: Boolean,
     listResetToken: Int,
     title: String,
     query: String,
@@ -909,7 +928,16 @@ private fun LauncherScreen(
             }
         },
     ) { contentPadding ->
-        if (items.isEmpty()) {
+        if (isScanning) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+        } else if (items.isEmpty()) {
             androidx.compose.foundation.layout.Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1326,6 +1354,7 @@ private fun LauncherScreenPreview() {
                     version = 5040,
                 ),
             ),
+            isScanning = false,
             listResetToken = 0,
             title = "SkyMRP",
             query = "",
