@@ -101,7 +101,8 @@ impl Environment {
                 .map_err(|e| format!("Could not accept connection: {}", e))?;
             println!("Debugger client connected on {}.", client_addr);
             let mut gdb_server = gdb::GdbServer::new(client);
-            gdb_server.wait_for_debugger(None, &mut env.cpu, &mut env.mem);
+            let step = gdb_server.wait_for_debugger(None, &mut env.cpu, &mut env.mem);
+            assert!(!step, "Can't step right now!"); // TODO?
             env.gdb_server = Some(gdb_server);
         }
 
@@ -111,23 +112,23 @@ impl Environment {
     }
 
     fn stack_trace(&self) {
-        eprintln!(
+        echo!(
             "-1. {:#x} (PC)",
             self.cpu.pc_with_thumb_bit().addr_with_thumb_bit()
         );
         let mut lr = self.cpu.reg(cpu::Cpu::LR);
-        eprintln!(" 0. {:#x} (LR)", lr);
+        echo!(" 0. {:#x} (LR)", lr);
         let mut i = 0;
         let mut frame_pointer: mem::ConstPtr<u8> = mem::Ptr::from_bits(self.cpu.reg(7));
         loop {
             let fp = frame_pointer.to_bits();
             if fp < mem::Memory::STACK_LOW_END || fp > mem::Memory::STACK_HIGH_END - 8 {
-                eprintln!("Next FP ({frame_pointer:?}) is outside the stack.");
+                echo!("Next FP ({frame_pointer:?}) is outside the stack.");
                 break;
             }
             lr = self.mem.read((frame_pointer + 4).cast());
             frame_pointer = self.mem.read(frame_pointer.cast());
-            eprintln!("{:2}. {:#x}", i, lr);
+            echo!("{:2}. {:#x}", i, lr);
             i += 1;
         }
     }
@@ -153,9 +154,9 @@ impl Environment {
                 log!("Mythroad: DSM startup failed");
             }
             Err(e) => {
-                eprintln!("Register state immediately after panic:");
+                echo!("Register state immediately after panic:");
                 self.cpu.dump_regs();
-                eprintln!("Attempting to produce stack trace:");
+                echo!("Attempting to produce stack trace:");
                 self.stack_trace();
                 std::panic::resume_unwind(e);
             }
@@ -187,15 +188,29 @@ impl Environment {
             panic!("Error during CPU execution: {:?}", error);
         }
 
-        eprintln!("Debuggable error during CPU execution: {:?}.", error);
+        echo!("Debuggable error during CPU execution: {:?}.", error);
+        self.enter_debugger(Some(error))
+    }
+
+    /// Used to check whether a debugger is connected, and therefore whether
+    /// [Environment::enter_debugger] will do something.
+    pub fn is_debugging_enabled(&self) -> bool {
+        self.gdb_server.is_some()
+    }
+
+    /// Suspend execution and hand control to the connected debugger.
+    /// You should precede this call with a log message that explains why the
+    /// debugger is being invoked. The return value is the same as
+    /// [gdb::GdbServer::wait_for_debugger]'s.
+    #[must_use]
+    pub fn enter_debugger(&mut self, reason: Option<cpu::CpuError>) -> bool {
         // GDB doesn't seem to manage to produce a useful stack trace, so
         // let's print our own.
         self.stack_trace();
-        self.gdb_server.as_mut().unwrap().wait_for_debugger(
-            Some(error),
-            &mut self.cpu,
-            &mut self.mem,
-        )
+        self.gdb_server
+            .as_mut()
+            .unwrap()
+            .wait_for_debugger(reason, &mut self.cpu, &mut self.mem)
     }
 
     pub fn run_call(&mut self) {
@@ -254,6 +269,16 @@ impl Environment {
                     self.window.redraw();
                     continue;
                 }
+                Event::EnterDebugger => {
+                    if self.is_debugging_enabled() {
+                        log!("Handling EnterDebugger event: entering debugger.");
+                        let step = self.enter_debugger(/* reason: */ None);
+                        assert!(!step, "Can't step right now!"); // TODO?
+                    } else {
+                        log!("Ignoring EnterDebugger event: no debugger connected.");
+                    }
+                    continue;
+                }
                 _ => {}
             }
 
@@ -283,7 +308,8 @@ impl Environment {
                 Event::Quit
                 | Event::AppWillEnterBackground
                 | Event::AppDidEnterForeground
-                | Event::Redraw => {
+                | Event::Redraw
+                | Event::EnterDebugger => {
                     unreachable!()
                 }
                 Event::KeyDown(key) => {

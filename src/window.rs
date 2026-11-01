@@ -65,6 +65,7 @@ pub enum Event {
         start: i32,
         length: i32,
     },
+    EnterDebugger,
     MouseDown(Coords),
     MouseUp(Coords),
     MouseMove(Coords),
@@ -268,6 +269,14 @@ impl Window {
                     repeat,
                     ..
                 } => {
+                    if keycode == Keycode::F12 {
+                        if !repeat {
+                            echo!("F12 pressed, EnterDebugger event queued.");
+                            self.event_queue.push_back(Event::EnterDebugger);
+                        }
+                        continue;
+                    }
+
                     self.event_queue.push_back(Event::TextKeyDown {
                         keycode,
                         shift: keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD),

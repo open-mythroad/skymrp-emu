@@ -198,7 +198,7 @@ impl Cpu {
                 };
                 eprint!("{:#010x}", self.reg(reg_idx));
             }
-            eprintln!();
+            echo!();
         }
     }
 

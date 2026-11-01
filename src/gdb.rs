@@ -127,13 +127,14 @@ impl GdbServer {
     /// Communciates with the debugger, returning only once it requests
     /// execution should continue. Returns [true] if the CPU should step and
     /// then resume debugging, or [false] if it should resume normal execution.
+    #[must_use]
     pub fn wait_for_debugger(
         &mut self,
         stop_reason: Option<CpuError>,
         cpu: &mut Cpu,
         mem: &mut Memory,
     ) -> bool {
-        eprintln!("Waiting for debugger to continue.");
+        echo!("Waiting for debugger to continue.");
 
         // Send reply to continue/step packet that gdb sent earlier, so it knows
         // why execution was stopped.
@@ -358,9 +359,9 @@ impl GdbServer {
         };
 
         if do_step {
-            eprintln!("Debugger requested step, resuming execution for one instruction only.");
+            echo!("Debugger requested step, resuming execution for one instruction only.");
         } else {
-            eprintln!("Debugger requested continue, resuming execution.");
+            echo!("Debugger requested continue, resuming execution.");
         }
         do_step
     }
