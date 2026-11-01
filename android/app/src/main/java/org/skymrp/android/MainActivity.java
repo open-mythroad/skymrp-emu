@@ -43,6 +43,8 @@ public class MainActivity extends SDLActivity {
     private static final int MENU_KEYPAD = 1;
     private static final int MENU_EXIT = 2;
     private static final float MIN_SURFACE_HEIGHT_DP = 160;
+    private static final float SHORT_SCREEN_ASPECT_RATIO = 1.9f;
+    private static final float SHORT_SCREEN_KEYPAD_HEIGHT_FRACTION = 0.3f;
 
     private VirtualKeypadView virtualKeypad;
     private VirtualKeypadView.LayoutMode keypadMode = VirtualKeypadView.LayoutMode.COMPACT;
@@ -117,7 +119,7 @@ public class MainActivity extends SDLActivity {
 
         mLayout.addOnLayoutChangeListener((view, left, top, right, bottom,
                                            oldLeft, oldTop, oldRight, oldBottom) -> {
-            updateKeypadLayout(bottom - top);
+            updateKeypadLayout(right - left, bottom - top);
         });
     }
 
@@ -163,7 +165,7 @@ public class MainActivity extends SDLActivity {
             .putString(EmulatorSettings.KEYPAD_MODE, mode.value)
             .apply();
         getIntent().putExtra(EXTRA_KEYPAD_MODE, mode.value);
-        updateKeypadLayout(mLayout.getHeight());
+        updateKeypadLayout(mLayout.getWidth(), mLayout.getHeight());
     }
 
     private void updateMenuBackCallback() {
@@ -306,15 +308,31 @@ public class MainActivity extends SDLActivity {
         virtualKeypad.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
     }
 
-    private void updateKeypadLayout(int layoutHeight) {
+    private void updateKeypadLayout(int layoutWidth, int layoutHeight) {
         int availableKeypadHeight = Math.max(
             0,
             layoutHeight - dp(MIN_SURFACE_HEIGHT_DP)
         );
+        int preferredKeypadHeight = virtualKeypad.getPreferredHeight();
+        boolean shortPortraitScreen =
+            layoutWidth > 0
+                && layoutHeight > layoutWidth
+                && layoutHeight / (float) layoutWidth < SHORT_SCREEN_ASPECT_RATIO;
+        virtualKeypad.setShortScreenLayout(shortPortraitScreen);
+        if (shortPortraitScreen) {
+            int proportionalHeight = Math.round(
+                layoutHeight * SHORT_SCREEN_KEYPAD_HEIGHT_FRACTION
+            );
+            int shortScreenHeight = Math.max(
+                virtualKeypad.getMinimumShortScreenHeight(),
+                proportionalHeight
+            );
+            preferredKeypadHeight = Math.min(preferredKeypadHeight, shortScreenHeight);
+        }
         int actualKeypadHeight =
             keypadMode == VirtualKeypadView.LayoutMode.NONE
             ? 0
-            : Math.min(virtualKeypad.getPreferredHeight(), availableKeypadHeight);
+            : Math.min(preferredKeypadHeight, availableKeypadHeight);
         ViewGroup.LayoutParams params = virtualKeypad.getLayoutParams();
         if (params.height != actualKeypadHeight) {
             params.height = actualKeypadHeight;

@@ -22,12 +22,15 @@ import org.libsdl.app.SDLActivity;
 final class VirtualKeypadView extends View {
     private static final int PHONE_COLUMN_COUNT = 3;
     private static final int COMPACT_COLUMN_COUNT = 6;
+    private static final int COMPACT_ROW_COUNT = 4;
     private static final int FULL_ROW_COUNT = 7;
     private static final int PHONE_ROW_COUNT = 5;
     private static final float COMPACT_MAX_KEY_WIDTH_DP = 96;
     private static final float COMPACT_MAX_KEY_HEIGHT_DP = 56;
     private static final float COMPACT_GROUP_GAP_DP = 16;
     private static final float KEY_GAP_DP = 5;
+    private static final float SHORT_SCREEN_KEY_GAP_DP = 3;
+    private static final float SHORT_SCREEN_MIN_KEY_HEIGHT_DP = 28;
     private static final float VERTICAL_PADDING_DP = 7;
     private static final float FULL_HEIGHT_DP = 336;
     private static final float COMPACT_HEIGHT_DP = 240;
@@ -92,6 +95,7 @@ final class VirtualKeypadView extends View {
     private final SparseIntArray pointerKeys = new SparseIntArray();
     private final float density;
     private LayoutMode layoutMode = LayoutMode.COMPACT;
+    private boolean shortScreenLayout;
 
     VirtualKeypadView(Context context) {
         this(context, null);
@@ -129,8 +133,9 @@ final class VirtualKeypadView extends View {
         boolean compactLayout = layoutMode == LayoutMode.COMPACT;
         boolean phoneLayout = layoutMode == LayoutMode.PHONE;
         int columnCount = compactLayout ? COMPACT_COLUMN_COUNT : PHONE_COLUMN_COUNT;
-        int rowCount = compactLayout ? 4 : phoneLayout ? PHONE_ROW_COUNT : FULL_ROW_COUNT;
+        int rowCount = getRowCount();
         float gap = dp(KEY_GAP_DP);
+        float verticalGap = dp(shortScreenLayout ? SHORT_SCREEN_KEY_GAP_DP : KEY_GAP_DP);
         float groupGap = compactLayout ? dp(COMPACT_GROUP_GAP_DP) : gap;
         float horizontalPadding = dp(8);
         float verticalPadding = dp(VERTICAL_PADDING_DP);
@@ -141,7 +146,8 @@ final class VirtualKeypadView extends View {
                     - gap * (columnCount - 2)
                     - groupGap
             ) / columnCount;
-        float keyHeight = (height - verticalPadding * 2 - gap * (rowCount - 1)) / rowCount;
+        float keyHeight =
+            (height - verticalPadding * 2 - verticalGap * (rowCount - 1)) / rowCount;
         float keyWidth = availableKeyWidth;
         if (compactLayout) {
             keyWidth = Math.min(keyWidth, dp(COMPACT_MAX_KEY_WIDTH_DP));
@@ -150,7 +156,7 @@ final class VirtualKeypadView extends View {
 
         float gridWidth =
             keyWidth * columnCount + gap * (columnCount - 2) + groupGap;
-        float gridHeight = keyHeight * rowCount + gap * (rowCount - 1);
+        float gridHeight = keyHeight * rowCount + verticalGap * (rowCount - 1);
         float gridLeft = (width - gridWidth) / 2;
         float gridTop = (height - gridHeight) / 2;
 
@@ -160,7 +166,7 @@ final class VirtualKeypadView extends View {
                 int row = slot / PHONE_COLUMN_COUNT;
                 int column = slot % PHONE_COLUMN_COUNT;
                 float keyLeft = gridLeft + column * (keyWidth + gap);
-                float keyTop = gridTop + row * (keyHeight + gap);
+                float keyTop = gridTop + row * (keyHeight + verticalGap);
                 keyBounds[index].set(
                     keyLeft,
                     keyTop,
@@ -184,9 +190,9 @@ final class VirtualKeypadView extends View {
                 if (compactLayout && column >= PHONE_COLUMN_COUNT) {
                     keyLeft += groupGap - gap;
                 }
-                float keyTop = gridTop + row * (keyHeight + gap);
+                float keyTop = gridTop + row * (keyHeight + verticalGap);
                 if (compactLayout && index < 9) {
-                    keyTop += (keyHeight + gap) / 2;
+                    keyTop += (keyHeight + verticalGap) / 2;
                 }
                 keyBounds[index].set(
                     keyLeft,
@@ -206,6 +212,15 @@ final class VirtualKeypadView extends View {
         }
         releaseAllKeys();
         layoutMode = mode;
+        requestLayout();
+        invalidate();
+    }
+
+    void setShortScreenLayout(boolean enabled) {
+        if (shortScreenLayout == enabled) {
+            return;
+        }
+        shortScreenLayout = enabled;
         requestLayout();
         invalidate();
     }
@@ -231,6 +246,31 @@ final class VirtualKeypadView extends View {
             height = 0;
         }
         return Math.round(dp(height));
+    }
+
+    int getMinimumShortScreenHeight() {
+        int rowCount = getRowCount();
+        if (rowCount == 0) {
+            return 0;
+        }
+        float height =
+            VERTICAL_PADDING_DP * 2
+                + SHORT_SCREEN_MIN_KEY_HEIGHT_DP * rowCount
+                + SHORT_SCREEN_KEY_GAP_DP * (rowCount - 1);
+        return Math.round(dp(height));
+    }
+
+    private int getRowCount() {
+        if (layoutMode == LayoutMode.COMPACT) {
+            return COMPACT_ROW_COUNT;
+        }
+        if (layoutMode == LayoutMode.PHONE) {
+            return PHONE_ROW_COUNT;
+        }
+        if (layoutMode == LayoutMode.FULL) {
+            return FULL_ROW_COUNT;
+        }
+        return 0;
     }
 
     @Override

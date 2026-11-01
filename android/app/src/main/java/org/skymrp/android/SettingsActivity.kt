@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.AlertDialog
 import androidx.compose.material.Checkbox
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
@@ -33,6 +34,7 @@ import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Scaffold
 import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -41,13 +43,16 @@ import androidx.compose.material.primarySurface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 private data class ScreenResolution(
     val value: String,
@@ -57,6 +62,14 @@ private data class ScreenResolution(
 
 private val screenResolutions =
     EmulatorSettings.SCREEN_RESOLUTIONS.map(::ScreenResolution)
+
+private sealed interface UpdateCheckState {
+    data object Idle : UpdateCheckState
+    data object Checking : UpdateCheckState
+    data class Available(val release: GitHubRelease) : UpdateCheckState
+    data object UpToDate : UpdateCheckState
+    data class Error(val message: String) : UpdateCheckState
+}
 
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,11 +81,19 @@ class SettingsActivity : ComponentActivity() {
         setContent {
             SkyMRPTheme {
                 val context = LocalContext.current
+                val uriHandler = LocalUriHandler.current
+                val coroutineScope = rememberCoroutineScope()
                 val preferences = remember(context) {
                     context.getSharedPreferences(
                         EmulatorSettings.PREFERENCES,
                         Context.MODE_PRIVATE,
                     )
+                }
+                val versionName = remember(context) {
+                    context.packageManager
+                        .getPackageInfo(context.packageName, 0)
+                        .versionName
+                        .orEmpty()
                 }
                 var fullVmEnabled by remember {
                     mutableStateOf(
@@ -95,7 +116,18 @@ class SettingsActivity : ComponentActivity() {
                         ),
                     )
                 }
+                var autoUpdatesEnabled by remember {
+                    mutableStateOf(
+                        preferences.getBoolean(
+                            EmulatorSettings.AUTO_CHECK_UPDATES,
+                            EmulatorSettings.DEFAULT_AUTO_CHECK_UPDATES,
+                        ),
+                    )
+                }
                 var resolutionMenuExpanded by remember { mutableStateOf(false) }
+                var updateCheckState by remember {
+                    mutableStateOf<UpdateCheckState>(UpdateCheckState.Idle)
+                }
                 val onFullVmEnabledChange: (Boolean) -> Unit = { enabled ->
                     fullVmEnabled = enabled
                     preferences.edit()
@@ -106,6 +138,12 @@ class SettingsActivity : ComponentActivity() {
                     statusBarEnabled = enabled
                     preferences.edit()
                         .putBoolean(EmulatorSettings.STATUS_BAR_ENABLED, enabled)
+                        .apply()
+                }
+                val onAutoUpdatesEnabledChange: (Boolean) -> Unit = { enabled ->
+                    autoUpdatesEnabled = enabled
+                    preferences.edit()
+                        .putBoolean(EmulatorSettings.AUTO_CHECK_UPDATES, enabled)
                         .apply()
                 }
 
@@ -287,7 +325,168 @@ class SettingsActivity : ComponentActivity() {
                                 onCheckedChange = null,
                             )
                         }
+                        Text(
+                            text = "Updates",
+                            modifier = Modifier.padding(
+                                start = 16.dp,
+                                top = 24.dp,
+                                end = 16.dp,
+                                bottom = 8.dp,
+                            ),
+                            color = MaterialTheme.colors.primary,
+                            fontWeight = FontWeight.Medium,
+                            style = MaterialTheme.typography.body2,
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 72.dp)
+                                .toggleable(
+                                    value = autoUpdatesEnabled,
+                                    role = Role.Checkbox,
+                                    onValueChange = onAutoUpdatesEnabledChange,
+                                )
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Auto-check for updates",
+                                    style = MaterialTheme.typography.body1,
+                                )
+                                Text(
+                                    text = "Check for new releases on app startup",
+                                    modifier = Modifier.padding(top = 4.dp),
+                                    color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f),
+                                    style = MaterialTheme.typography.body2,
+                                )
+                            }
+                            Checkbox(
+                                checked = autoUpdatesEnabled,
+                                onCheckedChange = null,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 64.dp)
+                                .clickable(
+                                    enabled = updateCheckState !is UpdateCheckState.Checking,
+                                ) {
+                                    updateCheckState = UpdateCheckState.Checking
+                                    coroutineScope.launch {
+                                        updateCheckState = fetchLatestRelease().fold(
+                                            onSuccess = { release ->
+                                                if (
+                                                    isNewerVersion(
+                                                        release.tagName,
+                                                        versionName,
+                                                    )
+                                                ) {
+                                                    UpdateCheckState.Available(release)
+                                                } else {
+                                                    UpdateCheckState.UpToDate
+                                                }
+                                            },
+                                            onFailure = { error ->
+                                                UpdateCheckState.Error(
+                                                    error.localizedMessage
+                                                        ?: "Could not check for updates",
+                                                )
+                                            },
+                                        )
+                                    }
+                                }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Check for updates",
+                                    style = MaterialTheme.typography.body1,
+                                )
+                                Text(
+                                    text = if (
+                                        updateCheckState is UpdateCheckState.Checking
+                                    ) {
+                                        "Checking for updates..."
+                                    } else {
+                                        "Current version: $versionName"
+                                    },
+                                    modifier = Modifier.padding(top = 4.dp),
+                                    color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f),
+                                    style = MaterialTheme.typography.body2,
+                                )
+                            }
+                        }
                     }
+                }
+
+                when (val state = updateCheckState) {
+                    is UpdateCheckState.Available -> {
+                        UpdateAvailableDialog(
+                            release = state.release,
+                            onDismiss = {
+                                updateCheckState = UpdateCheckState.Idle
+                            },
+                            onViewRelease = {
+                                runCatching {
+                                    uriHandler.openUri(state.release.htmlUrl)
+                                }.onSuccess {
+                                    updateCheckState = UpdateCheckState.Idle
+                                }.onFailure { error ->
+                                    updateCheckState = UpdateCheckState.Error(
+                                        error.localizedMessage
+                                            ?: "Could not open the release page",
+                                    )
+                                }
+                            },
+                        )
+                    }
+
+                    UpdateCheckState.UpToDate -> {
+                        AlertDialog(
+                            onDismissRequest = {
+                                updateCheckState = UpdateCheckState.Idle
+                            },
+                            title = { Text("No updates available") },
+                            text = {
+                                Text("You have the latest version ($versionName).")
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        updateCheckState = UpdateCheckState.Idle
+                                    },
+                                ) {
+                                    Text("OK")
+                                }
+                            },
+                        )
+                    }
+
+                    is UpdateCheckState.Error -> {
+                        AlertDialog(
+                            onDismissRequest = {
+                                updateCheckState = UpdateCheckState.Idle
+                            },
+                            title = { Text("Update check failed") },
+                            text = { Text(state.message) },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        updateCheckState = UpdateCheckState.Idle
+                                    },
+                                ) {
+                                    Text("OK")
+                                }
+                            },
+                        )
+                    }
+
+                    UpdateCheckState.Checking,
+                    UpdateCheckState.Idle,
+                    -> Unit
                 }
             }
         }
