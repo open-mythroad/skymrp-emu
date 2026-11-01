@@ -793,7 +793,7 @@ private fun LauncherScreen(
                                     .focusRequester(searchFocusRequester),
                                 singleLine = true,
                                 textStyle = LocalTextStyle.current.copy(color = textColor),
-                                cursorBrush = SolidColor(textColor),
+                                cursorBrush = SolidColor(MaterialTheme.colors.primary),
                                 decorationBox = { innerTextField ->
                                     Box(contentAlignment = Alignment.CenterStart) {
                                         if (query.isEmpty()) {
