@@ -30,6 +30,7 @@ namespace skymrp::cpu
 
     const auto HaltReasonSvc = Dynarmic::HaltReason::UserDefined1;
     const auto HaltReasonUndefinedInstruction = Dynarmic::HaltReason::UserDefined2;
+    const auto HaltReasonBreakpoint = Dynarmic::HaltReason::UserDefined3;
 
     class Environment final : public Dynarmic::A32::UserCallbacks
     {
@@ -142,6 +143,9 @@ namespace skymrp::cpu
             } else if (exception == Dynarmic::A32::Exception::UndefinedInstruction)
             {
                 cpu->HaltExecution(HaltReasonUndefinedInstruction);
+            } else if (exception == Dynarmic::A32::Exception::Breakpoint)
+            {
+                cpu->HaltExecution(HaltReasonBreakpoint);
             }
             else
             {
@@ -212,6 +216,9 @@ namespace skymrp::cpu
             } else if (Dynarmic::Has(hr, HaltReasonUndefinedInstruction))
             {
                 res = -3;
+            } else if (Dynarmic::Has(hr, HaltReasonBreakpoint))
+            {
+                res = -4;
             }
             else if (Dynarmic::Has(hr, HaltReasonSvc))
             {
