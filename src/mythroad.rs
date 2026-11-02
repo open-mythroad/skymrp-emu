@@ -632,6 +632,8 @@ pub struct State {
     pub dsm_build_time: MutPtr<u8>,
     pub dsm_switch_path_buf: MutPtr<u8>,
     pub dsm_disk_info: GuestVar<DsmDiskInfo>,
+    pub dsm_media_time: GuestVar<i32>,
+    pub dsm_media_callback: GuestFunction,
     pub mr_bitmap: MutPtr<MrBitmap>,
     pub mr_tile: MutPtr<MrTile>,
     pub mr_map: MutPtr<MutPtr<i16>>,
@@ -693,6 +695,8 @@ impl State {
         let dsm_switch_path_buf =
             alloc_array(mem, (dsm::DSM_MAX_FILE_LEN + 10).try_into().unwrap());
         let dsm_disk_info = GuestVar::new(mem, DsmDiskInfo::default());
+        let dsm_media_time = GuestVar::new(mem, 0i32);
+        let dsm_media_callback = GuestFunction::from_addr_with_thumb_bit(0);
         let mr_bitmap = alloc_array(mem, BITMAPMAX + 1);
         let mr_tile = alloc_array(mem, TILEMAX);
         let mr_map = alloc_array(mem, TILEMAX);
@@ -773,6 +777,8 @@ impl State {
             dsm_build_time,
             dsm_switch_path_buf,
             dsm_disk_info,
+            dsm_media_time,
+            dsm_media_callback,
             mr_bitmap,
             mr_tile,
             mr_map,

@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use crate::abi::{CallFromHost, GuestFunction};
+use crate::audio;
 use crate::encoding;
 use crate::fs::{GuestPath, GuestPathBuf, MYTHROAD};
 use crate::haptics;
@@ -64,6 +65,21 @@ const MR_GET_FREE_SPACE: u32 = 1305;
 const MR_WIFI_AVAILABLE: u32 = 1327;
 const MR_USE_WIFI: u32 = 1328;
 const MR_BACKGROUND_SUPPORT: u32 = 1391;
+const MR_MEDIA_INIT: u32 = 201;
+const MR_MEDIA_FILE_LOAD: u32 = 202;
+const MR_MEDIA_BUF_LOAD: u32 = 203;
+const MR_MEDIA_PLAY_CUR_REQ: u32 = 204;
+const MR_MEDIA_PAUSE_REQ: u32 = 205;
+const MR_MEDIA_RESUME_REQ: u32 = 206;
+const MR_MEDIA_STOP_REQ: u32 = 207;
+const MR_MEDIA_CLOSE: u32 = 208;
+const MR_MEDIA_GET_STATUS: u32 = 209;
+const MR_MEDIA_SETPOS: u32 = 210;
+const MR_MEDIA_GET_TOTAL_TIME: u32 = 212;
+const MR_MEDIA_GET_CURTIME: u32 = 213;
+const MR_MEDIA_GET_CURTIME_MSEC: u32 = 215;
+const MR_MEDIA_FREE: u32 = 216;
+const DSM_MEDIA_PLAY_SIZE: u32 = 12;
 pub(crate) const MR_KEY_PRESS: i32 = 0;
 pub(crate) const MR_KEY_RELEASE: i32 = 1;
 pub(crate) const MR_MOUSE_DOWN: i32 = 2;
@@ -254,6 +270,10 @@ pub(crate) fn mr_plat_ex(
     output_len: MutPtr<i32>,
     _cb: MutVoidPtr,
 ) -> i32 {
+    if let Some(command) = media_command(code) {
+        return mr_media_command(env, command, input, input_len, output, output_len);
+    }
+
     match code {
         MR_MALLOC_EX => {
             if output.is_null() || output_len.is_null() {
@@ -345,6 +365,158 @@ pub(crate) fn mr_plat_ex(
             MrResult::Ignored as i32
         }
     }
+}
+
+fn media_command(code: u32) -> Option<u32> {
+    if (MR_MEDIA_INIT..=225).contains(&code) {
+        return Some(code);
+    }
+
+    let command = code / 10;
+    (MR_MEDIA_INIT..=225).contains(&command).then_some(command)
+}
+
+fn mr_media_command(
+    env: &mut Environment,
+    command: u32,
+    input: ConstPtr<u8>,
+    input_len: u32,
+    output: MutPtr<MutPtr<u8>>,
+    output_len: MutPtr<i32>,
+) -> i32 {
+    log_dbg!("Mythroad: media command {command} (input={input:?}, input_len={input_len})");
+
+    match command {
+        MR_MEDIA_INIT => {
+            log_media_error(command, audio::media_init());
+            MrResult::Success as i32
+        }
+        MR_MEDIA_FILE_LOAD => {
+            if input.is_null() {
+                return MrResult::Failed as i32;
+            }
+            let filename = encoding::gb_to_utf8_string(env.mem.cstr_at(input)).into_owned();
+            let path = env
+                .fs
+                .resolve_from_working_directory(GuestPath::new(&filename));
+            match env.fs.read(&path) {
+                Ok(data) => log_media_error(command, audio::media_load(data)),
+                Err(()) => {
+                    log!("Mythroad: media command {command} could not read {path:?}");
+                }
+            }
+            MrResult::Success as i32
+        }
+        MR_MEDIA_BUF_LOAD => {
+            if input.is_null() && input_len != 0 {
+                return MrResult::Failed as i32;
+            }
+            let data = if input_len == 0 {
+                Vec::new()
+            } else {
+                env.mem.bytes_at(input, input_len).to_vec()
+            };
+            log_media_error(command, audio::media_load(data));
+            MrResult::Success as i32
+        }
+        MR_MEDIA_PLAY_CUR_REQ => {
+            let looped = if !input.is_null() && input_len >= DSM_MEDIA_PLAY_SIZE {
+                let callback_addr: u32 = env.mem.read(input.cast());
+                let looped: i32 = env.mem.read((input + 4).cast());
+                env.mythroad.state.dsm_media_callback =
+                    GuestFunction::from_addr_with_thumb_bit(callback_addr);
+                Some(looped == 1)
+            } else {
+                env.mythroad.state.dsm_media_callback = GuestFunction::from_addr_with_thumb_bit(0);
+                None
+            };
+            log_media_error(command, audio::media_play(looped));
+            MrResult::Success as i32
+        }
+        MR_MEDIA_PAUSE_REQ => {
+            log_media_error(command, audio::media_pause());
+            MrResult::Success as i32
+        }
+        MR_MEDIA_RESUME_REQ => {
+            log_media_error(command, audio::media_resume());
+            MrResult::Success as i32
+        }
+        MR_MEDIA_STOP_REQ => {
+            log_media_error(command, audio::media_stop());
+            MrResult::Success as i32
+        }
+        MR_MEDIA_CLOSE => {
+            log_media_error(command, audio::media_close());
+            MrResult::Success as i32
+        }
+        MR_MEDIA_GET_STATUS => audio::media_state().unwrap_or(0),
+        MR_MEDIA_SETPOS => {
+            if input.is_null() || input_len < guest_size_of::<i32>() {
+                return MrResult::Failed as i32;
+            }
+            let position_seconds: i32 = env.mem.read(input.cast());
+            let position_ms = u64::try_from(position_seconds)
+                .unwrap_or(0)
+                .saturating_mul(1000);
+            log_media_error(command, audio::media_seek(position_ms));
+            MrResult::Success as i32
+        }
+        MR_MEDIA_GET_TOTAL_TIME | MR_MEDIA_GET_CURTIME | MR_MEDIA_GET_CURTIME_MSEC => {
+            if output.is_null() || output_len.is_null() {
+                return MrResult::Failed as i32;
+            }
+            let time_ms = match command {
+                MR_MEDIA_GET_TOTAL_TIME => audio::media_total_time_ms(),
+                _ => audio::media_current_time_ms(),
+            };
+            let Ok(time_ms) = time_ms else {
+                return MrResult::Failed as i32;
+            };
+            let value = if command == MR_MEDIA_GET_CURTIME_MSEC {
+                time_ms
+            } else {
+                time_ms / 1000
+            };
+            let value = i32::try_from(value).unwrap_or(i32::MAX);
+            env.mythroad.state.dsm_media_time.set(&mut env.mem, value);
+            env.mem
+                .write(output, env.mythroad.state.dsm_media_time.ptr().cast());
+            env.mem.write(output_len, guest_size_of::<i32>() as i32);
+            MrResult::Success as i32
+        }
+        MR_MEDIA_FREE => {
+            log_media_error(command, audio::media_free());
+            MrResult::Success as i32
+        }
+        _ => MrResult::Ignored as i32,
+    }
+}
+
+fn log_media_error(command: u32, result: Result<(), audio::Error>) {
+    if let Err(err) = result {
+        log!("Mythroad: media command {command} failed: {err}");
+    }
+}
+
+pub(crate) fn mr_media_callback(env: &mut Environment) {
+    let event = match audio::take_media_event() {
+        Ok(Some(event)) => event,
+        Ok(None) => return,
+        Err(err) => {
+            log!("Mythroad: failed to poll media callback: {err}");
+            return;
+        }
+    };
+    let callback = env.mythroad.state.dsm_media_callback;
+    if callback.addr_without_thumb_bit() == 0 {
+        return;
+    }
+
+    let result = match event {
+        audio::MediaEvent::Complete => 0,
+        audio::MediaEvent::Error => 1,
+    };
+    let _: () = callback.call_from_host(env, (result,));
 }
 
 fn dsm_switch_path(
@@ -557,7 +729,10 @@ pub(crate) fn mr_plat(env: &mut Environment, code: u32, param: u32) -> i32 {
         MR_BACKGROUND_SUPPORT => MrResult::Ignored as i32,
         MR_SMS_CENTER => MrResult::Waiting as i32,
         MR_SIGNAL_INIT => MrResult::Success as i32,
-        MR_SET_VOL => MrResult::Success as i32,
+        MR_SET_VOL => {
+            let _ = audio::media_set_volume(param as i32);
+            MrResult::Success as i32
+        }
         MR_SET_KEY_END => MrResult::Success as i32,
         MR_WIFI_AVAILABLE => MrResult::Ignored as i32,
         MR_USE_WIFI => MrResult::Success as i32,
@@ -1425,6 +1600,7 @@ fn mr_intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&s
     env.mythroad.state.mr_stop_function = null_function;
     env.mythroad.state.mr_pause_app_function = null_function;
     env.mythroad.state.mr_resume_app_function = null_function;
+    env.mythroad.state.dsm_media_callback = null_function;
 
     env.mythroad.state.mr_c_function_p = MutVoidPtr::null();
     env.mythroad.state.mr_c_function_p_len = 0;

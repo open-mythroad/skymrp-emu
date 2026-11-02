@@ -335,6 +335,7 @@ impl Environment {
             self.refresh_editbox();
         }
 
+        dsm::mr_media_callback(self);
         dsm::mr_timer(self);
         true
     }

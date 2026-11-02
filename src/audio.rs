@@ -9,14 +9,19 @@ use std::cell::RefCell;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
+mod player;
+pub use player::Event as MediaEvent;
+
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SoundType {
     Midi = 0,
     Wav = 1,
     Mp3 = 2,
-    Amr = 3,
-    Pcm = 4,
+    Pcm = 3,
+    M4a = 4,
+    Amr = 5,
+    AmrWb = 6,
 }
 
 impl TryFrom<i32> for SoundType {
@@ -27,8 +32,10 @@ impl TryFrom<i32> for SoundType {
             0 => Ok(Self::Midi),
             1 => Ok(Self::Wav),
             2 => Ok(Self::Mp3),
-            3 => Ok(Self::Amr),
-            4 => Ok(Self::Pcm),
+            3 => Ok(Self::Pcm),
+            4 => Ok(Self::M4a),
+            5 => Ok(Self::Amr),
+            6 => Ok(Self::AmrWb),
             other => Err(Error::UnsupportedSoundType(other)),
         }
     }
@@ -39,6 +46,7 @@ pub enum Error {
     NotInitialized,
     Sdl(String),
     Sonivox(SonivoxError),
+    Player(String),
     UnsupportedSoundType(i32),
     UnsupportedPlayback(SoundType),
 }
@@ -49,6 +57,7 @@ impl fmt::Display for Error {
             Self::NotInitialized => write!(f, "audio system is not initialized"),
             Self::Sdl(msg) => write!(f, "SDL audio error: {msg}"),
             Self::Sonivox(err) => write!(f, "{err}"),
+            Self::Player(err) => write!(f, "audio playback error: {err}"),
             Self::UnsupportedSoundType(type_) => write!(f, "unsupported sound type: {type_}"),
             Self::UnsupportedPlayback(type_) => write!(f, "unsupported playback: {type_:?}"),
         }
@@ -87,9 +96,68 @@ pub fn stop_sound(type_: SoundType) -> Result<(), Error> {
     with_system(|system| system.stop_sound(type_))
 }
 
-fn with_system<F>(f: F) -> Result<(), Error>
+pub fn media_init() -> Result<(), Error> {
+    with_system(AudioSystem::media_init)
+}
+
+pub fn media_load(data: Vec<u8>) -> Result<(), Error> {
+    with_system(|system| system.media_load(data))
+}
+
+pub fn media_play(looped: Option<bool>) -> Result<(), Error> {
+    with_system(|system| system.media_player.play(looped).map_err(Error::Player))
+}
+
+pub fn media_pause() -> Result<(), Error> {
+    with_system(|system| system.media_player.pause().map_err(Error::Player))
+}
+
+pub fn media_resume() -> Result<(), Error> {
+    with_system(|system| system.media_player.resume().map_err(Error::Player))
+}
+
+pub fn media_stop() -> Result<(), Error> {
+    with_system(AudioSystem::media_stop)
+}
+
+pub fn media_close() -> Result<(), Error> {
+    with_system(AudioSystem::media_close)
+}
+
+pub fn media_seek(position_ms: u64) -> Result<(), Error> {
+    with_system(|system| system.media_seek(position_ms))
+}
+
+pub fn media_free() -> Result<(), Error> {
+    with_system(AudioSystem::media_free)
+}
+
+pub fn media_set_volume(volume: i32) -> Result<(), Error> {
+    with_system(|system| {
+        system.media_player.set_volume(volume);
+        Ok(())
+    })
+}
+
+pub fn media_state() -> Result<i32, Error> {
+    with_system(|system| Ok(system.media_player.state()))
+}
+
+pub fn media_total_time_ms() -> Result<u64, Error> {
+    with_system(|system| Ok(system.media_player.total_time_ms()))
+}
+
+pub fn media_current_time_ms() -> Result<u64, Error> {
+    with_system(|system| Ok(system.media_player.current_time_ms()))
+}
+
+pub fn take_media_event() -> Result<Option<MediaEvent>, Error> {
+    with_system(|system| Ok(system.media_player.take_event()))
+}
+
+fn with_system<T, F>(f: F) -> Result<T, Error>
 where
-    F: FnOnce(&mut AudioSystem) -> Result<(), Error>,
+    F: FnOnce(&mut AudioSystem) -> Result<T, Error>,
 {
     AUDIO_SYSTEM.with(|cell| {
         let mut system = cell.borrow_mut();
@@ -101,15 +169,17 @@ where
 }
 
 struct AudioSystem {
-    state: Arc<Mutex<PlaybackState>>,
-    _device: AudioDevice<SonivoxCallback>,
+    midi_state: Arc<Mutex<PlaybackState>>,
+    sound_player: player::Controller,
+    media_player: player::Controller,
+    device: AudioDevice<AudioMixer>,
 }
 
 impl AudioSystem {
     fn new(sdl: &sdl2::Sdl) -> Result<Self, Error> {
         let audio = sdl.audio().map_err(Error::Sdl)?;
-        let state = Arc::new(Mutex::new(PlaybackState::with_default_params()?));
-        let params = state.lock().unwrap().params();
+        let midi_state = Arc::new(Mutex::new(PlaybackState::with_default_params()?));
+        let params = midi_state.lock().unwrap().params();
         let samples = if cfg!(target_os = "emscripten") {
             2048
         } else {
@@ -122,9 +192,17 @@ impl AudioSystem {
             samples: Some(samples.try_into().unwrap()),
         };
 
+        let sample_rate = params.sample_rate.try_into().unwrap();
+        let (sound_player, sound_mixer) =
+            player::Controller::new("sound", sample_rate, params.channels);
+        let (media_player, media_mixer) =
+            player::Controller::new("media", sample_rate, params.channels);
+        let callback_midi_state = Arc::clone(&midi_state);
         let device = audio
-            .open_playback(None, &desired, |_spec| SonivoxCallback {
-                state: Arc::clone(&state),
+            .open_playback(None, &desired, move |_spec| AudioMixer {
+                midi_state: callback_midi_state,
+                sound_mixer,
+                media_mixer,
             })
             .map_err(Error::Sdl)?;
         device.resume();
@@ -136,42 +214,91 @@ impl AudioSystem {
         );
 
         Ok(Self {
-            state,
-            _device: device,
+            midi_state,
+            sound_player,
+            media_player,
+            device,
         })
+    }
+
+    fn reset_media_player<F>(&mut self, operation: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut player::Controller) -> Result<(), String>,
+    {
+        let mut callback = self.device.lock();
+        let result = operation(&mut self.media_player).map_err(Error::Player);
+        callback.media_mixer.clear();
+        result
+    }
+
+    fn media_init(&mut self) -> Result<(), Error> {
+        self.reset_media_player(player::Controller::init)
+    }
+
+    fn media_load(&mut self, data: Vec<u8>) -> Result<(), Error> {
+        self.reset_media_player(|player| player.load(data))
+    }
+
+    fn media_stop(&mut self) -> Result<(), Error> {
+        self.reset_media_player(player::Controller::stop)
+    }
+
+    fn media_close(&mut self) -> Result<(), Error> {
+        self.reset_media_player(player::Controller::close)
+    }
+
+    fn media_seek(&mut self, position_ms: u64) -> Result<(), Error> {
+        self.reset_media_player(|player| player.seek(position_ms))
+    }
+
+    fn media_free(&mut self) -> Result<(), Error> {
+        self.reset_media_player(player::Controller::free)
     }
 
     fn play_sound(&mut self, type_: SoundType, data: &[u8], looped: bool) -> Result<(), Error> {
         match type_ {
             SoundType::Midi => {
-                let mut state = self.state.lock().unwrap();
-                state.play_midi(data, looped)?;
+                self.reset_sound_player(player::Controller::close)?;
+                self.midi_state.lock().unwrap().play_midi(data, looped)?;
                 Ok(())
+            }
+            SoundType::Wav | SoundType::Mp3 | SoundType::M4a => {
+                self.midi_state.lock().unwrap().stop();
+                self.reset_sound_player(|player| player.replace_and_play(data.to_vec(), looped))
             }
             other => Err(Error::UnsupportedPlayback(other)),
         }
     }
 
-    fn stop_sound(&mut self, type_: SoundType) -> Result<(), Error> {
-        match type_ {
-            SoundType::Midi => {
-                self.state.lock().unwrap().stop();
-                Ok(())
-            }
-            other => Err(Error::UnsupportedPlayback(other)),
-        }
+    fn stop_sound(&mut self, _type: SoundType) -> Result<(), Error> {
+        self.midi_state.lock().unwrap().stop();
+        self.reset_sound_player(player::Controller::close)
+    }
+
+    fn reset_sound_player<F>(&mut self, operation: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut player::Controller) -> Result<(), String>,
+    {
+        let mut callback = self.device.lock();
+        let result = operation(&mut self.sound_player).map_err(Error::Player);
+        callback.sound_mixer.clear();
+        result
     }
 }
 
-struct SonivoxCallback {
-    state: Arc<Mutex<PlaybackState>>,
+struct AudioMixer {
+    midi_state: Arc<Mutex<PlaybackState>>,
+    sound_mixer: player::Mixer,
+    media_mixer: player::Mixer,
 }
 
-impl AudioCallback for SonivoxCallback {
+impl AudioCallback for AudioMixer {
     type Channel = i16;
 
     fn callback(&mut self, output: &mut [i16]) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.midi_state.lock().unwrap();
         state.render_i16(output);
+        self.sound_mixer.mix_into(output);
+        self.media_mixer.mix_into(output);
     }
 }
