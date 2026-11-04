@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.5.0
+
+- Added runtime speed controls and an FPS HUD.
+- Added GDB remote debugging support.
+- WAV, MP3, and M4A playback is now supported.
+- Improved Mythroad media playback controls.
+
+### Android
+
+- Added an in-app updater for checking new GitHub releases.
+- Added loading feedback while scanning MRP files.
+- Improved virtual keypad sizing on shorter portrait screens.
+- Folders can now be deleted directly from the file browser.
+
 ## v0.4.0
 
 - Enabled the experimental `lua` feature in release builds.

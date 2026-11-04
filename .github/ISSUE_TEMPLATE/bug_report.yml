@@ -27,7 +27,7 @@ body:
     id: skymrp_version
     attributes:
       label: SkyMRP version
-      placeholder: v0.4.0
+      placeholder: v0.5.0
     validations:
       required: true
 
