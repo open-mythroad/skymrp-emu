@@ -33,3 +33,10 @@ Debugging options:
         The host and port should be separated by a colon. The host can be a
         host name or an IP address. IPv6 addresses should be enclosed in square
         brackets, e.g. --gdb=[::1]:9001 for IPv6 loopback device port 9001.
+
+Other options:
+    --show-fps
+        Show the guest framebuffer update rate in the top-left corner.
+
+    --speed=...
+        Set the emulation speed between 0.25 and 4.0. The default is 1.0.

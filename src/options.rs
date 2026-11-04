@@ -20,6 +20,8 @@ pub enum RuntimeMode {
 #[derive(Clone)]
 pub struct Options {
     pub fullscreen: bool,
+    pub show_fps: bool,
+    pub speed: f64,
     pub scale: NonZeroU32,
     pub screen_size: (u32, u32),
     pub font_size_override: Option<FontSize>,
@@ -33,6 +35,8 @@ impl Default for Options {
         Options {
             scale: NonZeroU32::new(1).unwrap(),
             fullscreen: false,
+            show_fps: false,
+            speed: 1.0,
             screen_size: (240, 320),
             font_size_override: Some(FontSize::Medium),
             runtime_mode: RuntimeMode::Mini,
@@ -49,6 +53,16 @@ impl Options {
     pub fn parse_argument(&mut self, arg: &str) -> Result<bool, String> {
         if arg == "--fullscreen" {
             self.fullscreen = true;
+        } else if arg == "--show-fps" {
+            self.show_fps = true;
+        } else if let Some(value) = arg.strip_prefix("--speed=") {
+            let speed = value
+                .parse()
+                .map_err(|_| "Invalid emulation speed".to_string())?;
+            if !(0.25..=4.0).contains(&speed) {
+                return Err("Emulation speed must be between 0.25 and 4.0".to_string());
+            }
+            self.speed = speed;
         } else if let Some(value) = arg.strip_prefix("--scale=") {
             self.scale = value
                 .parse()

@@ -5,9 +5,27 @@
  */
 use crate::mrp;
 use jni::objects::{JObject, JString, JValue};
-use jni::sys::jobject;
+use jni::sys::{jint, jobject};
 use jni::JNIEnv;
 use std::path::Path;
+
+#[no_mangle]
+pub extern "system" fn Java_org_skymrp_android_MainActivity_nativeSetSpeedPercent(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    percent: jint,
+) {
+    crate::environment::set_speed_percent(percent.clamp(25, 400) as u32);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_org_skymrp_android_MainActivity_nativeSetShowFps(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+    show: jni::sys::jboolean,
+) {
+    crate::environment::set_show_fps(show != 0);
+}
 
 #[no_mangle]
 pub extern "system" fn Java_org_skymrp_android_NativeMrpMetadataReader_nativeRead(

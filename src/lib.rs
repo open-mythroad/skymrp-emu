@@ -19,6 +19,7 @@ mod fs;
 mod gdb;
 mod gzip;
 mod haptics;
+mod hud;
 mod libc;
 #[cfg(feature = "lua")]
 mod lua;

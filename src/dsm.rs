@@ -1055,7 +1055,7 @@ pub(crate) fn test_com(env: &mut Environment, _l: u32, input0: u32, input1: u32)
             MrResult::Success as i32
         }
         0x190 => {
-            mr_sleep(input1);
+            mr_sleep(env, input1);
             MrResult::Success as i32
         }
         0x191 => {
@@ -1354,7 +1354,7 @@ pub(crate) fn test_com1(
 }
 
 pub(crate) fn mr_get_time(env: &Environment) -> u32 {
-    env.startup_time.elapsed().as_millis() as u32
+    env.guest_time_millis()
 }
 
 pub(crate) fn mr_timer(env: &mut Environment) -> i32 {
@@ -1580,8 +1580,8 @@ fn mr_start_shake(_env: &mut Environment, ms: u32) -> i32 {
     }
 }
 
-pub(crate) fn mr_sleep(ms: u32) {
-    std::thread::sleep(Duration::from_millis(ms.into()));
+pub(crate) fn mr_sleep(env: &mut Environment, ms: u32) {
+    env.sleep(Duration::from_millis(ms.into()));
 }
 
 fn mr_intra_start(env: &mut Environment, start_file_name: &str, entry: Option<&str>) -> i32 {

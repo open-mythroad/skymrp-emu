@@ -1323,9 +1323,9 @@ fn mr_get_user_info(env: &mut Environment, user_info: MutPtr<MrUserInfo>) -> i32
     MrResult::Success as i32
 }
 
-fn mr_sleep(_env: &mut Environment, ms: u32) -> i32 {
+fn mr_sleep(env: &mut Environment, ms: u32) -> i32 {
     log_dbg!("Mythroad: mr_sleep(ms={ms:#x})");
-    dsm::mr_sleep(ms);
+    dsm::mr_sleep(env, ms);
     MrResult::Success as i32
 }
 

@@ -22,6 +22,8 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.PopupMenu;
 import android.widget.RelativeLayout;
+import android.widget.SeekBar;
+import android.widget.TextView;
 
 import org.libsdl.app.SDLActivity;
 
@@ -41,7 +43,11 @@ public class MainActivity extends SDLActivity {
 
     private static final int COMMAND_SET_VIRTUAL_KEYPAD_VISIBLE = COMMAND_USER;
     private static final int MENU_KEYPAD = 1;
-    private static final int MENU_EXIT = 2;
+    private static final int MENU_SPEED = 2;
+    private static final int MENU_SHOW_FPS = 3;
+    private static final int MENU_EXIT = 4;
+    private static final int MIN_SPEED_PERCENT = 25;
+    private static final int MAX_SPEED_PERCENT = 400;
     private static final float MIN_SURFACE_HEIGHT_DP = 160;
     private static final float SHORT_SCREEN_ASPECT_RATIO = 1.9f;
     private static final float SHORT_SCREEN_KEYPAD_HEIGHT_FRACTION = 0.3f;
@@ -54,6 +60,11 @@ public class MainActivity extends SDLActivity {
     private Object menuBackCallback;
     private View runtimeMenuAnchor;
     private boolean runtimeMenuVisible;
+    private int speedPercent = 100;
+    private boolean showFps;
+
+    private native void nativeSetSpeedPercent(int percent);
+    private native void nativeSetShowFps(boolean show);
 
     @Override
     protected String[] getLibraries() {
@@ -192,10 +203,20 @@ public class MainActivity extends SDLActivity {
         releaseVirtualKeys();
         PopupMenu runtimeMenu = new PopupMenu(this, runtimeMenuAnchor, Gravity.END);
         runtimeMenu.getMenu().add(Menu.NONE, MENU_KEYPAD, Menu.NONE, "Switch keypad");
+        runtimeMenu.getMenu().add(Menu.NONE, MENU_SHOW_FPS, Menu.NONE, "Show FPS");
+        runtimeMenu.getMenu().add(Menu.NONE, MENU_SPEED, Menu.NONE, "Speed");
         runtimeMenu.getMenu().add(Menu.NONE, MENU_EXIT, Menu.NONE, "Exit");
         runtimeMenu.setOnMenuItemClickListener(item -> {
                 if (item.getItemId() == MENU_KEYPAD) {
                     showKeypadDialog();
+                    return true;
+                }
+                if (item.getItemId() == MENU_SPEED) {
+                    showSpeedDialog();
+                    return true;
+                }
+                if (item.getItemId() == MENU_SHOW_FPS) {
+                    showFpsDialog();
                     return true;
                 }
                 if (item.getItemId() == MENU_EXIT) {
@@ -207,6 +228,87 @@ public class MainActivity extends SDLActivity {
         runtimeMenu.setOnDismissListener(menu -> runtimeMenuVisible = false);
         runtimeMenuVisible = true;
         runtimeMenu.show();
+    }
+
+    private void showSpeedDialog() {
+        RelativeLayout content = new RelativeLayout(this);
+        int horizontalPadding = dp(24);
+        int verticalPadding = dp(8);
+        content.setPadding(horizontalPadding, verticalPadding, horizontalPadding, 0);
+
+        TextView value = new TextView(this);
+        value.setId(View.generateViewId());
+        value.setGravity(Gravity.CENTER);
+        value.setText(formatSpeed(speedPercent));
+        RelativeLayout.LayoutParams valueParams = new RelativeLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        content.addView(value, valueParams);
+
+        SeekBar seekBar = new SeekBar(this);
+        seekBar.setMax(MAX_SPEED_PERCENT - MIN_SPEED_PERCENT);
+        seekBar.setProgress(speedPercent - MIN_SPEED_PERCENT);
+        RelativeLayout.LayoutParams seekBarParams = new RelativeLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        seekBarParams.addRule(RelativeLayout.BELOW, value.getId());
+        content.addView(seekBar, seekBarParams);
+
+        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                if (!fromUser) {
+                    return;
+                }
+                speedPercent = progress + MIN_SPEED_PERCENT;
+                value.setText(formatSpeed(speedPercent));
+                nativeSetSpeedPercent(speedPercent);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar bar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar bar) {
+            }
+        });
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("Speed")
+            .setView(content)
+            .setNeutralButton("Reset", null)
+            .setPositiveButton(android.R.string.ok, null)
+            .create();
+        dialog.setOnShowListener(ignored ->
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(view -> {
+                speedPercent = 100;
+                seekBar.setProgress(speedPercent - MIN_SPEED_PERCENT);
+                value.setText(formatSpeed(speedPercent));
+                nativeSetSpeedPercent(speedPercent);
+            })
+        );
+        dialog.show();
+    }
+
+    private String formatSpeed(int percent) {
+        return String.format(java.util.Locale.US, "%.2fx", percent / 100.0);
+    }
+
+    private void showFpsDialog() {
+        String[] choices = {"Open", "Close"};
+        int selected = showFps ? 0 : 1;
+        new AlertDialog.Builder(this)
+            .setTitle("Show FPS")
+            .setSingleChoiceItems(choices, selected, (dialog, position) -> {
+                showFps = position == 0;
+                nativeSetShowFps(showFps);
+                dialog.dismiss();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     private int dp(float value) {

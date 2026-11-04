@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use crate::hud::Hud;
 use crate::options::Options;
 use sdl2::controller::{Button as ControllerButton, GameController};
 use sdl2::event::WindowEvent;
@@ -66,6 +67,8 @@ pub enum Event {
         length: i32,
     },
     EnterDebugger,
+    AdjustSpeed(i32),
+    ToggleFps,
     MouseDown(Coords),
     MouseUp(Coords),
     MouseMove(Coords),
@@ -111,6 +114,7 @@ pub struct Window {
     _game_controllers: Vec<GameController>,
     texture: Option<Texture>,
     texture_size: Option<(u32, u32)>,
+    hud: Hud,
     canvas: Canvas<sdl2::video::Window>,
     event_pump: sdl2::EventPump,
     event_queue: VecDeque<Event>,
@@ -122,7 +126,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(title: &str, options: &Options) -> Window {
+    pub fn new(title: &str, options: &Options, hud: Hud) -> Window {
         let sdl_ctx = sdl2::init().unwrap();
         let video_ctx = sdl_ctx.video().unwrap();
 
@@ -184,6 +188,7 @@ impl Window {
             _game_controllers: game_controllers,
             texture: None,
             texture_size: None,
+            hud,
             canvas,
             event_pump,
             event_queue: VecDeque::new(),
@@ -225,6 +230,7 @@ impl Window {
 
         let texture = self.texture.as_mut().unwrap();
         texture.update(None, framebuffer, pitch).unwrap();
+        self.hud.count_frame();
         self.redraw();
     }
 
@@ -237,8 +243,10 @@ impl Window {
         let dst = Rect::new(viewport.0 as i32, viewport.1 as i32, viewport.2, viewport.3);
 
         let texture = self.texture.as_ref().unwrap();
+        let guest_size = self.size_unrotated_unscaled();
         self.canvas.clear();
         self.canvas.copy(texture, None, Some(dst)).unwrap();
+        self.hud.draw(&mut self.canvas, viewport, guest_size);
         self.canvas.present();
     }
 
@@ -273,6 +281,12 @@ impl Window {
                         if !repeat {
                             echo!("F12 pressed, EnterDebugger event queued.");
                             self.event_queue.push_back(Event::EnterDebugger);
+                        }
+                        continue;
+                    }
+                    if keycode == Keycode::F3 {
+                        if !repeat {
+                            self.event_queue.push_back(Event::ToggleFps);
                         }
                         continue;
                     }
@@ -347,6 +361,29 @@ impl Window {
                     let coords = transform_input_coords(self, (x as f32, y as f32), false);
                     self.event_queue.push_back(Event::MouseMove(coords));
                 }
+                E::MouseWheel {
+                    y,
+                    precise_y,
+                    direction,
+                    ..
+                } => {
+                    let keymod = self._sdl_ctx.keyboard().mod_state();
+                    if keymod
+                        .intersects(Mod::LCTRLMOD | Mod::RCTRLMOD | Mod::LGUIMOD | Mod::RGUIMOD)
+                    {
+                        let mut delta = if precise_y != 0.0 {
+                            precise_y.signum() as i32
+                        } else {
+                            y.signum()
+                        };
+                        if direction == sdl2::mouse::MouseWheelDirection::Flipped {
+                            delta = -delta;
+                        }
+                        if delta != 0 {
+                            self.event_queue.push_back(Event::AdjustSpeed(delta));
+                        }
+                    }
+                }
                 E::FingerDown { x, y, .. } => {
                     let abs_coords = finger_absolute_coords(self, (x, y));
                     let coords = transform_input_coords(self, abs_coords, false);
@@ -415,6 +452,34 @@ impl Window {
 
         #[cfg(not(target_os = "android"))]
         let _ = visible;
+    }
+
+    pub fn set_show_fps(&mut self, show: bool) {
+        self.hud.set_show_fps(show);
+        self.redraw();
+    }
+
+    pub fn toggle_fps(&mut self) {
+        self.hud.toggle_fps();
+        self.redraw();
+    }
+
+    pub fn set_speed(&mut self, speed: f64) {
+        self.hud.set_speed(speed);
+        self.redraw();
+    }
+
+    pub fn update_hud(&mut self, now: std::time::Instant) {
+        self.hud.update_fps(now);
+        if self.hud.update_textures(&self.canvas) {
+            self.redraw();
+        }
+    }
+
+    pub fn expire_hud_notice(&mut self, now: std::time::Instant) {
+        if self.hud.expire_notice(now) {
+            self.redraw();
+        }
     }
 
     /// Returns the current device orientation

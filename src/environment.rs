@@ -8,10 +8,36 @@ use crate::{
     audio, cpu, dsm, editbox, fs, gdb, haptics, libc, mem, mrp, mythroad, options, stack, syscall,
     window,
 };
+use crossbeam_utils::atomic::AtomicCell;
 use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
 use std::path::PathBuf;
+
+static SPEED_PERCENT: AtomicCell<Option<u32>> = AtomicCell::new(None);
+static SHOW_FPS: AtomicCell<Option<bool>> = AtomicCell::new(None);
+
+enum Command {
+    SetSpeedPercent(u32),
+    SetShowFps(bool),
+}
+
+pub(crate) fn set_speed_percent(percent: u32) {
+    SPEED_PERCENT.store(Some(percent));
+}
+
+pub(crate) fn set_show_fps(show: bool) {
+    SHOW_FPS.store(Some(show));
+}
+
+fn take_commands() -> impl Iterator<Item = Command> {
+    [
+        SPEED_PERCENT.swap(None).map(Command::SetSpeedPercent),
+        SHOW_FPS.swap(None).map(Command::SetShowFps),
+    ]
+    .into_iter()
+    .flatten()
+}
 
 #[cfg(target_os = "emscripten")]
 extern "C" {
@@ -35,17 +61,50 @@ pub struct Environment {
     pub cpu: cpu::Cpu,
     pub libc_state: libc::State,
     pub mythroad: mythroad::Mythroad,
-    pub startup_time: Instant,
+    clock: EmulationClock,
     gdb_server: Option<gdb::GdbServer>,
+}
+
+struct EmulationClock {
+    host_anchor: Instant,
+    guest_anchor: Duration,
+    speed: f64,
+}
+
+impl EmulationClock {
+    fn new(speed: f64) -> Self {
+        Self {
+            host_anchor: Instant::now(),
+            guest_anchor: Duration::ZERO,
+            speed,
+        }
+    }
+
+    fn elapsed(&self) -> Duration {
+        self.elapsed_at(Instant::now())
+    }
+
+    fn elapsed_at(&self, now: Instant) -> Duration {
+        self.guest_anchor
+            + Duration::from_secs_f64(
+                now.duration_since(self.host_anchor).as_secs_f64() * self.speed,
+            )
+    }
+
+    fn set_speed(&mut self, speed: f64) {
+        self.set_speed_at(speed, Instant::now());
+    }
+
+    fn set_speed_at(&mut self, speed: f64, now: Instant) {
+        self.guest_anchor = self.elapsed_at(now);
+        self.host_anchor = now;
+        self.speed = speed;
+    }
 }
 
 impl Environment {
     /// Loads the binary and sets up the emulator.
     pub fn new(mrp_path: PathBuf, options: options::Options) -> Result<Environment, String> {
-        let window = window::Window::new("SkyMRP", &options);
-        audio::init(window.sdl_context()).map_err(|e| e.to_string())?;
-        haptics::init(window.sdl_context()).map_err(|e| e.to_string())?;
-
         let mut mem = mem::Memory::new();
         mem.reserve(0, mem::Memory::NULL_PAGE_SIZE);
 
@@ -64,11 +123,17 @@ impl Environment {
 
         let mut syscall = syscall::Syscall::new();
 
-        let mythroad = mythroad::Mythroad::new(&mut mem, options.screen_size);
+        let mut mythroad = mythroad::Mythroad::new(&mut mem, options.screen_size);
         syscall.setup_stubs(&mut mem, &mythroad);
         let mut cpu = cpu::Cpu::new(options.cpu_backend);
         stack::prep_stack_for_start(&mut mem, &mut cpu);
 
+        let hud = crate::hud::Hud::new(&mut mythroad.font, &fs, options.show_fps, options.speed);
+        let window = window::Window::new("SkyMRP", &options, hud);
+        audio::init(window.sdl_context()).map_err(|e| e.to_string())?;
+        haptics::init(window.sdl_context()).map_err(|e| e.to_string())?;
+
+        let clock = EmulationClock::new(options.speed);
         let mut env = Environment {
             options,
             window,
@@ -80,7 +145,7 @@ impl Environment {
             cpu,
             libc_state: Default::default(),
             mythroad,
-            startup_time: Instant::now(),
+            clock,
             gdb_server: None,
         };
         env.cpu.set_cpsr(cpu::Cpu::CPSR_USER_MODE);
@@ -252,6 +317,17 @@ impl Environment {
     }
 
     fn event_loop_tick(&mut self) -> bool {
+        for command in take_commands() {
+            match command {
+                Command::SetSpeedPercent(percent) => {
+                    self.set_speed(f64::from(percent) / 100.0);
+                }
+                Command::SetShowFps(show) => {
+                    self.window.set_show_fps(show);
+                }
+            }
+        }
+        self.window.expire_hud_notice(Instant::now());
         self.window.poll_for_events(self.mythroad.editbox.is_some());
 
         while let Some(event) = self.window.pop_event() {
@@ -277,6 +353,14 @@ impl Environment {
                     } else {
                         log!("Ignoring EnterDebugger event: no debugger connected.");
                     }
+                    continue;
+                }
+                Event::AdjustSpeed(delta) => {
+                    self.adjust_speed(delta);
+                    continue;
+                }
+                Event::ToggleFps => {
+                    self.window.toggle_fps();
                     continue;
                 }
                 _ => {}
@@ -309,7 +393,9 @@ impl Environment {
                 | Event::AppWillEnterBackground
                 | Event::AppDidEnterForeground
                 | Event::Redraw
-                | Event::EnterDebugger => {
+                | Event::EnterDebugger
+                | Event::AdjustSpeed(_)
+                | Event::ToggleFps => {
                     unreachable!()
                 }
                 Event::KeyDown(key) => {
@@ -337,6 +423,7 @@ impl Environment {
 
         dsm::mr_media_callback(self);
         dsm::mr_timer(self);
+        self.window.update_hud(Instant::now());
         true
     }
 
@@ -381,11 +468,35 @@ impl Environment {
 
         let remaining =
             Duration::from_millis(u64::from(self.mythroad.state.mr_timer_interval - elapsed));
-        remaining.min(MAX_SLEEP)
+        Duration::from_secs_f64(remaining.as_secs_f64() / self.clock.speed).min(MAX_SLEEP)
+    }
+
+    pub(crate) fn guest_time_millis(&self) -> u32 {
+        self.clock.elapsed().as_millis() as u32
+    }
+
+    fn adjust_speed(&mut self, delta: i32) {
+        let current = self.clock.speed;
+        let mut speed = (current + f64::from(delta) * 0.05).clamp(0.25, 4.0);
+        if (current < 1.0 && speed > 1.0) || (current > 1.0 && speed < 1.0) {
+            speed = 1.0;
+        }
+        self.set_speed((speed * 100.0).round() / 100.0);
+    }
+
+    fn set_speed(&mut self, speed: f64) {
+        let speed = speed.clamp(0.25, 4.0);
+        if (self.clock.speed - speed).abs() < f64::EPSILON {
+            return;
+        }
+        self.clock.set_speed(speed);
+        self.window.set_speed(speed);
     }
 
     pub fn sleep(&mut self, duration: Duration) {
-        std::thread::sleep(duration)
+        std::thread::sleep(Duration::from_secs_f64(
+            duration.as_secs_f64() / self.clock.speed,
+        ))
     }
 
     fn run_inner(&mut self, root: bool) {

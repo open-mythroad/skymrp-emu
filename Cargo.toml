@@ -40,6 +40,7 @@ rusty-hook = "0.11.2"
 arm32_cpu = "0.1.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 crc32fast = "1.5"
+crossbeam-utils = "0.8"
 encoding_rs = "0.8"
 fast-md5 = "1.0"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
