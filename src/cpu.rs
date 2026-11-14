@@ -90,6 +90,9 @@ extern "C" fn skymrp_cpu_write_u64(mem: *mut skymrp_Memory, addr: VAddr, value: 
 pub struct Cpu {
     backend: Backend,
     executable_pages: Vec<bool>,
+    /// Copy of the direct memory access pointer used to check it has not
+    /// changed. If this is null, direct memory access is not in use.
+    direct_memory_access_ptr: *const std::ffi::c_void,
 }
 
 enum Backend {
@@ -151,15 +154,30 @@ impl Cpu {
     /// When this bit is set in CPSR, the CPU is in user mode.
     pub const CPSR_USER_MODE: u32 = 0x00000010;
 
-    pub fn new(backend: CpuBackend) -> Cpu {
+    /// Construct a new CPU instance. If a mutable reference to a [Memory] instance
+    /// is provided, direct memory access is enabled, and the CPU instance
+    /// becomes bound to that [Mem] instance (subsequent calls must use the same
+    /// one).
+    pub fn new(direct_memory_access: Option<&mut Memory>, backend: CpuBackend) -> Cpu {
+        // Safety: the direct memory access pointer will be retained directly by
+        // the dynarmic wrapper and indirectly by cached JIT code, so we must
+        // ensure we only execute the CPU while holding a &mut on the Mem object
+        // to which that pointer belongs.
+        let direct_memory_access_ptr = direct_memory_access
+            .map_or(std::ptr::null_mut(), |mem| unsafe {
+                mem.direct_memory_access_ptr()
+            });
         let backend = match backend {
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-            CpuBackend::Dynarmic => Backend::Dynarmic(unsafe { skymrp_DynarmicWrapper_new() }),
+            CpuBackend::Dynarmic => Backend::Dynarmic(unsafe {
+                skymrp_DynarmicWrapper_new(direct_memory_access_ptr, LINEAR_MEMORY_SIZE)
+            }),
             CpuBackend::Interpreter => Backend::Interpreter(InterpreterCpu::new()),
         };
         Cpu {
             backend,
             executable_pages: vec![false; (LINEAR_MEMORY_SIZE / PAGE_SIZE) as usize],
+            direct_memory_access_ptr,
         }
     }
 
@@ -315,6 +333,11 @@ impl Cpu {
         match &mut self.backend {
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             Backend::Dynarmic(dynarmic_wrapper) => unsafe {
+                if !self.direct_memory_access_ptr.is_null() {
+                    assert!(
+                        self.direct_memory_access_ptr == unsafe { mem.direct_memory_access_ptr() }
+                    );
+                }
                 let res = skymrp_DynarmicWrapper_run_or_step(
                     *dynarmic_wrapper,
                     mem as *mut Memory as *mut skymrp_Memory,

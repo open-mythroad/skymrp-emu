@@ -219,6 +219,9 @@ type Bytes = [u8; LINEAR_MEMORY_SIZE as usize];
 pub const PAGE_SIZE: GuestUSize = 4096;
 
 pub struct Memory {
+    /// Note that unless direct memory access is disabled, the CPU emulation
+    /// (dynarmic) accesses memory via this pointer directly except when a page
+    /// fault occurs.
     bytes: *mut Bytes,
     mmio: Mmio,
     heap_allocator: Option<HeapAllocator>,
@@ -250,6 +253,16 @@ impl Memory {
             vm_allocator,
             heap_allocator: None,
         }
+    }
+
+    /// Get a pointer to the memory. This is only for use when
+    /// setting up the CPU, never call this otherwise.
+    ///
+    /// Safety: You must ensure that this pointer does not outlive the instance
+    /// of [Mem]. You must not use it while a `&mut` is held on some region of
+    /// guest memory.
+    pub unsafe fn direct_memory_access_ptr(&mut self) -> *mut std::ffi::c_void {
+        self.bytes.cast()
     }
 
     pub fn create_heap(&mut self, size: GuestUSize) -> HeapAllocator {

@@ -28,6 +28,7 @@ pub struct Options {
     pub cpu_backend: CpuBackend,
     pub runtime_mode: RuntimeMode,
     pub gdb_listen_addrs: Option<Vec<SocketAddr>>,
+    pub direct_memory_access: bool,
 }
 
 impl Default for Options {
@@ -45,6 +46,7 @@ impl Default for Options {
             #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
             cpu_backend: CpuBackend::Interpreter,
             gdb_listen_addrs: None,
+            direct_memory_access: true,
         }
     }
 }
@@ -117,6 +119,8 @@ impl Options {
                 .collect();
             println!("{:?}", addrs);
             self.gdb_listen_addrs = Some(addrs);
+        } else if arg == "--disable-direct-memory-access" {
+            self.direct_memory_access = false;
         } else {
             return Ok(false);
         }

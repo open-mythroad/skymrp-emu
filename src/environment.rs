@@ -125,7 +125,13 @@ impl Environment {
 
         let mut mythroad = mythroad::Mythroad::new(&mut mem, options.screen_size);
         syscall.setup_stubs(&mut mem, &mythroad);
-        let mut cpu = cpu::Cpu::new(options.cpu_backend);
+        let mut cpu = cpu::Cpu::new(
+            match options.direct_memory_access {
+                true => Some(&mut mem),
+                false => None,
+            },
+            options.cpu_backend,
+        );
         stack::prep_stack_for_start(&mut mem, &mut cpu);
 
         let hud = crate::hud::Hud::new(&mut mythroad.font, &fs, options.show_fps, options.speed);

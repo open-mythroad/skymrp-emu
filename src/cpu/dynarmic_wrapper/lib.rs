@@ -11,7 +11,10 @@ pub type skymrp_DynarmicWrapper = std::ffi::c_void;
 pub type skymrp_Memory = std::ffi::c_void;
 
 unsafe extern "C" {
-    pub unsafe fn skymrp_DynarmicWrapper_new() -> *mut skymrp_DynarmicWrapper;
+    pub unsafe fn skymrp_DynarmicWrapper_new(
+        dynamic_memory_access_ptr: *mut std::ffi::c_void,
+        direct_memory_access_size: u32,
+    ) -> *mut skymrp_DynarmicWrapper;
     pub unsafe fn skymrp_DynarmicWrapper_delete(cpu: *mut skymrp_DynarmicWrapper);
     pub unsafe fn skymrp_DynarmicWrapper_regs_const(
         cpu: *const skymrp_DynarmicWrapper,

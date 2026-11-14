@@ -34,6 +34,10 @@ Debugging options:
         host name or an IP address. IPv6 addresses should be enclosed in square
         brackets, e.g. --gdb=[::1]:9001 for IPv6 loopback device port 9001.
 
+    --disable-direct-memory-access
+        Force dynarmic to always access guest memory via the memory access
+        callbacks, rather than using the fast direct access path (page tables).
+
 Other options:
     --show-fps
         Show the guest framebuffer update rate in the top-left corner.

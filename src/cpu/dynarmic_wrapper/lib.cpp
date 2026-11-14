@@ -170,14 +170,34 @@ namespace skymrp::cpu
     {
         Environment env;
         std::unique_ptr<Dynarmic::A32::Jit> cpu;
+        std::array<std::uint8_t *, Dynarmic::A32::UserConfig::NUM_PAGE_TABLE_ENTRIES> page_table;
 
     public:
-        DynarmicWrapper()
+        DynarmicWrapper(void *direct_memory_access_ptr, std::uint32_t direct_memory_access_size)
         {
             Dynarmic::A32::UserConfig user_config;
             user_config.callbacks = &env;
             // TODO: only do this in debug builds? it's probably expensive
             user_config.check_halt_on_memory_access = true;
+            if (direct_memory_access_ptr)
+            {
+                // Only map allocated RAM pages. The null page and addresses outside
+                // RAM fall back to memory callbacks, including MMIO accesses.
+                // TODO: Eventually we should use dynarmic's true fastmem mode, but that
+                // requires using mmap/mprotect/etc on the host OS so we can still catch
+                // null pointer accesses.
+                page_table.fill(nullptr);
+                // Note that the null page size is also defined in src/mem.rs.
+                static_assert(1 << Dynarmic::A32::UserConfig::PAGE_BITS == 0x1000);
+                const std::size_t page_count =
+                    direct_memory_access_size >> Dynarmic::A32::UserConfig::PAGE_BITS;
+                for (std::size_t page = 1; page < page_count; ++page)
+                {
+                    page_table[page] = static_cast<std::uint8_t *>(direct_memory_access_ptr);
+                }
+                user_config.page_table = &page_table;
+                user_config.absolute_offset_page_table = true;
+            }
             cpu = std::make_unique<Dynarmic::A32::Jit>(user_config);
             env.cpu = cpu.get();
         }
@@ -241,9 +261,10 @@ namespace skymrp::cpu
     extern "C"
     {
 
-        DynarmicWrapper *skymrp_DynarmicWrapper_new()
+        DynarmicWrapper *skymrp_DynarmicWrapper_new(void *direct_memory_access_ptr,
+                                                  std::uint32_t direct_memory_access_size)
         {
-            return new DynarmicWrapper();
+            return new DynarmicWrapper(direct_memory_access_ptr, direct_memory_access_size);
         }
         void skymrp_DynarmicWrapper_delete(DynarmicWrapper *cpu) { delete cpu; }
 
