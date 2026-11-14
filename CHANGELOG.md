@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.1
+
+- The emulated CPU can now access memory via a more direct, faster path. This can dramatically improve performance and reduce CPU/energy use, in some cases by as much as 25%.
+- Screen buffers now use platform-managed memory, leaving more guest heap available for MRP apps.
+
+### Android
+
+- Physical Back keys now act as the MRP right soft key, while system navigation buttons and back gestures open the runtime menu.
+
 ## v0.5.0
 
 - Added runtime speed controls and an FPS HUD.

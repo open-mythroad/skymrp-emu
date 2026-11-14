@@ -1376,7 +1376,7 @@ private fun LauncherScreenPreview() {
             onScanModeChange = {},
             canNavigateUp = false,
             onNavigateUp = {},
-            versionName = "0.5.0",
+            versionName = "0.5.1",
             onImport = {},
             onItemClick = {},
             onRename = { _, _ -> },
