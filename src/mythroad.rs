@@ -625,6 +625,8 @@ pub struct State {
     pub mr_c_internal_table: MutPtr<u32>,
     pub mr_c_port_table: MutPtr<u32>,
     pub mr_screen_buf: GuestVar<MutPtr<u16>>,
+    pub platform_screen_buf: MutPtr<u16>,
+    pub platform_screen_buf_len: u32,
     pub mr_screen_w: GuestVar<i32>,
     pub mr_screen_h: GuestVar<i32>,
     pub mr_screen_bit: GuestVar<i32>,
@@ -687,6 +689,14 @@ impl State {
             screen_bits: 16,
         };
         let mr_screen_buf = GuestVar::new(mem, MutPtr::<u16>::null());
+        let platform_screen_buf_len = screen_size
+            .0
+            .checked_mul(screen_size.1)
+            .and_then(|pixels| pixels.checked_mul(guest_size_of::<u16>()))
+            .filter(|&len| len > 0 && len <= i32::MAX as u32)
+            .expect("Invalid screen buffer size");
+        // Platform storage belongs to the Environment, outside the guest heap.
+        let platform_screen_buf = mem.calloc(platform_screen_buf_len).cast::<u16>();
         let mr_screen_w = GuestVar::new(mem, sysinfo.screen_width as i32);
         let mr_screen_h = GuestVar::new(mem, sysinfo.screen_height as i32);
         let mr_screen_bit = GuestVar::new(mem, sysinfo.screen_bits as i32);
@@ -770,6 +780,8 @@ impl State {
             mr_c_internal_table,
             mr_c_port_table,
             mr_screen_buf,
+            platform_screen_buf,
+            platform_screen_buf_len,
             mr_screen_w,
             mr_screen_h,
             mr_screen_bit,
@@ -809,12 +821,8 @@ fn write_u32_table(mem: &mut Memory, values: &[u32]) -> MutPtr<u32> {
 
 pub(crate) fn reset_resource_tables(env: &mut Environment) {
     let state = &env.mythroad.state;
-    let screen_buf = state.mr_screen_buf.get(&env.mem);
     let screen_w = state.mr_screen_w.get(&env.mem);
     let screen_h = state.mr_screen_h.get(&env.mem);
-    let screen_buf_len = (screen_w.max(0) as u32)
-        .saturating_mul(screen_h.max(0) as u32)
-        .saturating_mul(std::mem::size_of::<u16>() as u32);
     let mr_bitmap = state.mr_bitmap;
     let mr_sound = state.mr_sound;
     let mr_sprite = state.mr_sprite;
@@ -859,17 +867,6 @@ pub(crate) fn reset_resource_tables(env: &mut Environment) {
             },
         );
     }
-
-    env.mem.write(
-        mr_bitmap + BITMAPMAX,
-        MrBitmap {
-            w: screen_w as u16,
-            h: screen_h as u16,
-            buflen: screen_buf_len,
-            type_: 0,
-            p: screen_buf,
-        },
-    );
 }
 
 pub(crate) fn mr_malloc(env: &mut Environment, len: u32) -> MutVoidPtr {

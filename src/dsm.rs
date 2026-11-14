@@ -280,16 +280,12 @@ pub(crate) fn mr_plat_ex(
                 return MrResult::Failed as i32;
             }
 
-            let screen_buf = env.mythroad.state.mr_screen_buf.get(&env.mem).cast();
-            let screen_w = env.mythroad.state.mr_screen_w.get(&env.mem);
-            let screen_h = env.mythroad.state.mr_screen_h.get(&env.mem);
-            let screen_len = screen_w
-                .checked_mul(screen_h)
-                .and_then(|pixels| pixels.checked_mul(guest_size_of::<u16>() as i32))
-                .unwrap_or(0);
-
-            env.mem.write(output, screen_buf);
-            env.mem.write(output_len, screen_len);
+            env.mem
+                .write(output, env.mythroad.state.platform_screen_buf.cast());
+            env.mem.write(
+                output_len,
+                env.mythroad.state.platform_screen_buf_len as i32,
+            );
             MrResult::Success as i32
         }
         MR_MFREE_EX => MrResult::Success as i32,
@@ -1732,25 +1728,78 @@ fn reset_screen_buffer(env: &mut Environment) -> bool {
     let Ok(screen_h) = u32::try_from(screen_h) else {
         return false;
     };
-    let Some(screen_pixels) = screen_w.checked_mul(screen_h) else {
-        return false;
-    };
-    let Some(screen_buf_len) = screen_pixels.checked_mul(std::mem::size_of::<u16>() as u32) else {
+    let Some(screen_buf_len) = screen_w
+        .checked_mul(screen_h)
+        .and_then(|pixels| pixels.checked_mul(guest_size_of::<u16>()))
+        .filter(|&len| len > 0)
+    else {
         return false;
     };
 
+    let screen_bitmap_ptr = env.mythroad.state.mr_bitmap + BITMAPMAX;
+    let mut screen_bitmap = env.mem.read(screen_bitmap_ptr);
+    env.mythroad
+        .state
+        .mr_screen_buf
+        .set(&mut env.mem, MutPtr::null());
+
+    // Request platform storage first.
+    let platform_len_ptr = env.mem.alloc_and_write(0i32);
+    let output = env.mythroad.state.mr_screen_buf.ptr().cast();
+    let result = mr_plat_ex(
+        env,
+        MR_MALLOC_EX,
+        ConstPtr::null(),
+        0,
+        output,
+        platform_len_ptr,
+        MutVoidPtr::null(),
+    );
+    let platform_len = env.mem.read(platform_len_ptr);
+    env.mem.free(platform_len_ptr.cast_void());
     let mut screen_buf = env.mythroad.state.mr_screen_buf.get(&env.mem);
+    if result == MrResult::Success as i32
+        && !screen_buf.is_null()
+        && platform_len >= 0
+        && platform_len as u32 >= screen_buf_len
+    {
+        screen_bitmap.type_ = 1;
+        screen_bitmap.buflen = platform_len as u32;
+    } else {
+        // Return unusable platform storage before falling back to the guest heap.
+        if !screen_buf.is_null() {
+            mr_plat_ex(
+                env,
+                MR_MFREE_EX,
+                screen_buf.cast().cast_const(),
+                platform_len as u32,
+                MutPtr::null(),
+                MutPtr::null(),
+                MutVoidPtr::null(),
+            );
+        }
+        screen_buf = MutPtr::null();
+    }
+
+    // Type 0 belongs to the guest heap; type 1 belongs to the platform.
     if screen_buf.is_null() {
         screen_buf = mr_malloc(env, screen_buf_len).cast();
         if screen_buf.is_null() {
             return false;
         }
-        env.mythroad
-            .state
-            .mr_screen_buf
-            .set(&mut env.mem, screen_buf);
+        screen_bitmap.type_ = 0;
+        screen_bitmap.buflen = screen_buf_len;
     }
 
+    env.mythroad
+        .state
+        .mr_screen_buf
+        .set(&mut env.mem, screen_buf);
+    // Publish the selected buffer and clear the visible screen.
+    screen_bitmap.w = screen_w as u16;
+    screen_bitmap.h = screen_h as u16;
+    screen_bitmap.p = screen_buf;
+    env.mem.write(screen_bitmap_ptr, screen_bitmap);
     libc::string::memset(env, screen_buf.cast(), 0, screen_buf_len);
     true
 }
