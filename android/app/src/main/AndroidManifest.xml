@@ -75,6 +75,7 @@
 
         <activity
             android:name="org.skymrp.android.MainActivity"
+            android:enableOnBackInvokedCallback="false"
             android:alwaysRetainTaskState="true"
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:exported="false"

@@ -11,11 +11,12 @@ package org.skymrp.android;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.InputDevice;
+import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
@@ -57,9 +58,9 @@ public class MainActivity extends SDLActivity {
     private CharSequence mrpTitle;
     private boolean statusBarEnabled;
     private boolean keypadVisible = true;
-    private Object menuBackCallback;
     private View runtimeMenuAnchor;
     private boolean runtimeMenuVisible;
+    private int physicalBackDeviceId = -1;
     private int speedPercent = 100;
     private boolean showFps;
 
@@ -99,7 +100,6 @@ public class MainActivity extends SDLActivity {
         }
 
         applyWindowSettings();
-        updateMenuBackCallback();
 
         virtualKeypad = new VirtualKeypadView(this);
         virtualKeypad.setLayoutMode(keypadMode);
@@ -179,13 +179,6 @@ public class MainActivity extends SDLActivity {
         updateKeypadLayout(mLayout.getWidth(), mLayout.getHeight());
     }
 
-    private void updateMenuBackCallback() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-            && menuBackCallback == null) {
-            menuBackCallback = MenuBackCallbackApi33.register(this);
-        }
-    }
-
     private void applyWindowSettings() {
         if (statusBarEnabled) {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -200,6 +193,7 @@ public class MainActivity extends SDLActivity {
         if (runtimeMenuVisible) {
             return;
         }
+        releasePhysicalBackKey();
         releaseVirtualKeys();
         PopupMenu runtimeMenu = new PopupMenu(this, runtimeMenuAnchor, Gravity.END);
         runtimeMenu.getMenu().add(Menu.NONE, MENU_KEYPAD, Menu.NONE, "Switch keypad");
@@ -356,33 +350,70 @@ public class MainActivity extends SDLActivity {
 
     @Override
     protected void onPause() {
+        releasePhysicalBackKey();
         releaseVirtualKeys();
         super.onPause();
-    }
-
-    @Override
-    protected void onDestroy() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-            && menuBackCallback != null) {
-            MenuBackCallbackApi33.unregister(this, menuBackCallback);
-            menuBackCallback = null;
-        }
-        super.onDestroy();
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (!hasFocus) {
+            releasePhysicalBackKey();
             releaseVirtualKeys();
         } else {
             applyWindowSettings();
         }
     }
 
+    /**
+     * Distinguishes system virtual Back events (navigation buttons and gestures) from
+     * physical Back keys: virtual Back opens the runtime menu, while physical Back
+     * is mapped to the MRP soft-right key.
+     */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (SDLActivity.mBrokenLibraries) {
+            return false;
+        }
+        if (event.getKeyCode() != KeyEvent.KEYCODE_BACK
+                || runtimeMenuAnchor == null
+                || (runtimeMenuVisible && physicalBackDeviceId == -1)) {
+            return super.dispatchKeyEvent(event);
+        }
+        InputDevice device = event.getDevice();
+        // System navigation buttons and gestures use a virtual input device.
+        boolean physicalKey = device != null && !device.isVirtual();
+        if (event.getAction() == KeyEvent.ACTION_UP
+                && physicalBackDeviceId != -1
+                && event.getDeviceId() == physicalBackDeviceId) {
+            // Match the recorded device even if it has disconnected and device is null.
+            releasePhysicalBackKey();
+        } else if (physicalKey) {
+            // Send soft-right down once; holding the key must not send duplicate downs.
+            if (event.getAction() == KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0 && physicalBackDeviceId == -1) {
+                physicalBackDeviceId = event.getDeviceId();
+                SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_RIGHT_BRACKET);
+            }
+        } else if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) {
+            // Open the menu when a system Back completes, but not when it is canceled.
+            showRuntimeMenu();
+        }
+        // Consume Back so SDL does not handle it a second time.
+        return true;
+    }
+
+    private void releasePhysicalBackKey() {
+        if (physicalBackDeviceId != -1) {
+            physicalBackDeviceId = -1;
+            SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_RIGHT_BRACKET);
+        }
+    }
+
     @Override
     public void onBackPressed() {
-        showRuntimeMenu();
+        // Back events are handled in dispatchKeyEvent.
     }
 
     @Override
@@ -449,23 +480,4 @@ public class MainActivity extends SDLActivity {
         }
     }
 
-    private static final class MenuBackCallbackApi33 {
-        private MenuBackCallbackApi33() {
-        }
-
-        static Object register(MainActivity activity) {
-            android.window.OnBackInvokedCallback callback = activity::showRuntimeMenu;
-            activity.getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
-                callback
-            );
-            return callback;
-        }
-
-        static void unregister(MainActivity activity, Object callback) {
-            activity.getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(
-                (android.window.OnBackInvokedCallback) callback
-            );
-        }
-    }
 }
